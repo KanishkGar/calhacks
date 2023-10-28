@@ -1,0 +1,1690 @@
+0:03
+welcome back everybody uh to um cs162 we're going to continue
+0:09
+our discussion of ways of getting reliability out of file systems and then we're going to dive into some
+0:15
+interesting material on distributed decision making um if you remember last time we were
+0:22
+talking about one of the ways that we get performance out of a file system and that's with a buffer cache
+0:28
+and the buffer cache of course is the um chunk of memory that's been set aside to
+0:34
+hold various items including disk blocks and the example that i've shown here
+0:40
+was basically that when we talk about a file system and we have directory data blocks and inodes and
+0:46
+data blocks etc they're actually put into the buffer cache
+0:51
+which is typically handled lru and is the temporary waypoint for data
+0:58
+moving in and off the disk and this is of course the starting point for allowing us to read and write single
+1:03
+bytes of data at a time but it also is an important performance enhancer
+1:10
+and we and we talked among other things about keeping dirty data in the buffer cache
+1:17
+and not pushing it out to disk right away and that that had some pretty important performance benefits it also has some
+1:23
+potential issues with reliability if you should crash and the dirty data is still only on in memory and not on disk so
+1:32
+um the other thing uh that we started talking about then and that along those
+1:37
+lines was what i like to call the ilities and so that's availability durability and reliability and keep in
+1:44
+mind that availability is kind of the minimum [Music]
+1:50
+bar to meet and it's not a very good one oftentimes so availability is typically the fact that you can
+1:56
+actually talk to the system and it will re respond to you it doesn't say that it will respond correctly and
+2:01
+the other thing that's often the case is we'll talk about number of nines of availability
+2:06
+so three nines typically means that there's a 99.9 percent probability that the system will uh respond to you
+2:14
+more important than availability in my opinion at least is durability and reliability durability says
+2:19
+that the system can recover data despite the fact that things are failing and uh reliability is the ability of the
+2:28
+system to essentially uh perform things correctly and that's really what you want is you
+2:34
+want reliability not availability okay all right
+2:40
+and and by the way the example i like to give about the difference between durability and availability for instance is that uh if
+2:47
+you think about the egyptian pyramids there was a time when people didn't know what the various hieroglyphs meant that those uh what was
+2:54
+written on the pyramids was extremely durable but it wasn't available because people couldn't uh decipher it okay and it became
+3:01
+available only after the rosetta stone was discovered so the other thing we talked about last
+3:07
+time is we started talking about ways to protect bits not necessarily ways to protect the
+3:12
+integrity of the operating system and file systems so to speak but integrity of the bits and we talked about raid which you know from 61c
+3:20
+and in general raid x you know whatever your level is is a type of erasure code which is a
+3:27
+code in which you know certain disks are gone and you fill in the missing disks using the code
+3:33
+okay that's called an erasure code and the reason you're able to do that is essentially because the disks uh have
+3:40
+error correction codes on them that let them recognize when the disks themselves are bad and then
+3:45
+you treat the whole disc as an erasure and you bring in the raid codes and what i did say was that today
+3:51
+discs are so big that raid 5 which is what you learned about in 61c for instance is really not sufficient because it can
+3:59
+only recover from one failed disk and uh disks are so big now that while you
+4:04
+uh are busy recovering that disk by putting a new one in uh it might fail again and at that point
+4:10
+you just lose all your data so if you ever have a big file system
+4:16
+on a big file server make sure you pick at least raid six which is a possibility of two failed disks and um
+4:22
+for instance even odd is a is a code that works for two disks uh there that's available on the readings
+4:28
+in general you can do something that um called a general read solomon code like
+4:34
+um this based on polynomials and if you remember um as i i mentioned this last time but i
+4:41
+thought i'd put this out there when you were learning about polynomials back in grade school
+4:46
+what you learned was that if you have a an m minus one degree polynomial here
+4:51
+as long as you have m points then you can reconstruct the coefficients okay and so the the
+4:59
+clever trick uh with uh reed solomon codes is you start with something that behaves like real numbers called a gala
+5:06
+field we can talk about that offline if you like and then you put your data at the coefficients and then you just generate
+5:12
+a bunch of points and here's an example where i generate n points where n is bigger than m and as
+5:18
+long as i get m of them back then i can recover the polynomial and then i can get back my data and so that's an erasure code because i
+5:24
+can erase any number of these uh points here as long as i still have m left
+5:30
+so i can erase up to n minus m of them and still get my data back and that's a pretty powerful code and
+5:35
+you can choose how many you need to recover from how many failures okay
+5:41
+and so oftentimes in geographic replication you can arrange to be able
+5:46
+to lose you know 12 out of 16 chunks of data
+5:52
+and that's extremely efficient good so i'm glad that cs 170 also talked
+5:58
+about this in general the other thing we talked about last time by
+6:06
+the way was there were there any questions on on erasure codes at all
+6:11
+so um well you know that raid 5 is as simple as xoring even odd is a slightly different
+6:20
+type of xoring so that's those are all very fast operations the reed solomon um codes come in a
+6:25
+bunch of different forms some of which are fast and some of which aren't and so there's a bunch of different
+6:32
+types of reed solomon's which are all isomorphic to this idea but they're rearranged in a way where it's really
+6:38
+fast to encode um in some instances and then it's it's pretty fast but typically the decoding phase is an n
+6:46
+squared uh complexity so decoding can be when you've failed it can be expensive um
+6:54
+so the other thing i talked about uh was well we've been looking at file systems
+7:00
+like the fast file system and ntfs which are overwritten when you write new
+7:06
+data so when you put new data into a file you overwrite the blocks that had the old data in it
+7:12
+an alternative which you might imagine is a lot more
+7:18
+reliable as copy on write file system so here's an example of a file system where i'm just showing
+7:25
+you a by binary tree think of these as the the pieces of the inodes and the old
+7:32
+version of the file sort of the blocks are down here in blue and they're in this tree
+7:38
+and the idea behind a copy on write system is that if i want to say write some new data at the end or overwrite
+7:43
+something i don't actually overwrite the original data but i build a whole new version of the file
+7:48
+that uses as much as the old one as possible so here was an example where i took this old block here
+7:54
+i added some new data to it and i made a new block with a copy and now by tying uh my new i nodes in
+8:01
+with the old ones i have uh by following the new version you can see that we've got a new version
+8:07
+of the file with this is updated but the old version's still there and so if i have a really bad crash in
+8:13
+the middle of writing the new version i can still recover the old version and i can pull various tricks to decide how
+8:18
+much of the old version to keep around or how many old versions to keep around and this is much more resilient to
+8:26
+random failures okay and there's uh several file systems that are like that
+8:32
+now it would be um potentially the question here is this more expensive in space or time it certainly is uh more expensive in
+8:39
+space if you want to think of it that way but what you're getting back is extreme resilience to
+8:46
+crashes and failures and the ability if you decide that this uh that you wrote something incorrectly you can go
+8:52
+back to a previous version so this has some pretty nice benefits you get from the space overhead because you notice that we're
+8:59
+we're not deleting old data right away and it can be a little bit more expensive in time
+9:04
+if you have to worry about how these things are laid out maybe it doesn't have as fast of a read
+9:10
+performance as something like the fast file system might be so what about more general reliability
+9:18
+solutions well if we wanted to go back to the fast file system let's say because we were worried about performance
+9:23
+and we wanted to make sure that the file system the operating system couldn't crash in a way that leaves things
+9:30
+uh vulnerable then what might we do and one of the things we talked about
+9:35
+was very carefully picking the order you write the blocks and then you write the inodes and then
+9:41
+you put the inodes in a directory and so on you do this in an order such that if it fails at any point you
+9:47
+can kind of throw out the things that weren't quite finely committed and
+9:53
+go through a pass on the file system find everything that's disconnected and you're good to go
+9:58
+the problem is that requires very careful thought so more general idea here is to use a transaction which
+10:03
+you've probably heard about if you've taken any of the database classes but the idea here is that when you go to
+10:09
+update a file you're going to use transactions to provide atomic updates to the file
+10:15
+system such that there's a single commit point in which the new data is uh or the new version of the
+10:21
+file system is ready to go and until you reach that commit point any of the things that you do to the file system can be undone
+10:28
+now if you think back to this copy on wright's example as i'm writing everything here and
+10:34
+producing my new version the old version is fine so if anything gets screwed up including just
+10:40
+throwing out the new version the old version's still there and if the only thing i need is to swap
+10:46
+the old version for the new version which with a single operation that's a single
+10:51
+point of commit for the new file system okay and so that's kind of like a transaction
+10:57
+the transactional ideas are a little bit more general okay and so we're going to use
+11:02
+transactions to give us clean commits to the uh integrity of the file system
+11:08
+and then of course we're going to use redundancy to protect the bits so the bits can be protected with uh
+11:14
+reid solomon codes and eraser other error correcting codes raids etc
+11:19
+okay now just to remind you a little bit about what we mean about transactions
+11:24
+it's closely related to critical sections that we talked about earlier in the term they extend the concept of atomic
+11:30
+updates from memory which is where they came up originally in early part of the
+11:37
+term to stable storage and we're going to atomically update multiple persistent data structures with
+11:44
+a single transaction and as a result we'll never get in a situation where the file system is partially updated
+11:50
+and therefore corrupted so there's lots of ad hoc approaches to this transactional-like thing i just
+11:56
+talked to you through the copy on right in the fast file system uh they originally would order sequences
+12:02
+that updates in a way so that if you crashed you could do a a process that scanned
+12:08
+the whole file system called fsck to recover from that those errors
+12:13
+but again that's very ad hoc so this idea of a general transaction is
+12:20
+like this you start with consistent state number one in the file system and you want to get to consistent state number two
+12:26
+maybe consistent state number one uh is the original file system and number two is what you get when you add some new
+12:33
+files and directories and data and the transaction is a atomic way to
+12:38
+get from the first state to the second one and we know underlying the uh those that single atomic view change
+12:46
+here there's going to be a whole bunch of underlying um a whole bunch of
+12:51
+underlying changes to individual blocks the question in the uh the chat here is what i mean by ad hoc
+12:57
+what i mean by ad hoc is that a person sits down and they very carefully think through well if i update this and then i update
+13:05
+that and then i update that and then i update that and the final thing i do is this
+13:10
+then i know that if it crashes anywhere along the way i'll be able to recover the original file system so ad hoc here
+13:16
+means that you come up with a solution that is uh maybe it works but you've had to
+13:23
+go through a long process of thinking it through to make sure it works and it's possible that you've got it wrong
+13:29
+okay so that's what i mean by ad hoc here we want something a little more systematic
+13:35
+okay so um and we're going to use transaction for this um so atomic here
+13:42
+atomicness is really the process of making sure that either everything happens or
+13:50
+nothing happens okay and atomicness in the log will happen
+13:55
+even if the machine gets unplugged you want to make sure that we still have that atomic property probably if you unplug it and you've got
+14:02
+this atomic property what's going to happen is your changes aren't going to happen okay so let's let's walk through this a
+14:07
+little bit more so transactions are going to extend this idea from memory to persistent storage
+14:15
+and here's a typical structure of course you start the transaction you do a bunch of updates if anything
+14:22
+fails along the way you roll back if there are any conflicts you roll back
+14:27
+but then once you've committed the transaction then that mere act of the of the commit operation causes
+14:33
+everything to be permanent now okay and so we'll talk about how to do
+14:39
+this in a moment but um this do a bunch of updates thing could be arbitrarily complicated it
+14:45
+could be allocating new inodes it could be grabbing some new blocks it could be linking them it could be doing all sorts
+14:50
+of stuff and the point is that none of that is going to be permanently affecting the contents of
+14:57
+file system until we commit and so that's what we're going to try to figure out how to do okay that's the
+15:02
+atomic-ness here is all of a sudden it happens or it doesn't happen at all
+15:09
+now of course a classic example you know uh transfer 100 from alice's account to
+15:14
+bob's account you see there's a bunch of these different pieces right alice's account gets debited a hundred
+15:20
+uh the branch account uh that hundred goes to the other uh bank and then bob's account somehow
+15:28
+gets a balance and so on and so uh there are a series of operations in
+15:33
+different parts of various people's databases and if only some of them happen then the
+15:39
+banking system becomes inconsistent for instance if it crashes the whole system crashes
+15:45
+between debiting alice's account and incrementing bob's account then not only did alice lose money
+15:51
+well she didn't get her hundred dollars but bob didn't get it either and so that would be bad okay and so this idea of beginning
+15:59
+transaction ending committing transaction is one in which none of these things happen until the commit now modern operating
+16:06
+systems uh the question is did they expose the transactions to the user um depends a little bit on uh which file
+16:14
+system you've got certainly there are some notions of transactions that are available others are
+16:22
+others are less available right now what we're going to talk about is mostly under the covers in a way that the user doesn't have access to
+16:31
+so the concept of a log to make all this work is the following if you look at all of
+16:36
+these pieces i've got here that represent parts of a global transaction
+16:42
+i'm going to write them in a chunk of memory slash disk that's sort of think of this as a
+16:49
+this is the log and think of this as a big chunk of disk and all of these things are going to be in there and they might be interleaved with other
+16:55
+transactions but what we're going to do is view this log serially starting from the left and
+17:02
+going to the right and we're going to start the transaction by
+17:08
+putting a start transaction marker in the log and then we can go ahead and do all of our stuff and everybody else can do
+17:14
+their stuff and it's only when we put a commit transaction at the end that now all of a
+17:19
+sudden these actions atomically happen okay
+17:24
+now a couple of things that should be clear from this one is when i put start transaction that
+17:31
+needs to get committed to the log kind of before anything happens and then when i put my various actions
+17:38
+in here before the final commit happens it has to be the case that all of these other things are in the log
+17:44
+so it can't be the case that i do a commit it gets on disk but all of these other things are still in memory somewhere
+17:50
+because then the machine could crash and i see well start transaction commit transaction but i have no idea what i
+17:55
+just committed and that would be bad okay so um the log is is clearly going to be
+18:03
+something that we're going to need to be pushing out to disk and it's going to be have an ordering requirement that's very
+18:09
+important in order to make this all work and the other thing that i'll point out here is notice that if i write these
+18:14
+uh operations in the log dump don't a b c d down and then i say commit
+18:22
+this doesn't necessarily mean that i've actually put them into the file system or actually produced the actions yet what it means
+18:29
+is that if if i were to crash and i hadn't done them yet i'd be able to wake up after the crash and go through
+18:35
+the log and figure out what the state of the system is supposed to be so the state of the system is not only
+18:41
+what's on disk in the file system but also what's in the log and um and ordered in a way that i can go
+18:48
+back and reconstruct after a crash and i'm going to show you a couple of animations here just to give you a better idea how that works
+18:54
+all right okay so the commit is like sealing an envelope and
+19:00
+saying the transaction now happened now um
+19:06
+so now the question is uh and shouldn't things be logged after they happen well uh in this type of log we're we're doing
+19:14
+um something in which it's called right ahead logging we're actually writing into the log
+19:20
+before it's put into the file system okay and the reason for that is so it's the opposite of the way
+19:26
+you're thinking of this i think um we want to write in the log first rather than modifying the file system so
+19:32
+that if the commit never comes because we crash then the file system's okay if we were to start modifying the file
+19:38
+system and then put the commits into log now we're in a bad situation where we might have already corrupted the file
+19:44
+system by doing a partial update okay so this is uh i'm glad you asked
+19:49
+that question this is the opposite maybe of the way you were thinking so thanks for that clarification question
+19:55
+um so here's a transactional file system uh example so we're going to get better reliability
+20:01
+through the log a-log changes are treated as transactions and a transaction is committed once it's
+20:06
+written to the log data is going to be forced uh to disk to get for reliability
+20:12
+uh there's a possibility of using non-volatile ram or flash or whatever to make this faster
+20:17
+because we can put things into non-volatile ram maybe more quickly than we can write it to the disk so perhaps
+20:24
+the nvram can serve as the head of our log and although the file system may not be
+20:29
+updated right away the data is going to be in the log the question here is does the log negate
+20:35
+the performance benefits of a buffer cache uh and the answer is it depends
+20:41
+um it depends on what you're logging not everybody not all versions of journaling file
+20:47
+systems we'll talk about that in a moment write all the data to the log first and then back to the file system
+20:52
+okay so let's just uh let's go forward a few more here before i answer that last
+21:00
+question in the in the chat here and then maybe i'll answer it for you hold on one second okay so the difference by the way between a
+21:06
+log structured and a journal file system is in a log structured file system
+21:11
+uh all the data is only in the log it doesn't even go to the file system whereas in journaled file system the log is really just
+21:18
+helping us get reliability okay and when do we start logging well
+21:24
+as soon as we've started up the file system we start the logging okay all right now um
+21:30
+maybe i will uh just give you a little bit of a preview here the question that's in the chat which i hadn't answered yet is
+21:36
+if not all actions have been completed and you crash how do you figure out which have and haven't
+21:41
+uh been completed and let me let's just hold that question and see if this gets
+21:46
+answered okay so we're going to focus in the next several slides on something called a journaling file system
+21:52
+where we don't modify the data structures on the disk directly right away we write updates in as a
+21:58
+transaction into the log kind of typically called a journal or an intention list
+22:04
+and um then when we commit then we're going to have the potential to put them into the file system
+22:10
+okay once changes are in the log they can be safely applied uh to the file system modifying inode
+22:17
+pointers directory mappings etc and the question that's uh in the chat here about well do we have to have all
+22:22
+of our operations be ident to make this work the answer is no and we'll see how this works in just a second
+22:28
+so well some of them need to be identity but let's see if this answers your question so garbage
+22:34
+collection is going to be a possibility here so once we've actually applied things out of the
+22:39
+log successfully into the file system then we can remove things from the log okay now linux essentially took the
+22:47
+original fast file system they called it ext2 and then they added a journal to it to
+22:53
+get ext3 so ext3 is really just like a fast file system linux style
+22:58
+uh with a journal okay and there are a bunch of options that linux gives you about whether for
+23:05
+instance to write all the data to the to the log first and then to the file system
+23:11
+and that double writing surprisingly enough uh doesn't always hurt you from a performance standpoint because the log
+23:17
+remember is is sequential and so it's very fast so a lot of other examples of journaling file
+23:24
+systems ntfs apple hfs plus linux xfs jfs cxt4 there's a
+23:30
+bunch of options here okay so let's create a file but there's
+23:35
+no journaling yet so think of this as like fast file system or ext3 so we can see where we're going with
+23:40
+this so when you create a brand new file and write some data there's a bunch of independent things
+23:45
+that have to happen so first thing is you got to find some free data blocks so here's an example let's call this yellow thing's a single
+23:52
+free data block i have to find ourselves a free inode entry so on in the inode table find a an
+24:00
+insertion point in the directory so maybe there's some blocks in the directory we're gonna change excuse me
+24:06
+all right and then we're gonna link things together so we're gonna write uh the map which
+24:12
+basically says uh mark which blocks are in use okay we're going to write the inode entry to
+24:19
+the blocks we're going to write the directory entry to point to the inode all right and when we're done uh now
+24:25
+we've got a a new pointer in a directory that's a mapping between
+24:32
+a name and an i number that points to an inode which we've allocated which points to a disk block
+24:37
+and now so notice all these different individual pieces uh and and the free space update uh
+24:44
+have all happened just to create a file and write to it and if we sort of partially do this and
+24:50
+we crash then we're going to end up with dangling blocks like for instance if we didn't successfully write the directory entry
+24:57
+then we could have an inode entry pointing to a data block and it's not in any directory and it's effectively lost
+25:03
+okay so let's see how we could add a log to this or journal so if you notice here we're
+25:10
+going to put this log in some non-volatile storage flash or on disk for instance is the simplest thing it's going to have a head
+25:16
+and a tail so the head is the point at which we write the tail is the point at which we read okay and let's go through and see
+25:23
+what happens when we write our new file so we're going to first find a free data block and notice
+25:29
+that i found the block but what i'm going to do is i'm actually going to find my free
+25:34
+inode entry i'm going to find my directory insertion point but i'm not going to actually do
+25:39
+anything instead what i'm going to do is i'm going to write a start transaction in the log
+25:45
+i'm going to write the free space map i'm going to write the inode entry
+25:52
+uh pointing at the uh you know which where it's supposed to go so i'm going
+25:57
+to excuse me write an inode entry here without actually writing the disk and then i'm going to write a directory
+26:03
+entry without actually writing it on disk okay and notice that all of these things are reversible
+26:09
+because if i crash at any point up until now i haven't actually modified anything in the file system so the file system is
+26:14
+going to look exactly like it did before i started this process okay now when i hit commit
+26:22
+poof all of a sudden it's committed now think this through for a second
+26:29
+notice there's no changes to the disk okay and yet the mirror act of writing commit to the
+26:35
+log now makes that file committed and the reason is that the state of the
+26:40
+file system is considered what's on disk plus what's in the log
+26:46
+okay and so if i crash at any point after the commit gets written in there what i'm going to do is i'm going to
+26:51
+scan the log and at that point i can apply the updates to the file system and
+26:57
+things are going to look okay and i can keep crashing so these are a dependent this was a question earlier
+27:03
+because the um the log has basically been choosing
+27:08
+blocks for us but we can keep overriding the same block over and over again with the same data and it's not going to matter
+27:13
+and so i can keep trying until i eventually get past the commit at which point the file system will actually be updated to reflect this
+27:20
+change so the mere act of writing the commit in the log means that that file has been written
+27:26
+with its new data okay so after commit we can replay the
+27:31
+transaction like i said suppose when we don't crash we can replay the transaction by just
+27:37
+writing stuff onto disk eventually copying everything there and once it's copied
+27:42
+then i can start moving the tail see how i'm applying stuff and if i get past the commit at that
+27:48
+point then i can throw out everything that's in the log okay now here's a good question in the
+27:53
+in the chat here so what about reads do they have to scan the log for changes that
+27:59
+haven't been flushed yet no this is where the block cache comes into play right so the block cache
+28:04
+has the most up-to-date state of the blocks uh as as reflected by the total state of
+28:11
+the file system including what's on the log and what's on disk and so the block cache since the block
+28:17
+cache filters the reads and writes from the user uh it basically makes everything fast
+28:23
+regardless of whether it's actually only in the log or if it's on disk
+28:29
+okay so the block cache is important aspect of making things faster
+28:35
+now uh the question here you can't flush until you commit uh that's correct so this is again right
+28:42
+ahead uh logging here well right ahead logging says that you have to get the log
+28:48
+values on the in the log before you hit commit once they're in the log then you can
+28:54
+flush things out to disk so yes you have to get them to the log first and then they can be flushed onto onto the file system on the disk
+29:04
+well if the cache is full and it's a really large write then then you have to make sure that uh
+29:11
+you've committed first okay um
+29:18
+so there's a lot of uh potentially complicated questions about scheduling here and when you're allowed to schedule things
+29:24
+et cetera i don't want to go into it too much right now but what i will say is you can imagine that the file system
+29:32
+knows when it's in tr when it might be in trouble by allowing too many writes uh before the log has been cleared and
+29:38
+all it has to do is put the clients to sleep uh until things have been properly flushed and then it can wake the clients
+29:44
+up okay and so this is you just have to keep track of what the current state is so that you always have this right ahead
+29:51
+logging property okay
+29:56
+now um once we've committed everything then we can just throw out the log and the tail has moved here
+30:01
+all right um what's the size of the log that's changeable so depends on how much data
+30:09
+you want to have now notice by the way that what we've got in this particular log
+30:14
+actually didn't log the data necessarily so we could write our data to uh the disk and it's only the
+30:21
+metadata that's logged that's one of the modes um that's one of the modes that
+30:27
+basically uh the linux file system has in another mode is one in which the data first goes
+30:32
+into the log and then goes back out on disk okay now uh if the
+30:38
+system crashes after commit but before we've fully applied
+30:44
+everything that's okay because we can just keep restarting because we don't remove things from the log until we've actually gotten past commit
+30:52
+with the thing not crashing and everything pushed out to disk that's the point at which we do a single
+30:57
+atomic move of the tail which throws out this particular entry
+31:02
+so we don't really need to know exactly which changes are ever been applied we just take wherever the tail was
+31:09
+you know so the tail might be here and uh we're trying to apply and we keep crashing over and over again
+31:16
+well we just we can restart um and it's back after we get past the commit that we can then
+31:21
+uh throw that log entry out okay this particular version of this the
+31:26
+changes are identity there are other ways you can do things but we're going to leave it this way for
+31:32
+now okay now let's look at this
+31:38
+a situation here where we started that process and we crashed and notice this is what it looks like
+31:46
+after crash so maybe we found our blocks and we started to write our updates we didn't get a commit record in here
+31:52
+then all we do is we just uh detect at this point that we've
+31:57
+crashed and all we have to do is we just throw everything out that hasn't been uh committed yet
+32:02
+and we're we're good to go all right and all of this stuff can be thrown out i didn't quite have a good
+32:08
+um example here but you can basically throw out things that you haven't touched and transactions without commit records
+32:14
+that are ignored from that point on all right um
+32:20
+the other thing is if uh we recover and we have complete transactions we
+32:25
+scan the log we find complete start commit examples and at that point we can just
+32:31
+redo as usual and in the process we update our block cache and then once we got past
+32:37
+that part of the boot then everything works as normal all right
+32:45
+so i've just given you the start but i hope it gave you the idea what's going on so why do we go to all this trouble
+32:51
+the answer is that updates become atomic even if we crash okay so we either get all is either
+32:57
+applied entirely or not at all and so all of these physical operations and there's potentially many of them
+33:04
+are a single logical unit okay we get an atomic update now you might ask isn't this expensive
+33:11
+well it is expensive if we are in the mode where we're writing all the data twice except
+33:16
+the log is typically um sequential on the disk and so the cost of writing
+33:22
+to disk in the log is actually much faster than trying to write all of the different
+33:27
+pieces throughout the file system so that's actually faster than you might think and there are some circumstances
+33:33
+where this write to the log with your data and then put it into the file system can actually give you some boost in
+33:39
+performance under some circumstances okay especially when you've got a bunch of random writes then you can get them
+33:45
+out on the disk quickly so modern file systems give you an
+33:51
+option to do metadata updates only in the log and this is where you're going to record the file system data structures like
+33:57
+directory entries inode use and etc and what happens in the worst case where you
+34:03
+crash but you haven't flushed your data because now you get a file with garbage in it but you don't lose a bunch of
+34:08
+files okay and so that's a trade-off between uh reliability and performance it gives you
+34:15
+sort of an option uh to do slightly less than uh full atomicity when it comes to the data
+34:22
+itself okay now um a full buffer cache
+34:27
+is uh could be an example yes where your write call comes back and not everything's been written that's correct
+34:35
+okay all right now let's talk briefly about something
+34:41
+that i wanted to remind everybody of are there any more questions
+34:48
+okay and so by the way ext3 is the uh is the version of the linux
+34:55
+ext2 file system fast file system it's got a journal in it and all they did was they took that file
+35:01
+system and they had a special file that serves as the journal so all right so i wanted to remind
+35:07
+everybody because we've had some people that i think have forgotten a little bit about the collaboration pro policy for
+35:14
+cs 162 so you got to be careful okay we
+35:19
+we do not want uh people importing parts of code from other
+35:24
+people okay so things that are okay here are for instance explaining a concept to somebody in
+35:30
+another group could be okay but don't explain exactly how to do something if it's a concept
+35:35
+that for instance i talk about in class that's a perfectly okay thing to talk about okay
+35:41
+discussing algorithms or strategies at a high level is probably okay okay discussing debugging approaches
+35:48
+like um sort of using you know how do you produce uh printfs
+35:56
+that you can go through easily to find out what's going on or you know what is your overall structure
+36:01
+for testing those kind of things are okay uh searching online for generic
+36:06
+algorithms like hash tables that's okay all right things that are not okay are
+36:13
+things that are likely to get caught by our uh catch by uh the code that we run
+36:20
+to to catch collaboration cases all right so sharing code or test cases
+36:26
+explicitly with another group or write out copying or reading in other groups code so you shouldn't be even looking at
+36:32
+other people's code okay or their test cases copying or reading online code or test cases from
+36:39
+prior years that's not okay okay so if you're straying into specifics about a particular
+36:46
+uh project or homework you're you're probably in the red zone okay
+36:51
+helping somebody in another group to debug their code that's also not okay we did have a good example
+36:58
+in a past term where somebody sat down with a group that was
+37:03
+having trouble and they were helping him debug um but they this person sat with them
+37:09
+for so long that as they kept kind of incrementally changing their code the code ended up
+37:14
+with a structure that looked so much like uh this uh the helpers groups code
+37:20
+that the two groups were flagged for over collaboration and that that's a problem
+37:26
+okay so um be very careful not to do that okay because we want you
+37:32
+to be all doing your own personal work on homeworks and uh exams of course and your own groups work
+37:39
+in group work okay so we compare all the project submissions against prior prior year submissions online solutions
+37:46
+etc and we will take actions against offenders that have sort of
+37:54
+violated this code okay and you can take a look on on the home page we have a discussion of
+38:00
+this in more detail so and don't put a friend in a bad position by asking for help that they
+38:06
+shouldn't give you okay we've had in past terms we've had people that have pleaded with friends of theirs uh until
+38:13
+the person just gave them some code to get them to leave them alone and that ended up
+38:20
+ending not well for both of the people so just uh try to do your own work okay
+38:28
+and i remind you this because we we have caught what appear to be a number of
+38:33
+collaboration cases and uh we've only gone through some some of the things so
+38:38
+try to try to not put yourself in a bad position okay all right
+38:47
+now that we have stunned everybody into silence let's uh let's talk about
+38:55
+some real topics again here so i'm going to assume that everybody will be very careful okay
+39:02
+so let me take this idea of logging that we just had in journaling and take it to its extreme okay so one
+39:10
+extreme is called the log structured file system which is an actual research file system on the sprite
+39:15
+operating system that was i have a paper up in the resources page you can take a look at it and
+39:21
+in this case it's like what i just told you with the journal but there is no file system underneath so
+39:27
+the log is the storage okay so the log is one continuous sequence of blocks that wraps around the
+39:34
+whole disk inodes get put into the log when they're changed data is put into the log et cetera and
+39:40
+everything's just in the log okay so here's an example where we create two new files dear one file one
+39:48
+deer two file two um and write new data for the files and here's the log
+39:54
+and notice this is a sprite log searcher file system and notice what happens is that there were some blocks and stuff in
+40:00
+the files there were some parts of the file system in the log prior to this picture
+40:07
+but we're writing file one and what we do is we write some data which goes into the log
+40:13
+and then we uh we change the inode for the directory that also goes into the log okay and
+40:20
+then we write some data for the second file and for the directory and all that stuff goes into the log
+40:26
+and ultimately uh if the since the inodes for deer one and deer two have changed
+40:33
+then we're going to put the updated inodes for say the root file system also in the log and when all is said and done all of our
+40:40
+data is in the log it's just in the in the order in which it was written
+40:45
+all right and um we never take it out of the log just stays in the log and then if we
+40:51
+overwrite say uh part of file one what will happen is we'll put the new overwritten data
+40:56
+and then we'll put a new inode which links to it and so on and at some point the data is uh going
+41:03
+to be kind of obsolete in parts of the log there'll be a bunch of holes and at that point we're going to do some
+41:09
+garbage collection but up until that point the log is the file system okay and it's
+41:15
+kind of like it yep there's a little bit of of that aspect so here's an example of the unix file
+41:20
+system fast file system where when we write data we're actually
+41:25
+writing the data on the block groups where it was intended to be close to the inodes
+41:32
+for that directory so here's an inode for the directory we write some directory data here's an inode for the file we write some file
+41:39
+data it's in a specific spot on the disk it's been laid out in a way to try to make it fast
+41:44
+and if you notice the data here is laid out to be fast for reading but the writes go all over
+41:50
+whereas the data in the log searcher file system is made to be very fast for writes
+41:55
+but reads will suffer and the whole if you read that paper which is which is a classic
+42:00
+what you'll see is the justification for this is right bandwidth is often at premiums you're going to
+42:06
+make it the rights go really fast and you're going to rely on the block cache
+42:11
+to be big enough to give you really fast read performance okay and um
+42:18
+so the other interesting aspect of this is as as we've been talking about transactions is that um
+42:26
+this fact that things are structured as a log means that we can really easily undo things if we've got a failure okay and
+42:33
+so part of what's in here is commit records and so if we crash in the middle of writing then we just go back to an
+42:38
+earlier part of the log and our file system's good to go without any changes so the log structured file system kind of has
+42:45
+built into it this idea of journaling because the log is the file system
+42:50
+okay now um so the logs what's recorded on disk
+42:57
+uh file system operations to figure out what's going on kind of logically replay
+43:02
+the log to figure that out and put things in the block cache to make it fast okay everything gets written in the log
+43:10
+large and portion large important portions of the log is cached in memory which is how we get
+43:15
+things to be fast and you do everything in bulk so the log is a collection of large segments
+43:21
+on the disk that are completely sequential relative to each other to
+43:26
+make things fast and if you read the paper you'll see that rather than what i first told you where there's a single log that goes through
+43:32
+the whole disk in fact there's a whole series of these big segments and the garbage collecting segments all right
+43:38
+um and the way you get free space back is you got a garbage collect um all of the holes that are in the log
+43:45
+after you've overwritten data and so there's a garbage collection process too that we won't go into for now
+43:50
+all right now the reason i brought this up is one thing i promised you a couple of weeks ago but never did was what about
+43:57
+flash file systems okay how are they different from the fast file system and i wanted to remind
+44:02
+you what flash is like so this is a a cmos transistor which you've probably
+44:08
+seen in some of your early classes and the idea here is that when this floating gate is uh
+44:16
+high then we end up with essentially turning a switch on so the data can flow
+44:23
+through this switch and when this uh floating gate is low then uh the switch is turned off so the
+44:28
+without this extra gate we um or say no floating gauge it's the control gate we end up with a transistor
+44:35
+the way that flash works is uh don't say that yet the way that flash works is we actually trap
+44:41
+electrons in this floating gate which has oxide on either side of it and the
+44:46
+result of trapping the electrons in there give us enough of a difference that we can detect
+44:52
+and that's a way that we can store a one or a zero in here in distinguishing from the non-uh
+45:00
+charge trapped state okay the thing that's funny about this is we can't write it
+45:05
+once we've written it we cannot overwrite it until we erase it so if you remember um i talked about
+45:11
+this a couple of weeks ago you can never overwrite pages what you need to do is you need to erase
+45:16
+big blocks of bits and then you keep them on a free list and you get these uh
+45:22
+4k byte pages that you use off the free list to build your file system with and then
+45:27
+eventually you garbage collect a big block and erase it again okay
+45:33
+and so this is a little different from say a disc okay um and another thing that's
+45:40
+important here is that these the way i write as i as i alluded to is i trap
+45:45
+electrons on this floating gate now the way that that happens is i raise this word line so high that
+45:51
+the electrons go zooming across the insulators and get on the floating gate and if i go even higher i can encourage
+45:57
+them to go away and clear the gate off well that's a pretty uh harsh process
+46:03
+and eventually electrons get trapped in the in the insulator and then this
+46:08
+doesn't work as well and so the flash actually wears out and so anybody making
+46:14
+a file system out of this has to be careful not to erase and overwrite too many times okay
+46:21
+and uh yes we trap electrons to uh to uh store reddit posts posts and cat
+46:27
+videos and as i mentioned uh because we're trapping uh things in here this is a higher energy
+46:33
+state it's technically it's heavier and so you can go look at where i talked about a few lectures ago
+46:40
+the fact that a kindle is technically heavier once you've put books on it okay now the the part that
+46:46
+one of the parts that makes this easier is what's called the flash translation layer which uh basically says that unlike
+46:54
+a disk where we number all the sectors and then the file system says i want you know sector 5496
+47:01
+what happens in a flash or ssd is there's actually a translation layer so when you ask for a particular number
+47:08
+that goes through a translation layer and tells you which block on the flash is actually the current
+47:14
+version of 5226 and as you go through overriding that
+47:20
+from the operating system level the underlying flash translation level will keep changing which physical block there
+47:26
+is okay and so that underlying flash translation layer automatically takes care of where
+47:31
+leveling and making sure we're not wearing out our bits but the question might be is there something we could do with the file
+47:36
+system and make that work better okay and um
+47:41
+there's firmware that run on ssds and so on and so the question is can we take advantage of
+47:47
+this information to do something with it and the answer is yes so the flash file system
+47:53
+um the f2fs file system which is actually used on mobile devices
+47:58
+like pixel 3 from google it was originally from samsung is actually a
+48:04
+file system that's been adapted to use the properties of flash it assumes that this ssd interface which
+48:11
+looks like a disk for all practical purposes has underneath it a flash translation layer the fact that
+48:18
+random reads are very fast they're as fast as sequential reads and that random writes are essentially
+48:23
+bad for flash storage and the reason is that if i write randomly then i make it a little harder
+48:29
+for uh for the underlying flash translation layer to erase big blocks
+48:34
+because to erase a big block where you have a bunch of random blocks written you actually have to copy the data out of the blocks
+48:42
+onto some pristine ones and then you can erase and so that actually ends up wearing the flash out a little bit more
+48:48
+if i do random writes okay and so we're going to minimize writes or updates and try to keep right
+48:54
+sequential and so what they do is they actually start with a log structured file system uh with ca and a copy on write file
+49:01
+system made out of it keeping rights as sequential as possible and there's a node translation table to
+49:08
+help us keep things sequential and you can for more details you can actually check out paper in the reading session
+49:14
+section as well called the f2fs a new file system for flash storage
+49:20
+okay but just to show you a little bit uh the log in the flash file system which i'm
+49:27
+showing you here is actually split into a whole bunch of segments and those segments are ones that get
+49:32
+written a lot versus ones that aren't written as frequently and so they actually lay out a bunch of different logs to try to
+49:39
+manage how how busy the file system area is there's a translation table inside the
+49:47
+operating system in addition to the one that's on the ssd and they try to classify blocks as being
+49:52
+written frequently and not okay and there's a checkpoint operation and so on i'm not going to go into great
+49:58
+detail on this but i did want to mention some of these things so if you're curious you can take a look
+50:03
+for instance here is uh an index structure of inodes and if you look at the log structured
+50:09
+file system what you see is that if i update a file file data i write that in the log then i've got to write
+50:16
+the uh direct pointer block over again into the log then i got to write the indirect pointer and then i got to write
+50:21
+the inode and then i got to write the i know maps and so on i've got to write a whole bunch of blocks
+50:27
+just because i changed some data in the log structured file system and that's because uh i never update in place in the log
+50:34
+structured file system i work my way through by writing all of the change things into
+50:39
+the log well this means that there's a lot more changes and so one of the things that they do
+50:44
+in this f2fs is they actually use a second translation table to
+50:50
+translate so that the inode for instance at a higher level has a name for this block and that block
+50:58
+is in a translation table okay and so they make some interesting modifications to the log structured file system
+51:03
+all right i'm not going to go into this in any more detail but i just wanted to give you some ideas of what you might go through to try to make
+51:10
+things faster okay and to take advantage of the fact that you can do random reads
+51:16
+but random writes are uh expensive and wear the file system out
+51:23
+all right now time to switch gears um unless there
+51:30
+were any additional questions on log structured file systems or transactions or what have you maybe i'll pause for a second
+51:37
+while everybody's digesting the thoughts here
+51:49
+so in both the log structured file system and in the f2fs files are just in the log all right
+51:56
+there is no file system uh there's no other file system underneath it
+52:04
+so log structured file systems are good for writes can anybody answer why the log structured file system might be good
+52:09
+for writes it's a good question right the log is
+52:16
+sequential so therefore on a disk
+52:21
+it goes on the track rather than randomly writing all over and so it doesn't matter what your
+52:27
+rights are they all go right at one after another on a sequential set of tracks
+52:32
+on the disk and so they're very fast because you're avoiding seek time in the uh f2fs the advantages
+52:39
+is a little bit different but you're sequentially writing a whole bunch of blocks so that when you
+52:46
+go back to over item again the uh the log can be erased as a group
+52:51
+of blocks can be erased and it's so it's my it matches up with the underlying
+52:58
+architecture of the system so the the log structured file system
+53:04
+does lead potentially to fragmentation in the sense that you got a lot of holes in old parts of the log
+53:09
+and that's where garbage collection comes into play and so if you take a look at the papers you'll see that what really happens is the log as
+53:16
+as time goes on the old parts of the log have more and more holes in them because you've overwritten data that is in those places and at some point you
+53:24
+just take the data that's remaining you copy it to a new part of the log and then you
+53:29
+reclaim everything that was in that old part of the log so it's a type of garbage collection
+53:34
+all right good
+53:40
+now so switching gears um if you remember i think the first day
+53:48
+i kind of said what's what's cool about operating systems is they are part of this huge world-class
+53:56
+system everything from little tiny devices tied into local networks
+54:02
+to cars to uh phones to refrigerators and computers
+54:07
+and up in through big machine rooms in the cloud and so on all are part of one huge system and um
+54:14
+the when i when i think about um when i think about what i'm interacting with on a
+54:20
+day-to-day basis i like to think about how the things i do down at the small scale
+54:26
+are actually utilizing resources spread throughout the globe okay and it's amazing when you think
+54:32
+about it um sometimes when i think about the whole thing it's it's astounding to me
+54:37
+that it all works somehow and sometimes it doesn't entirely work but it mostly works but the interesting question that comes
+54:44
+to mind is sort of how do you get all of these things that are spread uh geographically and in
+54:50
+domains of fast local connection but really slow uh long distance connection
+54:55
+et cetera how do you get them to all work together and so uh for the last few lectures um
+55:00
+we're getting down to the last like five or six lectures here i'm going to talk a bit about um
+55:07
+distributed systems and how they can all work together to do for instance distributed decision making
+55:13
+which is a topic we're going to start today um and so to start that topic let's bring back some
+55:19
+what it turns out to be very old terminology but i thought i'd make sure we were all on the same page here so a centralized system is one in which
+55:27
+there's a central component a server of some sort that is uh performing all the major
+55:32
+functions and you have a bunch of clients that are all talking to the server and that's typically called a client
+55:38
+server model okay and many of the things that you deal with with your cell phone for instance
+55:44
+where the cell phone is one of the clients and something in the cloud is a server that's actually
+55:51
+that's actually like a modern analog of this traditional client server uh situation here the question that
+55:58
+immediately comes to mind with a centralized server is well how do you scale this i mean what happens if you've got not three clients but
+56:04
+a hundred thousand or a million clients clearly one server can't do it okay and so you know we know that in the
+56:11
+cloud there are many servers but the question might be how do you structure them to do
+56:16
+something intelligent when you've got many components okay now a completely different model is
+56:23
+what i like to call the peer-to-peer model in which every component in the
+56:28
+peer-to-peer model is a peer of the other components so if you notice in this client server model
+56:34
+we really had the server was kind of king and the clients were subjects or
+56:41
+something like that whereas in the case of the peer-to-peer model we we have a whole bunch of peers
+56:46
+that are all interacting with each other and uh you know you might ask the que
+56:51
+you know in this client server case it's pretty obvious who's responsible for what you get in the peer-to-peer model it
+56:56
+becomes unclear okay but the peer-to-peer model is uh
+57:03
+kind of a good starting point for if we want to try to make this server idea spread and handle a really
+57:11
+high load so for instance maybe we could draw a box around a bunch of these guys working in peer-to-peer mode
+57:16
+and treat that as a server okay um so what's the motivation for
+57:23
+distributing in that way rather than having a single client and you know you could come up with lots
+57:28
+of reasons right why do people do anything well here maybe it's cheaper and easier to build lots of little simple computers rather
+57:33
+than a huge server in the middle or maybe it's easier to add power incrementally so what i mean by that is
+57:39
+if i've got a good peer-to-peer model and i need more power i just add some more computers to it right and if things work
+57:47
+then by adding a few more servers or whatever now i've got a more powerful system than i started with
+57:53
+okay and i can do that incrementally maybe users have complete control over some of their components so maybe
+57:59
+that big peer-to-peer system i've got some that i own and yeah i'm going to help everybody else a bit but i have
+58:05
+full control over my hardware and i can bring it back when i want and of course collaboration um is an
+58:11
+obvious goal here because maybe by putting together a peer-to-peer model it's easier to collaborate
+58:17
+so the promise of these distributed systems is really that it's they're much more available because there's more components that are likely to be up
+58:24
+it's better durability so maybe by copying my data to lots of different machines it's more
+58:30
+likely it'll survive a crash and maybe there's more security because
+58:35
+each piece is smaller and maybe easier to make secure okay now you should be questioning some
+58:42
+of these statements here for a moment the reality uh is typically different okay so this
+58:49
+is leslie lamport uh he's he's done all sorts of really cool system stuff
+58:54
+and we'll talk a little bit about um a couple of them uh in the next lecture and a half but uh what he like
+59:01
+to talk about is the fact that the reality behind a lot of distributed systems is actually disappointing so the availability is worse
+59:08
+rather than better because it depends on every machine being up he's got a very famous quote which is a
+59:14
+distributed system is one in which the failure of a computer you didn't know existed can render your own computer unusable all
+59:21
+right it can have worse reliability because you lose data if any machine crashes
+59:26
+uh it can have worse security of course because anyone in the world can break into one component and if they're all
+59:32
+tied together they've broken into everything so distributed systems have a high
+59:37
+promise but you got to be really careful how you use them right coordination becomes very
+59:42
+difficult so you got to coordinate multiple copies of shared state information and what would be easy in a centralized
+59:48
+system because everybody's going through one central computer becomes a lot more difficult when you've got things
+59:54
+distributed and of course trust security privacy denial service these are all words that
+1:00:00
+you've heard a lot of but many new variants of these problems arise as soon as we start distributing
+1:00:06
+so can you trust other machines of a distributed application enough to perform a protocol correctly
+1:00:14
+i think there's a corollary of lamport's quote that i like to to think of which is a distributed system is one
+1:00:19
+where you can't do work because some computer you didn't even know existed is successfully coordinating an attack on your system
+1:00:25
+all right that's the standard ddos so what are some goals
+1:00:32
+of this kind of system so you'd like transparency which is the ability of the system to mask its complexity remember
+1:00:38
+earlier i said well the way we go from a server system to something that can handle lots of clients a hundred thousand or a million
+1:00:45
+is we put a bunch of things together but we draw a box around them and we make it transparently behave the
+1:00:50
+same way as a single computer would okay so we don't have to know about the complexity so what are some
+1:00:56
+transparencies we might come up with well one is location transparency where you don't have to know where resources are located
+1:01:03
+pretty much anybody who's dealt with the cloud has understood what location transparency is
+1:01:08
+like perhaps migration so that resources can move around maybe for better performance or better
+1:01:14
+durability or what have you without us having to know uh that they've been moving maybe
+1:01:19
+replication well perhaps i pay to make sure my data doesn't go away and so underneath the covers the system
+1:01:26
+transparently increases the number of copies or maybe it does erasure coding transparently in a way that i don't need
+1:01:32
+to know about but makes my data much more durable maybe i don't have to know
+1:01:38
+how many users are out there so uh one of the things that has worked pretty well about the cloud
+1:01:44
+is everybody's kind of interacting point to point between their phone and something out there uh without having to know how
+1:01:51
+many other people are acting with something out there okay and so that level of concurrency
+1:01:56
+uh works pretty well if you're just working uh one-to-one on something now if you're
+1:02:02
+actually collaborating on something then that gets a little more tricky and so concurrency uh is
+1:02:07
+is problematic under some circumstances parallelism so the system may speed up large jobs by splitting
+1:02:14
+them into small pieces transparently without telling you fault tolerance okay that's kind of like what
+1:02:20
+i said about replication maybe the system's going to hide the fact that things are going wrong and do so in a way that you still make
+1:02:26
+forward progress okay so transparency and collaboration require some way for different processors to
+1:02:32
+communicate with one another and of course that's going to lead to the need for networks and so on and we're going to talk about networks
+1:02:39
+in more detail in a lecture or two but for now i want to talk about this idea of
+1:02:46
+decision making being spread across a bunch of nodes because that's kind of the beginnings of
+1:02:51
+how we do this particular thing so um the question about is it a goal for
+1:02:56
+us to not be able to tell where resources are located uh i i would say yes
+1:03:03
+and no i think it's better to think of it as i don't want to know have to know where
+1:03:08
+the lo where the um resources are unless i care right i'd like the system to
+1:03:15
+transparently adapt them as long as it's within the uh boundaries of my
+1:03:22
+policies and my goals for privacy and what have you i'd like the system to deal with that without me having to deal with it and
+1:03:30
+if i care then another goal would be able to selectively break the transparency to meet some goal for why i
+1:03:38
+wanted to care but then the rest of the transparencies are still there so it's really the desire to not have to
+1:03:44
+know um and a really important transparency by the way
+1:03:50
+is what happens when a machine crashes it's storing some of your data you don't want to have to somehow go log
+1:03:57
+into your application and change an ip address to
+1:04:02
+point to a different server just because some surgery crashed you'd like that process to be transparent okay so think of these
+1:04:10
+goals as things that i would like to be transparent unless i care
+1:04:16
+okay perhaps you think of it as opacity but i think it's really transparency
+1:04:21
+it's uh masking complexity behind okay so i don't have to know
+1:04:28
+um so how do entities communicate well some sort of protocol so clearly there's going to be um
+1:04:34
+communication through a a network of some sort of messages
+1:04:40
+and a protocol is really an agreement on how to communicate including things like syntax how does a communication structured and specified
+1:04:49
+and semantics about what is communication means so actions taken where uh transmitting receiving when a
+1:04:55
+timer expires et cetera okay um the uh
+1:05:02
+so i'm noticing on the chat here so masking equals transparency so that is a funny uh a funny use of
+1:05:08
+terminology perhaps but um you'd like things to
+1:05:13
+um be uh invisible to you happening under the
+1:05:19
+covers that's where the word transparent so it's sort of the you see the functionality uh without
+1:05:24
+having to know what's happening underneath and so that's that's often called a transparency i realize it seems
+1:05:30
+it seems a little a little strange but that is a use of that terminology
+1:05:36
+so for instance protocols are often described
+1:05:42
+by a state machine on either side so here's an example where i've got two state machines
+1:05:48
+and part of what the protocol is doing is it's tracking the states on both sides so that both
+1:05:54
+sides have the same notion of the state of the world and the protocol is responsible for making
+1:06:01
+sure that that state is maintained so that if both sides suppose this is separate sides of the world and the
+1:06:07
+state machines are being transparently replicated that's again the use of the story transparent then um then i can act on the current
+1:06:15
+state of the system here uh say at berkeley in beijing and i'm and i have confidence that i'm working
+1:06:22
+on the same information as the other side um and so usually there's some stable storage that's part of the state
+1:06:28
+replication you could even think of a simple example
+1:06:33
+might be that these are two versions of the same file system there's a transparent protocol and the states represent the state of
+1:06:39
+the file system and it's keeping things in sync okay so that's another example of uh of
+1:06:44
+a good protocol okay and so um you know we want
+1:06:50
+among other things stability in the face of failure so even when parts of the system are failing or the
+1:06:56
+storage falls apart in one place but it's there's still storage in other places
+1:07:01
+we'd like the state machine replication to uh continue to work properly and it may
+1:07:07
+be that endpoints uh are selectively failing but if i were to vote
+1:07:13
+let's say among the states of all the different uh participants so let's suppose i've
+1:07:18
+got three participants and one of them fails a voting process could maybe be employed
+1:07:24
+to figure out what the real state of the system actually is and we'll talk about some of this in a moment
+1:07:30
+so examples of protocols and human interaction i mean i thought i'd put this down just for the heck of it you know you got you got a phone you
+1:07:37
+pick up the phone call somebody you listen for the dial tone okay so maybe you don't do that on a
+1:07:43
+cell phone but see you have service you uh you dial the number you hear
+1:07:49
+ringing and the caller says hello you say hi it's john or uh hi it's me um that's
+1:07:56
+my favorite kind of goofy introduction it's like well what's that about who's who's me
+1:08:03
+but then uh you kind of say uh hey do you think blah blah blah and they say yeah and you say goodbye
+1:08:12
+and they say goodbye and you hang up now uh this is probably a conversation that you had
+1:08:18
+late at night sometimes including the blah blah blah i know i've had a few of them myself but
+1:08:23
+really you're thinking about a protocol because there's a protocol which goes from ringing to answering at the other side to
+1:08:30
+responding so the answer comes back and now you know that that connection's been set up or
+1:08:37
+the caller says something the callee responds with a response and then there's some process for
+1:08:43
+hanging up and so this protocol of synchronizing the states between the
+1:08:48
+person that made the call and the other person is is a human interactive version
+1:08:53
+of uh what we would like to do in our protocols okay and um the problem
+1:09:02
+is you know there's many pieces of hardware this has been our standard issue throughout this whole term where we
+1:09:08
+talked about the fact that hardware is vastly different uh you know
+1:09:13
+at the i o level and so how do we deal with that and so if you look here uh when we're talking about communicating
+1:09:19
+we have a bunch of applications at one level we have a bunch of ways that things are communicating you know maybe
+1:09:25
+at coaxial cable or fiber optics or whatever and the question is um the many
+1:09:31
+different applications have to communicate over a bunch of different media and
+1:09:36
+there are many different styles and what do you do well you don't want to make a point-to-point
+1:09:43
+uh application where skype talks uh one way through a coaxial and
+1:09:49
+another through fiber optic and another through wireless and so on because you're gonna very rapidly get n squared uh blow up in complexity right
+1:09:57
+so for instance we added some new application like http it shouldn't be the case that we have to
+1:10:03
+write a new communication module for every type of thing that we're going to communicate
+1:10:09
+okay communicate to and similarly if we come up with a new way to
+1:10:14
+communicate like a packet radio or something we don't want to have to do an n squared uh communication between every
+1:10:21
+application and every new communication media you know this this looks silly when you think about it but clearly there's a
+1:10:27
+level of abstraction kind of like our device drivers uh that needs to be employed here and if you've
+1:10:32
+taken uh you know if you take a networking you certainly know what that's about right so how does the internet avoid
+1:10:40
+this well we put a layering in here okay we put intermediate layering and a
+1:10:45
+set of abstractions for providing network functionality and technologies and so as a result
+1:10:50
+a new application uh that we add on here like http really has to figure out how
+1:10:55
+to communicate with this intermediate layer which is often called the narrow waste of the internet protocol
+1:11:01
+looks kind of like an hourglass and you know if i put some new communication
+1:11:07
+technology i basically have to figure out how to match the intermediate layers to
+1:11:12
+communication technology and i've just made my problem much simpler because of abstraction
+1:11:18
+okay and of course this is the typical hourglass that everybody sees when they take an
+1:11:23
+ip class networking class where ip is the protocol of choice at
+1:11:29
+the narrow layers it wasn't always that way but it's became become that way and now all of the
+1:11:34
+layers above have to just send ip packets and all the layers below have to
+1:11:39
+communicate ip between different sites and if we do that then we basically have
+1:11:44
+the internet okay and um it's astonishing how well this has worked uh
+1:11:52
+to basically connect a whole bunch of devices and computers and storage and everything
+1:11:59
+simply by standardizing uh ip in the middle here okay um so what are the implications of
+1:12:06
+this hourglass so there's a single internet layer module that's the ip protocol allows arbitrary networks to operate any
+1:12:14
+technology that supports ip can exchange packets it allows applications to function on all networks so applications that can
+1:12:21
+run on ip can use any network um it supports simultaneous innovations above and below
+1:12:27
+so um you know you can do all sorts of stuff to the above the application layer you can do
+1:12:33
+all sorts of stuff below the the physical layers you can have many different physical layers
+1:12:38
+but changing ip itself has turned out to be very challenging so there's a funny story about ipv6 which
+1:12:45
+has been the you know the next ip protocol for the last 20 years only in the last i would say five years
+1:12:51
+has it really taken a hold and started to become a reasonable protocol it's been very hard to swap out
+1:12:58
+ipv4 which is a traditional one with ipv6 because it had been so
+1:13:03
+embedded in the world so some drawbacks however of layering
+1:13:08
+are the kind all of the drawbacks that you could imagine especially now that you've been through 162 so you know layer n
+1:13:16
+may end up duplicating stuff the layer n minus one is doing or layers need a bunch of the same information so you end up communicating
+1:13:22
+a bunch of information up and down the layers and you got a bunch of memory copies and it's expensive um
+1:13:28
+layering may hurt performance well that you know the any api could potentially be made faster
+1:13:35
+by flattening the api out uh but then again you know if you do this the wrong way you end up with
+1:13:41
+this n squared communicate or n squared pattern again and that's not a good idea
+1:13:46
+right so there's this trade-off between performance and uh and apis and and layering and it turns
+1:13:54
+out that with ip that's been an extremely powerful trade-off okay now
+1:14:02
+um the what i'd like to talk about is uh the end-to-end argument um there
+1:14:08
+was a hugely influential paper which again is on the resources page by seltzer reed and clark from 1984
+1:14:16
+um so i realized that's ancient history now but it's one of these papers it still has uh some very important philosophy in it
+1:14:23
+that i think i want to make sure everybody gets here so it's the some would call it the sacred text to the internet um there's been endless
+1:14:31
+debate sorry talking too long endless disputes about what it actually
+1:14:36
+means everybody cites it as supporting their position um
+1:14:42
+you know you could imagine that that's true of pretty much any good document uh that lots of people read they'll get
+1:14:49
+into philosophical arguments about it the message however is pretty simple which is that some types of network
+1:14:55
+functionality can only be correctly implemented from end to end and things like reliability security etc
+1:15:04
+are examples of such okay and because of this the end hosts can basically satisfy the requirements
+1:15:11
+without the network help and therefore and they must do it anyway and therefore you could imagine that the
+1:15:17
+network didn't have to do that okay so the the way that this paper ends
+1:15:23
+if you go to read this is basically that you don't have to go out of your way to implement stuff in the network because you got to do it at the end
+1:15:29
+points anyway all right and the simplest example here that they give which i think is very uh
+1:15:35
+telling is the idea of you got two hosts and uh host a has a file they want to send to
+1:15:41
+host b and of course you've got uh applications for the file transfer you've got the
+1:15:46
+operating system you've got networks etc all of these are parts of that and you might ask yourself well how do i
+1:15:52
+transmit well you know the application reads it off the disk uh
+1:15:58
+sends it to the operating system which then you know sends it out of a socket which then comes up the operating system
+1:16:04
+the other side goes into the application which then writes it to the disk and the question is how do you make that
+1:16:11
+reliable well one option is you make everything
+1:16:16
+reliable okay so you make it a 100 percent reliable that you load the file off the
+1:16:21
+disk and then 100 percent reliable that uh things get transferred from the application to the os
+1:16:27
+so that transfer might not be so bad but then you got to somehow uh make sure that when it goes across
+1:16:33
+the network every link that's in the middle so if we're transmitting from berkeley to
+1:16:38
+beijing there's a whole bunch of other things there's transatlantic cables you know there's a bunch of hops at
+1:16:45
+different levels and there's a lot of uh detail in this link that we're not talking about right
+1:16:51
+now and we'd have to make sure that every link was a hundred percent reliable
+1:16:56
+okay and that way we concatenate everything together and we get 100 transfer okay
+1:17:03
+except it never works that way right it's very hard to make something 100 reliable and furthermore it's still
+1:17:09
+possible that um you missed something and uh one of the things that
+1:17:15
+is uh is interesting about that paper is they relate a story from uh 1984 in which
+1:17:23
+uh they were transmitting um copies of the kernel source code from
+1:17:30
+one host to another and it was only going across a few buildings or whatever but there were a lot of hops in between
+1:17:36
+and they were carefully check summing and catching every hop along the way to try to make sure that this was
+1:17:41
+never screwed up except what they didn't realize with the was that in some of the routers along
+1:17:47
+the way um even though each of the links were carefully check summed and made to be reliable
+1:17:53
+the routers actually had a bug in them that would uh i think it would transpose
+1:18:00
+bits every million bytes that it transmitted in memory because there was a bug in the source code of the router
+1:18:07
+and as a result even though they check summed everything along the way the data got slowly corrupted and the uh
+1:18:14
+the kernel had been transferred back and forth across these links a couple couple of times many times and as a result the data was
+1:18:21
+slowly getting corrupted okay we used to call that bit rot all right and it was totally unexpected
+1:18:27
+and it uh things got so corrupted they had to pull things back off of tape in order to fix it okay so this idea of
+1:18:34
+making things uh reliable by fixing everything in the middle is uh
+1:18:40
+not only very hard it might not be the right thing so what's the other option is you take it from uh point a
+1:18:47
+and you transmit it as well as you can to point b and then you check at the end you say well did i
+1:18:52
+uh did i get the file that it was expected and so i compute a hash or a checksum at one end i send it
+1:18:58
+to the other i check it out and either i've got the file or i don't and if i don't then i can retransmit
+1:19:04
+okay and so what's good about this end-to-end approach is it actually makes up for all sorts
+1:19:10
+of problems in the middle by catching uh bad transmission okay now of course
+1:19:16
+what's pointed out in the paper is uh if you've got a one kilobyte file
+1:19:22
+versus a versus a you know gigabyte file the problem is the more data you're
+1:19:27
+transmitting so the gigabyte file is more likely to fail in the middle than the one kilobyte file and so if you
+1:19:34
+have a really large file and you wait until the very end before you check summit you're going to have a lot
+1:19:39
+of failures before you succeed and in fact it may take a very long time and so that's why you want to break
+1:19:44
+things into chunks and sort of individually check and end
+1:19:50
+but the point of this uh example is that if things have to be done at the
+1:19:55
+endpoints then maybe you don't need to do them as carefully in the middle
+1:20:00
+as you might otherwise okay and and then as a result any reliability you might do
+1:20:07
+in the middle is really for improving performance okay now um so the second option is basically
+1:20:16
+uh saying well here's the check some of what i got it goes back and as a result you pull the file off
+1:20:23
+the disk and this application the original one checks it and sees whether you're good to go okay now um
+1:20:32
+solution one as i said was incomplete because if the memory is corrupted the receiver has to do the check anyway
+1:20:37
+solution two is complete because you you had to do it anyway and so um
+1:20:43
+is there any need to implement reliability to all at the lower layers okay and the end to end argument by the
+1:20:48
+way if you know anything about the history of the internet is kind of what was used to justify the um the structure of the basic
+1:20:57
+internet as it is right now which is a datagram service we'll talk more about that in a
+1:21:02
+lecture or two where packets of small size are sent across and they either make it or they
+1:21:08
+don't but we don't worry about that because
+1:21:13
+we're checking everything at the end to end okay and so this paper and the end to end philosophy in
+1:21:20
+general was kind of the reason the internet's the way it is now um
+1:21:26
+it could be more efficient though to do something okay so as i mentioned yes we could just send the the uh the
+1:21:33
+data to the other side and hope it gets there and retransmitted if it doesn't
+1:21:38
+but at some point that might be too expensive to keep re-transmitting if i had a really bad link in the middle
+1:21:44
+and so there's a performance reason for improving things in the middle but there isn't a functionality need to improve things in
+1:21:51
+the middle and so this discussion leads to a trade-off about how much work do you want to do in the middle
+1:21:57
+okay so implementing complex functionality in the network doesn't reduce the host implementation complexity because you still got to do
+1:22:03
+it and it does increase the network complexity probably gives you delay and overhead on every application
+1:22:10
+even if they don't need it so this is kind of arguing that maybe you don't need to do something in the middle if you have to do it at the ends okay
+1:22:16
+but implementing things in the network can enhance performance in some cases like very lossy links
+1:22:22
+now what's interesting is a conservative interpretation of the end to end argument just like
+1:22:29
+there's always conservative and liberal interpretations of pretty much anything could say well don't bother implementing
+1:22:34
+it at all at the lower level unless it can be completely implemented at that level and doesn't need to be in
+1:22:39
+the end points or unless you re actually relieve burden from the host don't bother
+1:22:46
+a modern interpretation or a moderate i like to think of modern as well is basically think twice before
+1:22:52
+implementing something in the network if the host can do it correctly
+1:22:58
+then implement it in the lower layers only if it's going to be a performance enhancement
+1:23:04
+or has a good justification and only do it if it doesn't impose burden that uh on apps that don't need it okay
+1:23:12
+and this is the interpretation that i always use and that i suggest in this class and you might ask well is this still
+1:23:18
+valid and there are some instances where this particular modern interpretation is
+1:23:25
+in fact uh not even quite enough okay which is what about denial of
+1:23:31
+service so if somebody is going to attack a communication stream from outside there might actually be a
+1:23:37
+pretty good argument for putting firewalls and checksums and
+1:23:43
+everything on intermediate links to basically prevent the denial of service so in that instance
+1:23:48
+even though the end-to-end communication still has to happen you're enhancing the overall path in the middle by
+1:23:54
+putting functionality in there or privacy right if i want to prevent privacy putting firewalls in the middle
+1:24:00
+makes sense okay or maybe there's things that have to be done in the network so certain
+1:24:05
+routing protocols which pick paths from point a to point b have to be done in the network they can't
+1:24:10
+really be done too well end to end all right so how do you actually program
+1:24:17
+a distributed application so this is going to be our topic for next time you need to synchronize multiple threads
+1:24:22
+running on different machines there's no shared memory there's no test and set so all of the stuff that we
+1:24:28
+talked about earlier in the term really isn't quite available to you in this simple view of the world
+1:24:34
+which is a bunch of messages i send from one thing and i receive on the other so there's one abstraction over the
+1:24:40
+network it's already atomic so no receiver gets a portion of the message because
+1:24:45
+typically we check some things and so if a bad message goes through we stop uh we throw it out and retransmit
+1:24:54
+so the interface is sort of like a mailbox where the sender directs a message at a receiver's
+1:24:59
+mailbox as a temporary holding area at the destination and we have the idea
+1:25:05
+of a send of a message to the mailbox and a receive which is blocking often to wait for a message to show up
+1:25:12
+now what we're going to do next lecture is we're going to say can we take this basic idea and can we build something
+1:25:18
+interesting on top of it that'll allow us to build these distributed applications will allow us to do
+1:25:26
+to synchronize state machines amongst multiple machines and ultimately lets us do
+1:25:32
+pretty interesting uh distributed peer-to-peer style applications so that will be for next
+1:25:37
+time so in conclusion i brought back this idea of the ilities okay availability is how often
+1:25:44
+is the resource available durability how often is it preserved against faults reliability how often is the resource
+1:25:50
+performing correctly we talked about preserving the bits so i like to think of erasure codes or raid
+1:25:56
+is preserving the bits copy on right is about
+1:26:02
+preserving the integrity not the bits so with by copy on right i make a bunch of
+1:26:08
+changes that are new by not overwriting anything but rather sort of using pointers to the old data
+1:26:15
+that's copy on right and that allows us to uh basically preserve the integrity of the old data
+1:26:21
+even while i'm changing it we talked about how logs can improve reliability
+1:26:27
+we talked about journal file systems such as ext3 and ntfs is similar and in general we talked
+1:26:33
+about transactions over a log as a general solution and hopefully the examples that i gave
+1:26:39
+there worked out well we talked started talking about protocols between parties uh that will help us build distributed
+1:26:45
+applications we spent some time with the end to end argument which will hopefully inform us as we go forward and next time
+1:26:52
+we'll start talking about distributed decision-making such as two-phase commit didn't quite get there this time but
+1:26:57
+we'll definitely do that next time so i'm going to say goodbye to everybody i'm sorry for going over i guess i've
+1:27:02
+been doing that a lot this time my apologies but i hope you have a good evening and we will see you on wednesday

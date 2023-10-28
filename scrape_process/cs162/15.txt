@@ -1,0 +1,1676 @@
+0:03
+hello everybody welcome back to uh cs 162. we are um going to pick up where we left off
+0:11
+and uh that is uh talking about caching just to remind you a little bit uh from 61c
+0:16
+and before we get there though we've been talking a lot about virtual memory and one of the things i wanted to show
+0:22
+you was what i like to call the magic two-level page table which is uh
+0:27
+works when you have 32-bit address space 4 byte pte's page table entries then you
+0:33
+can do this 10 10 12 pattern you have the root of the page table pointing at the root page and
+0:42
+then the first 10 bits basically select one of a thousand 24 entries
+0:48
+and uh then that points to the second level page table the next uh 10 bits point to an entry
+0:54
+there one of 1024 entries and then finally we point to the actual page and of course on a context switch you
+1:00
+have to save this page table pointer and that's it because the rest of this is in memory uh and there's valid bits
+1:07
+on the page table entries so you can in fact page out parts of the
+1:12
+page table if you don't need it and so you can basically just set uh an invalid bit in the top level page table
+1:18
+entry and then you can page out the second level all right were there any questions on this
+1:24
+so this works particularly well when you have 12-bit offset which is 4096
+1:31
+byte pages you have uh and four byte page table entries
+1:37
+okay good now by the way there was a little question on
+1:42
+uh piazza about paging out the page table or putting it in virtual memory i'll say a little bit about that later
+1:48
+but i do want to point out that the nice thing about this particular layout this is all done
+1:53
+in physical space physical addresses are actually in the page table
+1:58
+in this case you still can page out part of the page table so it's pretty close to being like virtual memory
+2:04
+except that the actual addresses are physical ones so the other thing we were talking about
+2:10
+was we talked about the uh transit uh translation look aside buffer tlb
+2:15
+and we've talked about it as looking like a cache and so when you get a virtual address coming out of the cpu we quickly look up
+2:22
+in the tlb to see whether uh that virtual address has been cached and if the answer is yes then we can go right on to physical
+2:29
+memory and by the way this physical memory here uh can be a combination of cache and
+2:34
+dram or whatever and uh this can be very fast it can be at the speed of the cache for instance
+2:40
+on the other hand if the tlb doesn't have our virtual address in it then we have to go and translate through
+2:45
+the mmu which usually involves walking the page table once we get the result back we put that in the
+2:51
+tlb and then we continue with our actual access and subsequent ones assuming we haven't
+2:56
+kicked that address out of the tlb will be fast and of course the cpu in when you're in
+3:03
+kernel mode can basically go around the tlb to uh look at things in
+3:09
+in the physical pages okay and of course the question is does there
+3:16
+exist any page locality that could make this work because the only reason the tlb would work as a cache on addresses
+3:23
+is if there was an actual locality and basically what i said here was well
+3:31
+instructions clearly have page locality stack accesses have locality and so
+3:37
+really it's a question of the data accesses which also have locality so in many
+3:42
+cases they don't have as good a locality as the instruction in stack but it's pretty good okay
+3:48
+and can we have a hierarchy of tlbs yes so if you remember from 61c you could
+3:54
+have a two level cache a first and second level so you can also have a two level tlb okay and
+4:00
+i'll say a little bit more about that later so what we're going to do now in the
+4:05
+early part of the lecture is i want to remind you a bit more about caching and
+4:10
+and then we'll talk about tlbs and then eventually uh maybe about halfway through the
+4:16
+lecture then we'll change to uh how we actually use the tlbs and page table entries to get
+4:22
+uh demand paging and a few other really interesting aspects of the the memory system so
+4:29
+we uh at the very end of the lecture last time we were starting to remind you of sources of cash misses
+4:34
+and uh i like to put these down i call these the the three c's plus one because mark hill uh when he was a
+4:41
+graduate student here came up with these three c's representing the source of cash misses
+4:47
+and he went on to be a very well-known computer architect faculty member in
+4:54
+university madison wisconsin but um the three c's that he came up with in his phd thesis
+4:59
+were compulsory capacity and conflict a compulsory miss is one that basically has uh
+5:05
+represents an address that's never been seen before and so there's no way the cash could have had it in there because it's
+5:11
+never been accessed the only way getting around a compulsory or cold mist sometimes
+5:16
+it's called is basically if you have some sort of prefetching mechanism that can predict in advance then you could possibly get
+5:22
+around compulsory misses the other two capacity and conflict are uh
+5:28
+more interesting so the capacity miss basically is a miss that occurs because the cache is just
+5:33
+not big enough so you put your uh your data into the cache the cache
+5:40
+is giving you very fast access for a little while and then eventually you try to put too many other things in there and you kick something out
+5:45
+and so when you miss again that's going to call the capacity miss because the cache is too small now that's a little different from a
+5:51
+conflict miss uh and a conflict miss is a situation where it's not that the cash was too small but
+5:58
+that uh the places the slots and the cash that you're allowed to put something were too few and so you put something in
+6:05
+the cache and you're happily using it but then you put another couple of things that were in the same slot and i'll show you that
+6:12
+in a moment um just to remind you again and it kicked it out and then when you go back and miss again it's a conflict miss
+6:19
+okay and of course um the the plus one portion of this is coherence miss this was not talked about
+6:26
+mark hill's thesis but um i like to put this down just to remind you that this is another source of miss
+6:31
+where if you have a multi-core let's say with two processors two two cores one of them loads something in
+6:37
+the cache and it's reading it the other one goes to write that item the only way to keep the cache actually
+6:43
+coherent is for an invalidation to kick it out of the first cache so that it can be written cleanly in the
+6:48
+second one and at that point when the first processor looks again it's a miss and that's a coherence miss all right
+6:54
+so um do we have any uh questions on this
+7:03
+okay these are all reminding everybody of 61c i hope
+7:10
+so um now when we're using a cache this sort of generic uh way of looking
+7:17
+at addresses is the way that uh we often like to think of it so this full width uh from left to right is
+7:24
+the number of bits of an address so for instance in a 32-bit processor this might be 32 bits
+7:30
+the bottom portion let's say five bits represents an offset inside a cash block
+7:37
+okay and so once you basically store things in the cash at a minimum size maybe 32 bytes or in a
+7:44
+modern processor can be 128 or 256 bytes that all of those bytes are pulled in at
+7:51
+once or kicked out at once and so the block offset really just says well once i found a block in the cache
+7:57
+where do i access it from the next two fields the index and the tag are somewhat more interesting so if you
+8:04
+imagine the bottom part is within a block then the the top two pieces are about finding the block for you
+8:10
+the index basically is uh selects the set and then the tag sort of says well
+8:15
+within this set of possible cache entries let's see which one
+8:20
+might match the one i'm looking for okay so the block is the minimum quanta of caching it's the
+8:26
+minimum thing that goes in and out think of that as for instance 32 bits excuse me 32 bytes or 128 bytes
+8:34
+and many applications don't really have um the data select field in them because
+8:42
+actually this is sort of the whole quanta goes back and forth but if you look at a processor accessing a single byte then you need
+8:48
+the offset the index is used to look up things in the in the cache and identifies what we'll call the set
+8:53
+for you that are remembering and then the tag is used to show you the actual copy so um let me give you this in figures
+9:00
+because that's always easier here so let's look at the first things called a direct mapped cache and a direct map cache is a two to the n
+9:08
+byte cache uh for instance where the upper the uppermost 32 minus n bits
+9:13
+are the cache tag okay and the lowest m bits are the byte select so let's take a look at this so
+9:19
+here's an example where we have a one kilobyte direct map cache with 32 byte blocks
+9:25
+okay so if the blocks have 32 bytes in them we know that there are 32 entries how
+9:31
+many bits do we need to uh represent 32 entries quick do your log base 2
+9:37
+everybody five very good so um here's the layout
+9:43
+of a direct map cache so what i'm going to do is my cache data has room for 32 bytes
+9:50
+uh it has room for a tag and it has room for a valid bit and there are some number of these
+9:56
+okay and what we do is we take this address which has five bits as was mentioned by folks on
+10:03
+the chat okay and uh the cash index
+10:09
+is uh going to be used to look up in the cache and then we're going to match the tag so the first thing we do is we take the
+10:16
+index and in this case there's five bits of index and so that's going to select
+10:21
+one of 32 cache lines and um then once we've picked a target
+10:28
+cache line then we'll check and see the tag match or not and if the tag matches
+10:33
+then we know we're good to go and at that point we can actually say well this cache line
+10:39
+is valid so i'm now going to use the byte select to pick which of the 32 bytes and i'm good to go
+10:44
+okay and notice that there's only one slot here uh to put in the cash for something that
+10:53
+has this index okay so that's why it's called a direct mapped cash because you give an index that only
+10:58
+gives you one possible cash line and then that cash line or cash block
+11:03
+is then a single tag is matched okay does that remind everybody about how this works
+11:11
+okay so now let's go a little further on this unless
+11:17
+there are questions okay this is pretty straightforward and again again the reason it's direct mapped is there's
+11:23
+only one full cache line that comes out of the cache index so here's a set associative cache
+11:31
+where we do oh and the other thing i want to say about this is notice that we have five bits
+11:37
+in the byte select and five bits in the cache index so that's a total of ten bits which is 2 to the 10th is 1024
+11:44
+which you all have memorized uh quite well now and that's a one kilobyte cache so our cache
+11:49
+total if you add all this up there's 1024 bytes in there and that's because there's 10 bits that
+11:55
+are selecting it okay now let's go to a set associative cache
+12:00
+where in general we could have n-way i'm going to show you two and i'm going to make the same size
+12:05
+cache total but i'm going to do this as a two-way set associative so we're always going to have in this
+12:11
+set of examples five bits down below but now instead of five bit index we're going to have four bits and the reason
+12:16
+for that is we have two separate banks of cash and so that index actually selects two
+12:22
+different cache blocks one from the left bank and one from the right bank and then
+12:28
+once we've got it now we got to compare the tag with two different tags and so that'll say which of these two lines
+12:35
+that are in the cache represent what i'm looking for okay so this index now is selecting two things
+12:41
+i check the tag on both sides as a little comparator and assuming things are valid
+12:46
+that's why i'm checking the valid bit then if i match i get a one out of here that selects for
+12:52
+the mux and so in this example um the left one matches the tag the right one didn't
+12:57
+and i get data out okay so that's a two way set associative cache two ways uh set associative because we
+13:04
+have a set that's got basically it's not direct mount okay questions
+13:13
+good reminding everybody of 61c
+13:18
+i hope oh yes you have enough questions so go ahead type questions into the chat
+13:24
+please oh okay thanks
+13:30
+so um go ahead
+13:35
+okay so why we call this the cache tag the cache tag is basically all the other bits okay
+13:42
+it's basically everything that is uh not the byte select or not the offset
+13:47
+and the cache index the rest of that's the tag and you need to check that the tag matches because that's how you know that
+13:54
+this block is the one you're looking for as opposed to representing some other part of memory
+14:00
+okay and so this tag will be big it's going to be basically everything else and the tag is not in the data it's it's
+14:06
+separate from the data you could think of this as metadata on the cache okay we good on that everybody
+14:16
+so now um well we could do this uh arbitrarily where we keep
+14:22
+shrinking the index and we have more and more banks until we basically have zero bits in the index
+14:27
+okay and that's called fully associative it looks kind of like this okay so um
+14:33
+here we have uh 32 places that in the cache 32 blocks just
+14:40
+like we did before but they all have a tag and they're all checked in parallel so notice we take
+14:45
+the tag which now is 27 bits because we totally eliminated the index and we compare with all of the tags and
+14:52
+we pick one and that's the one that's going to select for us which cache line is valid okay and so think of
+14:59
+this as the extreme case of a uh set associative cache where we completely get rid of
+15:05
+or we we have one complete set which is basically the whole cache okay now can anybody tell me
+15:12
+uh which one of these associativities either direct mapped two-way set
+15:17
+associative or fully associative is faster and why
+15:28
+okay i'm seeing a bunch of people saying the direct mapped is faster but look it's getting all of these hashtags in parallel why is that not
+15:38
+faster by the way you're right direct mapped is faster does anybody know why direct mapped is faster
+15:52
+okay so now i'm seeing some folks are kind of on the right
+15:58
+point here but it's there you go last person got it here it takes a long time to propagate
+16:03
+so you got to think like hardware not like software so first of all what you see here on the screen here
+16:09
+the fact that we're checking all the tags doesn't take extra time because it's all happening in parallel
+16:14
+okay so you gotta you know the cool thing about hardware and you know i'm a hardware architect so i think it's cool
+16:19
+but is we're not we don't have to do this serially one at a time we're doing all this in parallel
+16:24
+so you might think off the bat that the fully associative was faster but in fact what i didn't show you on
+16:30
+the screen is once i've done a match then i have to take this data
+16:36
+and i have to um select from it uh in parallel based on the matching of the
+16:42
+tags and so i'm selecting sort of one cache line out of 32 which is slower because it's multiple
+16:48
+levels then this other case which i'm selecting one of two
+16:54
+which is yet again slower than the direct mapped case where i don't have to do any selecting at all so
+17:00
+direct mapped is actually faster in hardware okay and the other thing i will point out is that fully associative
+17:07
+because it's so much bigger we're checking all of those uh tags in parallel actually takes up
+17:13
+more space on the chip and as a result there's speed of light issues and so it takes a
+17:18
+little longer for the signals to get around and so the fully associative is actually slower as well because it's bigger
+17:24
+okay so propagation speed uh and size of things on the chip
+17:32
+actually can matter when you're thinking about hardware so the thing to keep in mind is direct mapped is faster
+17:37
+but notice there's something interesting about the direct map cache i there's a whole bunch of possible
+17:43
+addresses okay that will all map on top of
+17:48
+the same line here in fact anything that has the same index basically all of the well how big is
+17:54
+this this is got well we took out 10 bits it's got 20 bits so there's a million
+18:00
+addresses that all fit in the same place in the cache and so if i access any of them that's called a conflict miss
+18:06
+so when we were looking earlier about conflicts i get a lot more conflicts with the direct mapped because there's
+18:11
+only one place that i can place those million cash lines that have the
+18:17
+same index whereas in the two-way there's two places i can place it so that's less
+18:24
+conflicts and then finally in the fully associative there is i can put it anywhere and so
+18:30
+there's basically no conflict misses in the fully associated okay good
+18:40
+so hopefully that's helpful so now even though fully associative is slower
+18:46
+it will have less conflicts in it and so when you start thinking about tlbs we may want to make that decision if
+18:53
+the result of a conflict miss requires a miss which is really expensive i might be
+18:59
+more have more tendency to want to go to fully associative to avoid misses even though it's a little slower and you
+19:05
+might start thinking a little bit about whether a tlb would make sense to be fully associative
+19:10
+because the result of missing is going to be going and walking the page table which could be very slow
+19:16
+so where does a block get placed in the cache okay this is going to show you those three options here pretty clearly
+19:22
+so suppose we have a 32 block uh address space here um and this particular entry is
+19:29
+uh one that's going to map a bunch of different addresses so if it's direct mapped then block 12 basically can go only in
+19:37
+one place uh this is the address space here's the cache i've got eight entries there's only one place for block 12 to go that's
+19:44
+12 mod 8 is exactly there if i have two-way set associative
+19:49
+there's four sets so there's two places that block 12 can go and in a fully asses associative cache
+19:55
+there's eight places that block 12 can go okay so this is another way to look if i have the same size
+20:01
+cache physically the the associativity this is a direct mapped two-way set
+20:07
+associated fully associative the associativity says something about what i have flexibility to put an item
+20:14
+from the memory space up top here into the cache okay good hopefully this is all
+20:21
+similar to everybody so what do you replace on a miss so if you're gonna um load something new into the cache and
+20:27
+you've got to kick something else out of the cache well with direct map there's only one place you can load right so
+20:32
+in this case if i now go to something else like uh address 20 and i try to load it
+20:39
+here in the direct map cache there's only one choice of which one to kick out it'll be this one so that's easy but if i get to two-way set associative
+20:46
+now i gotta pick one i could pick either of the them or in fully associative i have to pick one okay
+20:51
+and that's called the replacement policy and so direct map there's only one chance for said associative or fully
+20:57
+associative there's lots of options excuse me random least recently used et cetera
+21:03
+so um what you can see is that for a cache oftentimes the difference between random
+21:10
+and lru is very little especially when you get a larger cache and so random works pretty well for cash
+21:17
+is when you get a lot of us when you have a higher associativity and bigger cashes and so
+21:24
+the cost of remaining of keeping track of what the lru is is often not worth it in a cache
+21:30
+that's not going to be the case when we get to page tables in a moment in paging okay the other question is what do you
+21:37
+do on a right so we have two options one is right through and one is right back so in the case of right through when i
+21:43
+go and i'm writing data from the cpu i write it into the cache and into the dram so it's writing
+21:50
+through the cache to the dram okay that is
+21:55
+good because it makes sure the cache has always got the most up-to-date data it's bad because it's slower so the
+22:01
+speed of writing through to the memory is uh is going to be as slow as the dram than is
+22:07
+then as slow as the cache right or as fast as the cache the case of write back i actually just put the data in the
+22:13
+cache and i keep tracking the fact that it's dirty or written and then i have to make sure so that's
+22:19
+very fast but now i have to make sure that when i kick it out of the cache because i'm replacing with something else i'm
+22:25
+writing it back to dram or i'm going to lose my data okay so pros i've write through is read
+22:32
+misses can't result in writes because the data is always up to date in the cache and you don't have to save it
+22:37
+cons is the processor rights are slower right back the pros are repeated rights
+22:43
+are not said to dram and rights are fast the cons is a little more complex to handle and so the difference between
+22:49
+right through and right back they're used in different places so oftentimes for instance right through
+22:56
+might show up at the first level cash but right back is the second and third level cashes um because that cost they're going all
+23:02
+the way through can be very expensive okay good now
+23:09
+there was an interesting issue that came up on piazza after last lecture and so i figured i made a new slide
+23:14
+uh to represent this just to show you i i'm going to tell you something and i at the risk of confusing people i don't
+23:20
+want to do that but there is a difference between what's called a physically indexed cash and a virtually indexed cash
+23:26
+and so here's what we've been talking about this is a physically indexed cash so what does that mean that means what
+23:32
+comes out of the cpu is a virtual address it goes to the tlb and assuming the tlb
+23:38
+matches we combine the offset oops with the physical uh page frame and we go directly to the
+23:45
+cache and we've basically got we look up in the cache and it's physically indexed so what that means is
+23:50
+the addresses we hand to the cache are physical if the tlb misses well we go to the page
+23:56
+table just like i showed you that multi-level page table at the beginning of the lecture we go to the page table and what happens
+24:02
+there is um it walks the page table but those all of the addresses in the page table
+24:08
+including the top level uh is cr3 is basically physical
+24:14
+addresses and so we can uh when we look in the page table we're just going through the cache just because we we do it just works that
+24:21
+way right because everything's physical and the cache memory mechanism of caching
+24:26
+dram in in the cache that's all handled by hardware and so nothing has to worry about that so
+24:32
+this is a very simple organization and by the way it's the one that the x86 uses and it's the one that we talk about in
+24:38
+class most okay the other big advantage to this which i'll you'll see what i mean in a moment
+24:43
+is that every piece of physical data which means something that has a location in memory has only one location in the cache
+24:51
+okay that's a physically indexed because the cache really is just a portal onto the memory there's nothing
+24:57
+special there okay and so when we contact switch we don't have to do anything special with
+25:02
+the cache we might have to do something with the tlb which we'll talk about in a moment but we don't have to mess with the cache
+25:08
+okay challenge to this as you can see here though is that assuming that we've made our
+25:13
+cache really fast maybe we have three levels of cache and it's you know carefully tuned into the processor
+25:19
+pipeline and all that sort of stuff to make it fast the problem is that we have to take the cpu virtual address pipe it through a
+25:25
+tlb before we can even look at the cache and so this tlb needs to be really fast
+25:31
+okay the other option which came up in piazza was this idea of a virtual cache okay
+25:38
+the this is uh more common in uh higher end servers that aren't made out
+25:46
+x86 processors i would say this is less common these days um but you take the cpu and the first
+25:51
+thing you do is you just look up in the cache okay and that looking up in the cache since the cache has virtual addresses
+25:57
+to the index is just fast you just put the virtual address in there you either get it or you don't
+26:02
+if you miss then you got to do something when you miss then you got to look up on the tlb and
+26:09
+notice that i intentionally put the cache and the tlb kind of uh on top of each other
+26:14
+because you can actually be looking up in the tlb at the same time you're checking in the cache so you can overlap
+26:19
+that and then we look up in the tlb and assuming that the tlb hits then we can just go to memory find
+26:26
+the physical data and put it back in the cache these uh these arrows are all for addresses which i don't have a reason i don't have
+26:32
+a data arrow coming back and then we're good to go if we miss in the tlb then we got to do
+26:39
+something and if we want the same advantage of caching the page tables then we can have the
+26:45
+page tables made of virtual addresses and then we do a recursive walk of the page table by looking up
+26:52
+virtual addresses which may in turn cause tlb misses uh which cause page table walks and the
+26:58
+key there is you got to be careful so that ultimately the root tlb pages are pinned in a way that this uh
+27:06
+finishes okay and and uh so that's a little more complexity there okay so the challenges of the virtually
+27:12
+indexed casts well first of all the benefit is this can be blazingly fast because there's no tlb lookup between the cpu and the cache
+27:19
+the challenge though is that if you think through this a little bit you'll see that the same
+27:25
+data in memory can be in multiple places in the cache because remember every process has its
+27:31
+own notion of zero for instance i've said that several times this term and therefore if two processes are
+27:37
+mapping to the same memory then they'll actually they'll be in different virtual address
+27:43
+spaces and that could be messy okay and in fact what you need to do with this
+27:50
+cache layout is when you switch from one process to another you actually have to uh flush the cache
+27:56
+okay and that that instance where you might and that instance where you might have the same data in multiple parts of the cache
+28:03
+is when you actually tag the cache with process ids we won't go into that here but now you've got aliases where the
+28:08
+same data can be simultaneously in different parts of the cache and that can lead to all sorts of consistency problems
+28:14
+all right so i just wanted to make sure everybody saw these two if uh if that was too much information
+28:21
+we're going to stick with the top one i might who knows i might actually ask you a question about this lower one but for the rest of the lectures we're
+28:29
+going to be mostly talking about this physically indexed one up here it's uh it's popular because of its
+28:34
+simplicity but we need to figure out how to make the tlb fast okay so why is the page table virtually
+28:40
+addressed here well just because if we want to cache the page table which we do
+28:46
+we because remember we're pa we're walking through a bunch of memory we don't want to go as slow as dram so
+28:51
+we want to be in the cache but to be in the cache that means a page table has to have virtual addresses in
+28:57
+it rather than physical addresses like the ones we've been talking about okay and that because that's the only
+29:03
+way that we can come back through the main cache okay now we could pull some other tricks where we have a separate cache just for
+29:10
+the page table or we have a separate pipeline that tries to make accessing dram
+29:15
+faster than otherwise but the simplest idea here is to make this virtually addressed
+29:21
+okay and it's actually not so crazy and it's done by definitely some server machines the
+29:26
+trickiest part about this is not what we just said there the trickiest part here is the aliasing
+29:32
+uh of the cache and that's kind of it gets messy quickly
+29:38
+okay so the top cache doesn't have to be
+29:44
+invalidated on a process switch because this cache up here is purely just a portal into the
+29:49
+underlying memory and so one one location one memory location
+29:55
+one location the cache one location the memory um there's never multiple cache locations that go to memory all right
+30:02
+that's another reason this is a simpler organization we do need to do something about the tlb
+30:08
+though we'll have to come up with that in a moment so adventist trivia as we discussed uh
+30:13
+in the chat before um before lecture a little bit uh it does seem like midterms keep coming and
+30:18
+i'm sure you're getting them in all your other classes too but yep we're coming up on midterm two
+30:24
+uh on thursday at 10 29 and topics are basically everything up
+30:30
+to lecture 17. i've listed a bunch of them here if you know basically it's just
+30:36
+everything up to lecture 17 there has been a discussion um in piazza about whether these exams
+30:43
+are cumulative or not the answer is we focus on the new material but don't forget everything you learn the first
+30:49
+third of the class because you never know we might um you know ask you something that meant
+30:54
+you had to remember how to synchronize or something like that so don't forget everything you learned but most of the material will be focused on
+31:01
+these new lectures the other thing is we're going to require your zoom proctoring to be set up and so
+31:07
+um i think what we're going to be doing is generating your zoom rooms for you but make sure you got your camera
+31:12
+and your microphones and your audio all set up in advance because we're actually going
+31:18
+to be uh requiring that um during the exam all right
+31:24
+um there's a review session on the 27th tuesday and um there is a zoom room just like
+31:30
+the last one uh neil will put it out he's got all the information for it i don't know that we have yet but we will soon
+31:37
+um i you know i guess it was a silent announcement a while back but i do actually have office hours these days
+31:42
+from two to three monday to wednesday there's a there's a zoom link that's posted both on the course schedule
+31:48
+and i think i have a piazza pin piazza statement about that but um definitely feel free to come by and
+31:55
+chat about computer architecture or life the universe and everything or quantum computing or whatever you like
+32:02
+probably don't want to come with questions about detailed code
+32:10
+aspects of your projects you should stick with your ta office hours on that because this is more for general discussions and
+32:17
+interesting questions and and if you do want to come with whatever questions you have
+32:23
+and if you want to set up something private with me as well we can do that all right and then
+32:29
+i put the best for last the election's coming up please don't forget to vote if you have the ability to vote
+32:35
+uh this is the one of the most important things you can have as a u.s citizen and uh take advantage of it
+32:44
+you know what whatever you vote is is fine um but uh today is actually the last uh
+32:51
+day to register if you haven't done that uh so you do need to do that thanks for pointing that out and um be safe when you uh
+33:00
+when you go if you go in person or fill out your forms and and mail them just don't put
+33:05
+them in a fake ballot box make sure that somebody like the post office actually gets it and what's cool in
+33:11
+california is you can sign up uh and you'll get texts all as your vote works its way through the system which
+33:17
+is also pretty cool you know post office since we received it and then the state administration says that you
+33:25
+know we've got it it's ready to be counted and so on so you get to find out about that okay
+33:32
+all righty please vote
+33:38
+so let's go back to some questions now and i'm going to be talking physically index caches again so
+33:44
+here's our here's our schematic of what that looks like and uh we got cpu going to tlb
+33:51
+going to cash going to memory and the question is kind of what tlb organization makes sense here
+33:56
+um clearly the tlb needs to be really fast because it's in the critical path between the cpu and the first level
+34:02
+cache okay so this is uh this needs to be really fast this seems to argue for direct mapped or
+34:09
+really low associativity in order to make that fast now
+34:15
+you have to have very few conflicts though because every time you miss in the tlb you have to walk the page table
+34:20
+which even if the page table's cached could be you know four or eight memory references just to do a single
+34:27
+reference so you don't want to miss in the tlb when you can which means you want as few conflicts
+34:32
+which pushes your associativity up and so there is this trade-off between the uh the cost of a conflict is a high
+34:39
+missed time um but the hit time is is slow if it's too too associative and so there's a lot of
+34:46
+tricks that are played to make the tlb fast and this is kind of a 152 topic but i thought i
+34:52
+would say a little bit about this and the other thing is we got to be
+34:57
+careful kind of in the tlb you know what do we use as an index in
+35:02
+the tlb you know if we use the lower order bits of a page as an index in a lower associativity tlb then you
+35:10
+can end up with some thrashing um and that could be a problem
+35:15
+if you use the high order bits you'll end up with a situation where big parts of the cache are never used
+35:21
+so uh you know you got to be a little bit careful about this
+35:26
+the tlb is mostly a fully associative cache although these days
+35:32
+i'll show you in a second these days for instance the x86 has something like a 12-way set associative
+35:38
+first level and then it's backed by a large second level so um so how big does it actually have
+35:45
+to be so it's usually pretty small and that's basically for performance reasons uh 128 512 entries
+35:53
+are pretty standard one of the reasons that there are more entries these days than there were
+35:59
+say 10 or 15 years ago is that people use a lot of address spaces
+36:04
+including micro kernels which tend to have a lot of address spaces and so there's a lot of tlb entries you
+36:11
+might need the other problem is as your dram and your overall memory get really large
+36:16
+then there's going to be a lot of pages involved and so you need more tlb entries so that combination of a lot of different
+36:22
+address spaces and a lot of memory kind of pushed the tlb up
+36:27
+and uh that's why in fact the modern systems tend to have a two level tlb
+36:32
+which is a slightly smaller one at the top level and a much bigger second level one to try to make things as fast as
+36:38
+possible small tlbs often organized even as a fully
+36:44
+associative cache this is often called a tlb slice where you have a little tiny tlb
+36:50
+that's direct mapped at the top level and then you have a second level that's a little bit uh much much bigger
+36:57
+if fully associative is too slow then you do this two-way set associative called a slice here's an example of what might be in
+37:03
+the tlb it's a it's a fully associative lookup for instance for the mips are 3000 that's very old
+37:10
+processor but it's easy to look at here you might have a virtual address you
+37:15
+know a physical address and then some bits for lookup and the trick is the virtual address comes in
+37:21
+you associate fully associatively look it up to find that tag and then you get the rest of this
+37:26
+represents the match and the tlb the thing i wanted to show you about the
+37:32
+r3000 is the r3000 handled the question of how to deal with
+37:38
+a fast tlb in an interesting way that was kind of possible back in the old days which is basically you need a tlb both
+37:45
+for the instructions and for the data and what they did was they arranged the tlb lookup was a
+37:50
+half of a cycle and so although you in 61c learned about a five stage
+37:56
+pipeline with you know fetch to code execute memory and write back here are the
+38:04
+actual cycles up top and if you notice what really happens is the first half of the instruction fetch
+38:09
+cycle is actually a tlb lookup then there's a whole cycle that overlaps the last half of instruction fetch in
+38:15
+the first half of the code for the icash lookup okay in the case of the data tlb what
+38:22
+happens is the address is computed in the first half of the execution cycle and then the deal the
+38:28
+tlb lookups in the second half okay and so they were able to confine the speed of the tlb to half a cycle and
+38:35
+be able to deal with that by rearranging things in the pipeline a little bit
+38:41
+but in general that's uh much harder to do these days and there are many more
+38:46
+pipeline stages as i'm sure you learned so the thing to ask yourself is if we're
+38:51
+going to go with a physically mapped cache and we're going to um
+38:57
+not be able to split cycles that way then what are we going to do and really as we've described this we're
+39:02
+taking the um offset and copying it down of course but then we're taking the virtual page number
+39:08
+looking it up in the tlb and then copying the physical page number into the final address and the question
+39:14
+is how do we make this faster in general and the answer is well one trick is take
+39:20
+a look at this i'm showing you the virtual address and the physical address okay and that physical address i'm
+39:27
+showing you is actually split up into a combination of the tag
+39:33
+and the index and the byte remember we just showed you that and the virtual address is the virtual page number in
+39:38
+the offset and if you can arrange that the offset overlaps the index and the byte in the
+39:44
+cache then you're golden because this index this offset doesn't get translated by the tlb so you
+39:49
+can pipe this offset into the cache and immediately start looking up the index while you're looking up in the tlb so
+39:55
+you're overlapping the cash access and the tlb even though logically you
+40:00
+have to do the tlb uh lookup before you do the cash access okay
+40:06
+so this is the example of the tricks here's a picture of that so in fact when you take um this is with
+40:11
+two byte uh with uh four byte pages but if you uh take a look excuse me four byte cache
+40:19
+lines 4k cache uh 4k pages what you see here is we take the
+40:25
+page number we start looking it up in the tlb and meanwhile we uh use the 10 bit index to look up in the
+40:31
+cache thereby giving us a two a four byte cache line okay and you can rearrange this any way
+40:38
+you like but so we can basically then get out of that cache we can get our tag
+40:44
+and out of the tlb we get the tag which is now the physical page number we can compare the two and we can look at this
+40:50
+kind of after we've done both cache access and tlb so there's there's how that parallel thing works isn't that cool uh
+40:58
+galaxy brained as it says on the chat yes now if things are 8k in this
+41:03
+organization this is a little tricky um but there's all sorts of tricks that people do in fact they might divide the
+41:10
+8k cash into two banks so if you lower the association or if you raise the associativity the two-way is set
+41:16
+associative this still works right there are other things you can do you can pull tricks where you look up
+41:22
+uh part of the cache access and you finish the rest of it later and there's all sorts of stuff
+41:27
+okay now uh the other option of course is if you really want a really big cache and you're running into this
+41:33
+problem then you might actually go back to your virtual cache in fact
+41:39
+intel has managed to do this very well with all sorts of tricks in how to make the tlb work fast
+41:45
+okay good so here's the actual um previous
+41:51
+generation processor that's pretty cool if you look at the front end instruction fetch
+41:56
+and the back end data what you'll see here is here's the data tlb here's the
+42:02
+instruction tlb and these are first level caches as tlbs that are
+42:08
+basically backed by the second level tlb cache so when you miss in the first level tlb
+42:13
+you first look in the second level and it's only when you miss in the second level which is by the way much bigger that then you do your table walk okay
+42:19
+and so this is a way to make that faster and so that particular processor for
+42:25
+instance here's an example where the l1 icash is 32
+42:31
+kilobytes the data the l1 data cache this is level one is 32 kilobytes second level is combined
+42:39
+megabyte uh third level cache is actually 1.37
+42:44
+megabytes per core and oftentimes you get like 50 58 cores or whatever you can get a
+42:52
+lot of cores in these particular chips and so the tlb
+42:57
+just to finish out what we've got the level one instruction tlb is 128 entries eight way
+43:03
+set associative the level uh one data tlb is 64 entries four-way set associative
+43:09
+and all of this is backed by the second level shared uh stlb which is uh 15 136 entries 12
+43:17
+ways associative and so you can see how they pull all sorts of tricks to meet their pipeline timings
+43:23
+and thereby basically keep a direct mapped excuse me thereby keep a um a
+43:30
+physically page indexed cache which is much simpler than dealing with the virtual one
+43:35
+okay a core in this way in this case by the way is a combination of a processor
+43:42
+and a slice of the third level cache and some cache consistency hardware and some
+43:50
+bit of networking that's often called a core and then the processor core is the small piece of
+43:55
+that and then together those are all put together on a chip to get um multiple processors okay so you can
+44:01
+either think of a core as a processor or a processor plus some extra stuff that's associated with that
+44:07
+processor okay and this by the way is the
+44:12
+processor portion of a core there's a whole bunch of other stuff as well so what happens on a context
+44:19
+switch in general you got to do something so assuming for a moment that we have physically addressed caches we don't
+44:25
+have to mess with the cache so that's cool but the tlb still has to do something and the reason for that
+44:31
+is really that we just changed the address space from one process to another and so all those tlb entries are no
+44:36
+longer valid okay because gee that for process a it mapped zero to um a particular part
+44:45
+of the address space and um you know you switch to b and now zero gets uh mapped to a
+44:52
+different physical part of the physical space and so we gotta do something we have a couple of options one is you
+44:58
+can flush out all of the tlb uh with special flush instructions as soon as you contact switch
+45:05
+a lot of early processors and by early i mean as early as seven years ago you had to
+45:11
+do this so every contact switch you actually had to flush the tlb out and you can see now why a process
+45:17
+switch from one process to another might be actually expensive because you're flushing a bunch of stuff
+45:23
+now more modern processors which intel has made much more common these days
+45:28
+actually have a process id in the tlb and so when you switch from one process to another
+45:35
+and you switch an id register in the processor then it knows automatically to ignore
+45:41
+the old entries of the tlb from the other process and put new ones in there and by the way
+45:47
+when you switch back to process a from process b it's quite possible that a lot of the tlb entries are still there so this is a
+45:54
+much better sharing of tlb amongst multiple processors
+45:59
+and it has the advantage you don't have to flush the tlb out when you go from a contact switch okay
+46:08
+now if the translation tables themselves change which basically means the uh you know page table changes then
+46:15
+you gotta do something okay and uh in that case you really gotta invalidate the tlb
+46:21
+entries and i'll show you more about that in a moment and that's because the tlb is a cache on the page table and if the
+46:27
+page table gets changed in software you've got to do something about the tlb which is still in hardware and this is typically called
+46:34
+tlb consistency all right and of course with a virtually indexed cache you also have to flush the
+46:40
+cache or you have to have process ids in the cache okay so that's also
+46:45
+potentially tricky all right
+46:50
+now i'm going to show you this in a second
+46:58
+so um let's look at this particular example i'm going to show you here and uh
+47:05
+there's question in the chat about the difference between the uh tlb
+47:10
+and the page table and hopefully this will help a little bit so the tlb is a cache now on the page table but if you look here
+47:16
+let's put everything together so our virtual address uh has and this is going to be that magic 1010
+47:23
+12 layout so our virtual address has this piece in red is the virtual page
+47:31
+number it's going to have two pieces to it the offset is of course going to get copied to an
+47:37
+offset in the physical address so this is the easiest part of translating from a virtual to a physical
+47:43
+address so uh always remember that okay that's a way to get yourself some points right
+47:49
+so um now let's look at what happens here so physical memory is over uh in the the mint green on the right
+47:57
+there so we have a page table pointer pointing at the first level page table we take the index um that lets us get a
+48:04
+page table entry that page table entry is going to include a physical pointer to a next level page table and so then
+48:12
+we're going to get use that to look up the physical page number okay and now that's our physical address
+48:18
+so what are we going to do with that physical address well the physical page number is actually pointing at a page
+48:25
+which is for instance if this is 12 bits uh this is going to be four kilobytes in size
+48:30
+and then um the offset will pick a chunk inside the page
+48:36
+and that'll be the thing that we're accessing so i hope that everybody kind of sees the analogy here right off the
+48:42
+bat between paging and caching right because
+48:47
+remember in the case of a cache uh we looked up the cache line this light blue thing and
+48:53
+then we had the offset to look up the dark blue thing this is almost identical idea except that these offsets are bigger
+48:59
+than a typical cache line okay and we're going to bring the cache into this in a moment just everything in one figure right so now
+49:08
+this was all fine and dandy okay except that we had to walk our way through this page table
+49:13
+which is uh expensive so now this in uh the question that was in the chat
+49:19
+is what's the difference between the tlb and the page table this is the page table and to access the
+49:24
+page table i have to do this lookup this is a tree of tables and i have to do multi-level lookup to get this physical
+49:31
+page number which we do not want to do okay um oh yeah and so the question here
+49:37
+here is how much uh of this offset will we use that depends on the loader story you're doing so it could be
+49:43
+it could be 32 bits it could be 64 bits it could be a byte uh you know it could be any number of things
+49:49
+that's going to depend on um it's going to depend on what we're doing
+49:55
+now we're going to get to the cache in a moment in which case we might pull a chunk of this into the cache uh
+50:01
+in that case it's going to be a cache line chunk okay all right so let's hold off
+50:06
+for a second i'm worrying about buffering so this is the page table but this is too slow because just to do a load
+50:12
+we had to go through multiple uh lookups in a page table and this can be
+50:18
+four to eight levels so that's not good so i'm graying this out so now we want to get from this virtual address to this
+50:23
+physical address quickly how do we do that we put a tlb so what we're going to do is we're going to remember this translation
+50:30
+okay down here in the tlb where we actually take the virtual address this red thing and
+50:37
+we put that as the as the tag and say a fully associative cache and this yellow thing is going to
+50:43
+be the physical page and now uh we've just sort short-circuited the
+50:48
+multiple memory accesses by just taking the virtual address quickly looking it up in a think of this as a hash table if you
+50:54
+want a fully associative lookup that gave us our physical page and we're quick okay
+51:00
+now so hopefully this shows you the tlb is a cache on this more complicated page table
+51:07
+lookup but this doesn't show us the actual cache itself which is the data cache so
+51:13
+this is the tlb which is a cache the real cache though the data cache is this one and remember
+51:20
+this we talked about at the beginning of the lecture so here how are we going to look up the data
+51:26
+in the cache itself well this is the physical address that's been
+51:31
+translated but that physical address can be divided up into tag index byte everybody remembers that
+51:37
+from the beginning of the lecture right this is 61c and so that index would be used to
+51:42
+select a cache line the tag will be checked and assuming that matches the byte
+51:49
+index will then decide which part of that cache line we want okay and so in that instance in a prior
+51:55
+access we've taken a cache line block out of physical memory here put it into the cache and now we go
+52:03
+ahead and do the actual access uh out of the cache all right so notice there are two caches
+52:09
+here it's their tlb and the regular data cache so i want to pause just long enough to make sure everybody
+52:15
+has absorbed that so the dark blue on the right here
+52:21
+actually corresponds to i guess you could say it corresponds to
+52:28
+either this dark blue piece here if i'm looking at only a little tiny bit of this physical memory or you could say maybe it corresponds to
+52:35
+this whole cache line but actually if you look at this offset as being down to the bite and there's a
+52:40
+particular bite here then this could this bite the dark blue piece could be the same as this dark blue piece
+52:51
+okay so during a contact switch where do we
+52:57
+flush the tlb2 um outer space it goes into the bit buckets and little ones and zeros go
+53:04
+draining out the the uh the waste bucket in the back of your computer
+53:09
+now uh basically when you flush the tlb you just throw things out here because uh if you look if you think
+53:16
+about this thing in the tlb let me back this up a little bit here if you look at this this cache
+53:24
+is is in some sense a read-only cache on top of the page table so you can throw out the whole tlb at any time
+53:31
+and you can always be correct because there's no up-to-date information the tlb except except when we start talking
+53:38
+about the clock algorithm there are things like the use bit and the dirty bit that do have to be maintained to some extent okay
+53:46
+all right now where are we storing the tag plus index part this isn't stored what
+53:53
+this is is this is just a reinterpretation i take these 32 bits and i mentally divide them up into these three pieces so i can
+53:59
+do my cache access all right are we good
+54:09
+okay so i thought i'd throw that all together so you saw it all in one place good now
+54:17
+let's move up a level so we've been talking about the page table translating from virtual
+54:24
+to physical but we haven't talked about what happens when there isn't a translation okay what does that mean that means that
+54:31
+one of there isn't actually an entry in the page table for every possible mapping and therefore
+54:39
+some of these are marked invalid which means that we're going to get a fault we're going to try to do this access we're going to get as far as
+54:46
+looking you know the last level page table or maybe the top level page table we'll encounter an invalid bit
+54:52
+and at that point the hardware is like game over i can't do anything about this okay and that's called a page fault all
+54:58
+right and um what happens there well the page table entry is marked invalid um okay or in the case of intel not
+55:05
+present right and at this point that's a problem another problem could be we try to do a
+55:11
+write but the page is marked as read-only some other access violation or doesn't
+55:16
+exist at all these are all possibilities and what's going to happen there is we're going to cause a fault
+55:22
+or a trap it's a synchronous fault which is not it's not an interrupt interrupts are asynchronous this is a synchronous fault
+55:29
+because a memory access failed and at that point we have to do something to move forward okay and in that case
+55:37
+other page faults actually engage the operating system uh to fix the situation and try to retry
+55:44
+the instruction now good question what's the difference between a page fault and a segmentation fault
+55:49
+so typically a page fault occurs when you try to access a page in the
+55:55
+page table and it's not currently allowed okay and what happens there
+56:01
+is the operating system gets a page fault and it can now do something
+56:07
+just because you get a page fault doesn't mean that you can't do something you might pull
+56:13
+something off of disk you might do a copy on write operation you might do any number of operations so
+56:19
+a page fault isn't necessarily fatal so that's one thing oftentimes a segmentation fault is
+56:24
+thought of as fatal so when your program dies with a segmentation fault
+56:29
+it's historical it's called a segmentation fault because typically you're working outside of
+56:36
+the segment well it is exactly like memory segmentation but when you try to go outside the segment if you remember back
+56:42
+to a few lectures ago that's can't go on and that's a segmentation fault
+56:47
+okay now in modern systems uh you could get either a segmentation
+56:53
+fault in the kernel or you could get a page fault depending on
+56:58
+what the what the current situation is you're gonna get the segmentation fault first because the that's the first thing
+57:05
+that's checked are you is your address within the segment and then from there you check the pages
+57:11
+okay all right so segmentation faults um either generically talk about game
+57:17
+over uh to kill your program or do talk about a fault that comes because you've
+57:22
+violated some about the segments all right so let's not dwell on that too much um we'll mention
+57:29
+it again another uh possibility here this is a fundamental inversion of what we're talking about here the hardware software
+57:35
+boundary because the hardware is trying to move forward and it can't move forward until software
+57:41
+runs okay so that's a little different than we normally think right normally software has to use hardware to
+57:47
+run here the hardware stops and says i can't do anything and the software takes over the thing that's important is when you
+57:53
+get a page fault that's the hardware saying i can't i can't do this you can't
+58:00
+then in the handler cause other page faults or at least you can't do it recursively in a way that will never resolve because
+58:06
+in that case you go to an infinite loop and that's bad okay so we have to be a little bit careful about page faults
+58:12
+especially in fault handlers so let's let's look a little bit further
+58:19
+on an idea that we might do with this page fault idea okay so um the demand paging
+58:26
+idea that i'm going to talk about next harkens back to the cash so here's a figure i've shown you many times
+58:32
+over the course of this last several lectures at least which is um the idea that we have many
+58:40
+levels of caches in the system okay modern programs require lots of physical memory
+58:46
+uh memory systems have been growing at a 25 30 per year for a long time but they
+58:51
+don't always use all their memory all the time this is the so-called 9010 rule which means that programs spend 90 of
+58:57
+their time with 10 percent of their code or 90 of their time 10 of their data
+59:03
+not always a perfect statistic but it's a way to think of things and it'll be wasteful to basically
+59:09
+require you to have all of that huge amount of storage that you're not using in instructions say or in libraries that
+59:17
+you've just linked but not used in the fastest memory and so this memory hierarchy
+59:22
+is about caching it's about making the speed uh of the system look like the smallest
+59:30
+fastest item but have the size of the largest item now the largest one i show
+59:35
+here is tape i know that's probably way before your time
+59:40
+but instead of just disk we could have ssd and then spinning storage and then
+59:47
+there's still people still use tape in some very rare instances but um so the idea here would be can we
+59:53
+use our paging tape is much larger than disk potentially um although discs have been getting awfully
+1:00:00
+big and so pretty much tape is is a legacy thing now but the trick we're going to do here
+1:00:07
+is we're going to use main memory which is smaller than disc in almost all cases as a cache
+1:00:13
+on the disk and so we're going to think of the image of the process as large on disk and we're going to pull
+1:00:20
+in only the parts of the process we need into physical dram and what we're going to do
+1:00:26
+is we're going to try to make it look like even though our image is huge we're going to get the speed of the small thing
+1:00:31
+with the size of the big thing let's say disk for instance and we're going to do that by using page
+1:00:37
+faults cleverly we're going to basically say we're going to start with all of the pages invalid
+1:00:42
+or small number of pages invalid for a process and then as we start executing we're going to get a page fault for a
+1:00:47
+page that's not currently in memory and then we're going to pull it off of disk into memory and then
+1:00:53
+mark the page table entry as valid and we're going to keep going and if we do this correctly we'll eventually get the working set and
+1:00:59
+i'll show you what that means in a moment of the process into memory uh and so that only those things that are
+1:01:05
+actively being used have to take up space in dram okay we call that uh demand paging and
+1:01:12
+so by the way um caching is uh called different things depending on
+1:01:18
+who does it so when you hear caching typically and especially in 61c you were talking about
+1:01:25
+taking the dram and using the second third you know first whatever levels of cache as a higher speed
+1:01:33
+version of the dram and all of that's done in hardware we are now going to do the same idea
+1:01:39
+where we have disc as our backing store and we're going to use the
+1:01:44
+the operating system to pull in the parts of the disk that we need and put them into dram and mark the page tables
+1:01:50
+appropriately so we can get the same idea of caching but it's going to be done in software rather than this other
+1:01:56
+typically called caching that's done in hardware okay so let me just show you an idea here so
+1:02:02
+here we're executing an instruction you know we get a virtual address we go to the mmu uh in the good case we look up the page
+1:02:10
+in the page table and hopefully this is in the tlb so it's fast although that's not relevant for this current discussion
+1:02:15
+this all works we basically go to memory and we access that instruction so that's good because we've basically
+1:02:22
+put the uh the current instruction we want in our dram now however it's possible we go to this
+1:02:30
+and it's not there all right and in that instance what
+1:02:35
+would happen is we um get a uh page full because we try to look it
+1:02:43
+up in the page table and it's not working you know basically come back invalid which case we get a page fault and we
+1:02:49
+enter the operating system with an exception okay and in that case we have to deal with the page fault handler what's the
+1:02:55
+page fault handler do well you're all very familiar now with what happens when we do a system call
+1:03:00
+into the operating system same idea with a page full handler it's going to be running on the kernel
+1:03:06
+stack it's going to identify where on disk that page is
+1:03:11
+and it's going to start loading the page from disk into dram and it's going to update the page table
+1:03:17
+entry to point to that new chunk and then later we're going to run a scheduler put this back on the ready
+1:03:23
+queue which will then try the instruction again which in this case will work and we win
+1:03:30
+okay so this is demand paging all right and notice by the way that um
+1:03:36
+i sped this up a little bit obviously when we've started when we start the
+1:03:41
+million instruction load off of disk into memory we have to put that
+1:03:46
+uh process on some weight queue and then when the data is actually in memory we wake it up from the weight queue
+1:03:52
+and that's the point at which we can fix the page table and then put the process back on the
+1:03:59
+ready queue so that it can run okay all right so this is called demand paging
+1:04:10
+questions now let's look a little further along
+1:04:18
+here so demand paging is a type of cache and so we can start asking our questions and by the way why is this a cache look
+1:04:25
+when we missed originally it wasn't in the cache that was a cache miss and then we put it into the cache
+1:04:30
+and now we have a cache hit right so this is just like a cache it's just being done in software and we're pulling things in
+1:04:37
+not in cache line size things but in pages off the disk and so that's our first question what's the block size
+1:04:43
+one page which is now four kilobytes not 32 bytes or 128 bytes okay what organization do we have here
+1:04:51
+well this is interesting i hope you guys can all see this is a fully associative cache because we have an arbitrary mapping
+1:04:57
+from virtual to physical because of the page table so the um the page table
+1:05:04
+gives us a fully associative cache because we can basically put that page pretty much anywhere we want in the
+1:05:10
+memory okay how do we locate a peg well a page we first check the
+1:05:15
+tlb then we do a page traversal and then hopefully we found it and if we
+1:05:21
+still fail after all of that then we might do something more drastic like kill off the process
+1:05:28
+so earlier we were talking about in the cache we could think about randomly replacing or we could think about
+1:05:35
+lru the question is what's the replacement policy and this is actually going to require a
+1:05:40
+much more interesting longer term discussion which we're going to start tonight and then we're going to move our way next time in more detail
+1:05:47
+but um you know is it lru is it random it turns out that the cost of a page
+1:05:54
+fault that has to go to disk is high right a million instructions so we got to be really careful
+1:06:00
+when we uh have our dram is full of other pages we have to be very careful of which one we choose to replace
+1:06:07
+and so the replacement policy we can't just say yeah random works pretty well or lru works pretty well we have to do
+1:06:13
+something else and it turns out we're going to want something like lru but we're not going to be able to do that well
+1:06:18
+and we're going to show you that in a little bit okay maybe next time so what happens on a miss well on a miss
+1:06:24
+you go to the lower level to fill the miss which is you go to disk okay what happens on a right well here's
+1:06:30
+a good example earlier i talked about right through versus right back and maybe at the top level cache you do
+1:06:36
+right through to the second level cache here you absolutely cannot do right through okay why can't we
+1:06:43
+do right through for uh paging anybody guess
+1:06:52
+yep that means that a write from the processor which is supposed to be really fast is going to take a
+1:06:59
+million instructions worth of time okay so absolutely not no right through
+1:07:04
+to disk what we're going to do instead is write back and that means we're going to have to keep track possibly in the page table entry
+1:07:13
+which pages have been written to so that we know which ones are dirty and have to be written back to
+1:07:18
+disk they can't just be thrown out they actually represent up-to-date data okay
+1:07:24
+right so now we want to provide the illusion of essentially infinite memory so in a
+1:07:31
+32-bit machine that would be 4 gigabytes and a 64-bit machine that'd be exabytes worth of storage
+1:07:37
+okay and we want to do that by using the tlb and the page table with a smaller
+1:07:43
+physical memory so i'm showing you here four gigabyte virtual memory and a smaller 512
+1:07:49
+megabyte physical memory that represents uh only the data that's in
+1:07:55
+memory and has to be shared amongst a bunch of different processes okay and so the page table is going to
+1:08:00
+be our way of giving that illusion of an infinite amount or a maximum
+1:08:06
+address based filled amount of memory okay and the way that works is in the t the
+1:08:12
+tlb mapping through the page table is going to say that while certain items are in physical memory
+1:08:19
+others are not and they're on disk and it's going to be up to this page table to help us with that mapping
+1:08:26
+okay now the base the simplest thing it's going to need to do is uh do a really quick mapping for
+1:08:31
+those things that are actually in dram we talked about that earlier for the things that aren't on dram then
+1:08:37
+there's more interesting flexibility here one is that maybe you put something about which disk block it is
+1:08:43
+into the page table which are mostly not page table entry which you're mostly not using the other would be maybe a special data
+1:08:50
+structure in the operating system these are all options for locating on disk once you've
+1:08:56
+once you've missed in the tlb page table combination okay so disk is larger than physical
+1:09:03
+memory means that the virtual memory in use can be much bigger than physical memory
+1:09:08
+and combined memory of running processes much larger than physical memory more programs fit into memory more
+1:09:14
+concurrency okay and so the principle here is a transparent level of indirection
+1:09:19
+of the page table supporting flexible placement of where we want to put things uh the actual physical data
+1:09:25
+and which things we want to have on disk or not okay and that's going to be what we're
+1:09:31
+going to try to figure out how to manage now so i've up till now we've talked about all the mechanism tlps page tables
+1:09:37
+etc to make this work and now we need the next level which is what does the operating system do
+1:09:43
+to manage all those pages well so remember the pte i showed you this
+1:09:50
+one earlier this is an example in our our magical 10 10 12 example here's a 32-bit page table entry
+1:09:58
+the top 20 bits are the physical page frame number either of
+1:10:04
+the page itself or of the next level the page table and if you look down in here you see that the valid or present bit is
+1:10:11
+down at the bottom we have whether it's a writable page whether it's a kernel or user page whether it's cachable or
+1:10:17
+not and as we move our way up we have some interesting things like the dbit which is is it dirty or not
+1:10:24
+and the d bit is going to get set in the page table entry when we modify the
+1:10:31
+the page okay and in that case when we're about ready to replace the page we'll
+1:10:37
+have the d bit to tell us something about uh do we need to write it back to disk or not
+1:10:43
+the a bit or the access bit is another one that we're going to use for the clock algorithm we'll also talk about that in a bit
+1:10:49
+okay so submit mechanisms for demand paging so the page table entry
+1:10:54
+uh makes us do all sorts of or gives us the options to do demand paging so valid means the page is
+1:11:00
+in memory the page table points at the physical page not valid or not present page is not in memory you're welcome to
+1:11:07
+use the remaining 31 bits at least in the intel spec for anything you want and one
+1:11:12
+thing you could use it for so notice that if this guy is zero down at the bottom these remaining 31 bits
+1:11:18
+could be used by the operating system for instance to identify a disk block if you wanted or something else in internal data
+1:11:25
+structures that you happen to have in memory in the kernel if the user references a
+1:11:31
+page with an invalid page table entry memory management unit is going to trap to the operating system
+1:11:36
+giving you a page fault what does the os do any number of things chooses an old page to replace for
+1:11:42
+instance if the page is modified uh if so d is one it's got to write the contents back
+1:11:48
+to the disk uh it's going to change the page table entry and the cash tlb to be invalid
+1:11:55
+so notice that what we're doing here is we're picking a page to kick out maybe writing it back to disk
+1:12:02
+at that point that page is going to go from valid to invalid so we're going to have to go and modify the page table entry in the
+1:12:09
+page table to be invalid and since the tlb is a cache on that we're going to have to invalidate that
+1:12:15
+tlb entry otherwise we're going to end up with you know the tlb giving us the wrong
+1:12:21
+answer it's going to claim that a page is valid when it's been overwritten and then
+1:12:28
+we're going to load the new page into memory from the disk so we uh we caused this page full because we're trying to
+1:12:33
+access something that wasn't there we pulled it in off of disk put it into memory
+1:12:38
+uh overriding the one we got rid of we update the page table entry for uh that new page to be
+1:12:47
+valid and point at the physical page we took we invalidate the tp the tlb for the new entry why well
+1:12:53
+because that tlb was invalid when we got the page table uh page fault
+1:12:59
+and then finally we continued the thread from the original faulting location and we're good to go and so all of these
+1:13:05
+things here are basically what makes the thing we're talking about here a cache
+1:13:10
+okay this is how the combination of tlb and page table entries can be turned into a demand page caching
+1:13:17
+mechanism
+1:13:22
+when the thread goes to execute again after it was pulled off the ready queue
+1:13:28
+the tlb will get reloaded that time because since we invalidated up here the first thing that happens is you get
+1:13:34
+a fault in the tlb you rock the page table you get the new one okay so now the good question in the
+1:13:41
+chat here is so in the program that was referencing that old page starts running again
+1:13:47
+what happens it causes a page fault and it picks a different page to replace and pulls it in off the disk
+1:13:53
+okay so the crucial thing here is to not have so much memory and use
+1:14:01
+that the only thing you're ever doing is pulling pages off of disk that's called thrashing if you do that and in that case there's no actual work
+1:14:08
+that happens uh only paging okay and that's the worst possible scenario assuming that we're not at that point
+1:14:15
+all that we've done by pushing out a good page and that's where replacement comes into play
+1:14:20
+is we're we're readjusting the working set of the running processes
+1:14:25
+to be the things that are actually in dram so that we get really fast access for all those pages that are actually
+1:14:31
+being used and the hope is that very rarely do we kick a page out of memory that's in active use by a process okay
+1:14:38
+so hopefully that case that is being worried about in the chat here is not uh too frequent otherwise we're in trouble
+1:14:47
+okay and of course when pulling pages off of disk and so on uh we want to run something else because we've got a million instructions to wait
+1:14:54
+all right now so where does the sleep happen
+1:15:01
+so the sleep is going to happen uh on the disc uh weight cue
+1:15:08
+okay so the process that's basically trying to page in off of disk is gonna its uh tcb is for that uh thread
+1:15:15
+is gonna be placed on the weight queue for that disk and it will get woken up when the block comes back from the disk
+1:15:22
+and when does the the sleep happens after you uh start everything in motion and get the access starting on the disc
+1:15:29
+and in that point uh when now it's all up to the disc it's at the point at which you put that thread on the weight cue all right
+1:15:39
+and then it'll get pulled off the weight cue when uh when the thing comes back so now the origin origins of paging here
+1:15:45
+are pretty clear um you had this is back in the really really old days where you had
+1:15:50
+you know really expensive piece of equipment many clients running on dumb terminals um a small amount of memory for many
+1:15:58
+processes and discs have most of the storage so in that scenario
+1:16:04
+what we want to do is keep most of the address space on disk and um try to keep the memory full of
+1:16:11
+only those things that are actually needed because memory is incredibly precious okay so a lot of the original paging
+1:16:17
+mechanisms came up in that environment okay and you're actively swapping pages to and
+1:16:24
+from uh the disk today we're very different right we have huge memories
+1:16:30
+we have machines that rather than being owned by one uh by owned by one organization and
+1:16:37
+used by many are typically owned by one user and basically working
+1:16:42
+many processes on behalf of that user and so when we were talking about all the different ways of scheduling part of those
+1:16:48
+different ways were reflecting the changing needs of of resource multiplexing and the thing
+1:16:54
+the same thing is true of paging okay if you take a look for instance you
+1:17:00
+do something like here's a psa ux type thing you might get off of a unix style operating system
+1:17:06
+what you'll see here is the memory if you look here at physical memory we've got about um 75 percent of its use 25 is kept for
+1:17:14
+dynamics and a lot of it's shared so there's 1.9 gigabytes shared in and memories distributed memories you
+1:17:22
+can see that up here distributed memory excuse me a lot of it's shared in shared libraries that's
+1:17:27
+what i meant to say that's about 1.9 up here and so really there's a lot that's working on behalf
+1:17:33
+kind of of one user and so we're not so much uh optimizing
+1:17:39
+by trying to get things out to disks that aren't used as quickly as possible we're trying to keep things in and we have a lot more memory to work
+1:17:45
+with and so we want to keep that in mind when we start talking about policies for paging so there's many uses for virtual memory
+1:17:52
+and demand paging we've already talked about several of them you can extend the stack you can allocate a page and zero it
+1:18:00
+you can extend the heap you can do in process fork you can use the page
+1:18:05
+table by setting all of a copy of the page table to read only then only when somebody modifies a page
+1:18:12
+you actually copy it and so fork is a lot cheaper because of the page table um we've talked about exec where you can
+1:18:19
+basically only bring in parts of the binary that are actively in use and you do this on demand okay
+1:18:26
+we haven't talked about map yet but we'll talk about that for explicitly sharing regions to access the file
+1:18:32
+um access shared memory um almost as uh as a file
+1:18:38
+we'll talk about that a little bit and you can also access a file in memory too
+1:18:43
+so let me just show you and if you'll bear with me a little bit we'll finish up kind of here maybe we won't plow into too much new
+1:18:51
+mechanisms after this but so classically you kind of took an executable you put
+1:18:57
+it into memory and uh that was you know you did this
+1:19:02
+for a small number of processes if you look at um what we're gonna do while we're doing that today is we take
+1:19:09
+a huge disc we've got our executable which has got code and data and it's divided up into
+1:19:15
+segments and we loaded it and we want to map it excuse me into a process virtual address space
+1:19:21
+and that's going to happen because we're going to map some of the physical pages off the disk into
+1:19:28
+memory okay and so if you take a look for instance when we start up that process we have
+1:19:35
+a swap space which is potentially set up that represents the um the memory image of this process
+1:19:43
+and notice that that memory image on disk mirrors what we have in our virtual address space okay
+1:19:50
+and the page table points at the things that are actually in memory for say for instance the dark
+1:19:56
+blue process here okay and for all the other pages the
+1:20:01
+operating system is going to have to keep track of where on disk they are so that if the user tries to use
+1:20:07
+other parts of the virtual address space that aren't currently in memory then it needs to know how to pull them in okay and as i
+1:20:12
+mentioned you could use the page table entry partially for that if you like or you could use a hash table in the in the operating
+1:20:19
+system so really here's an example of the page table entry actually those extra 31 bits
+1:20:24
+pointing back to where these are on disk and they could actually store disk block ids or something like that okay
+1:20:31
+now um what data structure maps non-resident pages to disk well it turns out for instance in linux
+1:20:37
+there's a find block which can be used to um basically take
+1:20:43
+the process id and the page number you're looking for and give you back a disc block that can be implemented in lots of
+1:20:48
+different ways as i said you could store it in memory you could use a hash table like an inverted page table just for
+1:20:55
+that data structure and you can map code segments directly
+1:21:00
+to the on disk image so that for instance when i start this thing up i don't even have to load the
+1:21:06
+code into memory what i do is i point the um virtual address space entries for that process directly at
+1:21:13
+disk and then the first as soon as i start page faulting them they get copied into
+1:21:18
+memory from disk and i don't even have to do [Music] anything on starting up practically okay
+1:21:27
+um and i can use this to share code segments with multiple instances of uh a program across different
+1:21:33
+processes and so i want to show you an example here here's an example where the first virtual address space
+1:21:41
+is the dark blue one it's got some code which is going to be shared that's the cyan color and then there's going to be
+1:21:47
+a green process i'll show you in a moment okay here's the green one so it's got
+1:21:52
+its own image on disk and if you notice it's got sort of pointers back to where things are on
+1:21:57
+disk okay and the code here is pointing to the same disk blocks
+1:22:04
+which can actually be part of the original image your linked image that you stored the adot out that you stored on disk
+1:22:11
+both processes can backlink to that okay and um so that that way they both can
+1:22:18
+end up having their code point at the same part of memory that's much more efficient since they're the same process or this gives me the same
+1:22:24
+program that's running in different processes all right here's an amusing thing just notice so
+1:22:31
+we have the active process and page table here might be the blue one and what happens when we try to
+1:22:37
+execute an instruction or look at some data that causes a page fault well we go to
+1:22:42
+the page table entry it's the data's not there we cause a page fault we figure out where the data is and we
+1:22:48
+start the load happening okay and that load is started on the
+1:22:53
+disk controller we'll talk about that in a couple of lectures meanwhile we start the active process we pointed at the other guy and he runs
+1:23:00
+and eventually the data comes in okay it gets mapped into the page table
+1:23:05
+entry we restart this page this uh process and we're good to go
+1:23:11
+okay and if at that point we we allowed the light green one to run for a while and then the dark one uh was put to
+1:23:18
+sleep and then it got woken up when data came back from disk so those that's kind of showing you all of these little pieces we've been
+1:23:24
+talking about all put together um kind of in a big image are there any questions on that hopefully this helps a
+1:23:30
+little bit
+1:23:38
+okay are we good
+1:23:44
+so um the steps in handling a page fault just to show you this
+1:23:49
+in one last way is basically that uh our program's running it causes
+1:23:55
+a reference that looks up in the page table which traps with page fault at that
+1:24:01
+point we figure out where the page is it's on the backing store on the disk we start the process of bringing it into
+1:24:07
+a free frame how did we get a free frame well we replaced it or ultimately we're going to be more sophisticated we're going to have a free
+1:24:13
+list of free frames but we bring the page in after it's brought in we fix the page table entry and we
+1:24:19
+restart okay where's the tlb in all of this well the interesting thing about it is
+1:24:24
+the reason i haven't shown you the tlb in the last several slides is what can anybody give me a good
+1:24:30
+reason why i haven't shown the tlb
+1:24:40
+well you could say this is all with physical addresses that's true but the reason i haven't shown you the
+1:24:46
+tlb is the tlb is just a cache on the page table it's making the page table faster just like i'm not showing you the cache
+1:24:52
+in all this either the cache is just making the dram faster all right so the uh you
+1:24:57
+could think of the tlb is part of the page table that makes everything faster and when we talk about the hardware
+1:25:03
+mechanisms then we have to talk about the tlb but here for this level of abstracting i said we pull up a little
+1:25:08
+bit we don't even have to worry quite yet about the tlb there are some cases that i mentioned in
+1:25:14
+that slide where i showed you why this was like caching where we have to remember to invalidate
+1:25:20
+the tlb to keep that caching illusion alive okay all right so some questions we're
+1:25:26
+going to need to answer and we're going to do that next time during a page fault where's the os get a free frame
+1:25:31
+well might keep a free list there might be a reaper that's busy pushing pages out
+1:25:37
+to disk and keeping that free list maybe as a last resort we're going to evict a dirty page
+1:25:42
+first there's going to be some interesting policies there how do we organize these mechanisms we're going to have to work on the
+1:25:48
+replacement policy that's going to be our major topic next time how many page frames per process that's
+1:25:53
+another question sort of how much of that precious physical dram do we give to um to each process that's going to be
+1:26:01
+a question all right um all right so to finish up
+1:26:09
+we talked about caching we finished that up the principle of locality of temporal and spatial locality
+1:26:15
+is really present in regular caches it's also present in the tlb how do we know when we have enough
+1:26:21
+locality that the tlb works as a cache we talked about three plus one major categories of cache misses compulsory
+1:26:27
+misses conflict capacity coherence we also talked about direct maps set associative and fully associative
+1:26:33
+organizations hopefully hopefully they uh reminded you um basically from 61c
+1:26:40
+we talked about how to organize the translation uh look aside buffer we talked about organizations
+1:26:45
+we talked about the why it's fully associative typically and what to do on a miss and
+1:26:51
+we are next time we're going to start talking about replacement policies and we're going to start with some idealized ones like fifo and min
+1:26:58
+and lru it turns out is also an idealized one for reasons we're going to talk about next time
+1:27:03
+all right i've gone way over so i'm gonna let you guys go um hope you have a great evening and
+1:27:10
+we'll see you on wednesday

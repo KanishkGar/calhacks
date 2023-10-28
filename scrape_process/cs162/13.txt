@@ -1,0 +1,1708 @@
+0:03
+welcome back everybody um to cs 162. so um we're going to move on to start
+0:10
+talking about address translation in virtual memory now but if you remember from last time just to remind you we did talk about
+0:16
+deadlocks and basically we were distinguishing between
+0:22
+deadlocks and starvation so starvation is a general situation where the thread waits indefinitely
+0:28
+maybe a low priority thread waiting for resources constantly in use by high priority threads
+0:33
+deadlock is a particular type of starvation where there's a circular waiting condition that's not going to
+0:38
+resolve by itself so in the case of sort of generic starvation there's a good possibility
+0:44
+that uh for instance if all the high priority threads went away then the low priority one would get to run the case of deadlock because of this
+0:50
+circular weight condition it's never going to resolve here was the picture that we kind of used here where thread a
+0:56
+is waiting to acquire resource two um and it's already owning resource one
+1:02
+and thread b is waiting to acquire resource one but it already owns resource two and this is the circular weighting that
+1:08
+we talked about and um of course deadlock is a type of starvation but not vice versa so then we went and uh gave
+1:16
+some examples and came up with four conditions uh for deadlock now these are necessary but
+1:23
+not sufficient so uh you need you need to have all four of these and uh that doesn't necessarily mean you
+1:30
+have deadlock but uh if you have all four of them you might have a chance for deadlock mutual exclusion said basically that um
+1:36
+a resource can be held uh exclusively by a thread and held on to while it's waiting for
+1:42
+other things hold in weight is exactly that that the thread holding at least one resource is waiting for another one
+1:48
+it's not possible to preempt or take away resources from a thread and then finally the circular weight
+1:54
+condition says that you have a set of threads t one two three through up to n that are all waiting for each
+2:00
+other in a cycle and uh if you have all four of these things there's at least the possibility
+2:05
+of uh having deadlock okay and we talked about a an algorithm for generally figuring
+2:11
+out whether you're stuck in a deadlock situation or not and then we talked about a number of
+2:18
+ways to avoid deadlock and so on one of the things we talked about however was the banker's algorithm
+2:23
+and the banker's algorithm is a way of dynamically handing out resources so that you won't get into deadlock
+2:29
+and the assumption is basically that every thread pre-specifies a maximum number of each type of resource that it
+2:35
+needs it doesn't have to ask for them all at once it can ask for them dynamically
+2:41
+and now the threads can request and hold dynamically their resources and the bankers
+2:46
+algorithm will make a decision whether to hand those resources over based on whether it's going to deadlock or not
+2:53
+and it's basically uses the deadlock detection algorithm as like a you know a sub routine as part of that as we showed you
+2:59
+and for each request that a thread makes we do a thought experiment we say well if we gave this
+3:05
+resource to the thread would there still be a way to get all of the threads to complete without
+3:11
+deadlocking and if the answer is yes then we would hand the resource out and if the answer
+3:16
+is no then we put that requesting thread to sleep and so basically just as a summary here the
+3:22
+banker's algorithm is preventing deadlocks by stalling requests that would lead to
+3:29
+inevitable deadlocks we call those unsafe states now notice that the banker's algorithm
+3:35
+doesn't fix all of the problems because if a thread grabs a bunch of resources and then goes into an infinite loop
+3:40
+the banker's algorithm doesn't help you with that okay i gave uh one a very simple example of
+3:47
+the banker's algorithm here uh but i didn't call it using the banker's algorithm when i did but here was this example of two threads
+3:54
+that happen to be uh asking for locks but they're doing it in an opposite order so thread a asks for the
+4:02
+uh x and then the y lock and thread b asks for the y and then the x lock and as we talked about last time it's
+4:07
+possible to get that stuck in deadlock but if we actually have the banker's
+4:13
+algorithm running then a says uh g banker's algorithm i'd like to
+4:18
+acquire x and the banker's algorithm says well go ahead because you're not going to deadlock anybody however
+4:25
+as we talked about last time if b asks for y and gets it we are now stuck we're
+4:30
+not quite deadlocked yet but no thread is ever going to be able to make progress and so we're in an unsafe state at that point
+4:37
+what happens with the baker's algorithm and this banker's algorithm does that thought experiment it says well suppose that i gave thread b
+4:43
+y and if i did what would happen and if it does that thought experiment
+4:48
+it'll find that a and b are now deadlocked if it does that and so rather than handing y to b
+4:53
+it actually puts b to sleep what does that allow well that allows a to go ahead and get y
+4:59
+finish up and release the two and then b can be woken up and it can move forward okay so uh basically that's a
+5:07
+simple example of how the baker's algorithm could prevent this particular deadlock all
+5:12
+right and we also talked about a couple of uh algorithmic responses to things like
+5:19
+the uh the dining lawyers problem we talked about uh where they're each grabbing two
+5:25
+chopsticks and how to prevent that basically coming up by uh analyzing it with the banker's
+5:30
+algorithm so you don't necessarily have to have the banker's algorithm running dynamically live you can actually use it to analyze an algorithm
+5:36
+and figure out how to prevent deadlocks okay so i'm going to stop there i wanted to
+5:43
+briefly see if there were any questions on deadlocks we um i definitely recommend you take a look at last lecture because we talked
+5:50
+about uh a number of different examples of deadlocks and how to avoid them
+5:55
+um in different ways and of course the simplest way without the banker's algorithm to fix a this a and b deadlock does anybody know
+6:02
+how would we prevent a and b from ever getting into deadlock without having to use the banker's algorithm
+6:10
+yeah so we basically pick an order call it xyz whatever dimension order and you always
+6:16
+request resources in that order so a would get x and then y and b would
+6:21
+get x and then y and you can prove that for instance there's no way to ever get a deadlock
+6:26
+because to get a cycle one of the threads would have to have y and request x which is going back in
+6:33
+order and so you can actually do a proof that shows that there's no deadlock there good all right so we're going to move on
+6:44
+we've been talking a lot about virtualizing the cpu and it's time to move on a little bit to some other
+6:49
+resources but in general you know different processes or threads share all the same
+6:55
+hardware um you need to multiplex the cpu so that was scheduling and
+7:01
+and some of the lower level mechanisms we talked about you need to multiplex memory we're going to start today
+7:06
+you need to multiplex disk and devices that's a little bit later we'll even talk about virtual machines
+7:12
+where you essentially virtualize a hardware view of the whole machine we'll talk about that a little bit later
+7:18
+as well but today we're going to focus on memory and why do we worry about memory well
+7:24
+the complete working state of a process is defined by its data in memory and registers so
+7:29
+if you were to take all of the state in the system and you were to put it aside somewhere and then you were to
+7:36
+you know throw out the cpu and get new ones and reload them all up you'd be able to pick up where you left
+7:41
+off so memory is pretty important it actually represents the the actual running state of the system
+7:48
+and you can't among other things for instance let different threads use the same memory
+7:53
+because what you're going to end up with is either interference or you're going to have a situation
+7:59
+where private information gets stolen et cetera i like to sometimes think of
+8:04
+this in terms of physics where two pieces of data can't occupy the same location in memory okay
+8:10
+now if you uh guys were to get me to talk about quantum computing at the end of the term where we sort of have
+8:15
+random random topics um i might modify that a little bit when we have a
+8:20
+quantum machine but for now two pieces of data can't be in the same place and therefore we have to virtualize resources somehow to get
+8:26
+around this problem okay and you really don't want to have uh different threads having access to
+8:33
+each other's memory unless they're intending to because otherwise you can get malicious uh modification of the state of a
+8:39
+process so um
+8:44
+does ucb have quantum computing work yes we have some that's going on in fact we have a brand new big grant that just
+8:50
+started if you're interested we can talk at some point soon um so uh if you remember at the very first
+8:58
+uh lecture pretty much or or first or second lecture we talked about some fundamental os concepts this was lecture
+9:05
+two and one of them was the idea of a thread which was the execution context or a
+9:11
+serial chain of execution with a program counter and some registers and and uh stack et
+9:16
+cetera the other piece of that that was very important was the address space either with or without translation
+9:22
+which as you recall was a set of memory addresses accessible to the program for reading and writing
+9:29
+and it may be distinct from the physical underlying memory space of dram
+9:36
+and that's when some translation comes into play and that's when we start getting virtual address spaces which
+9:41
+we're going to dive into today we talked about processes which is what you get when you combine a set of
+9:46
+threads and a protected address space and and then we talked about dual mode
+9:52
+operation which was basically how to take and protect the address spaces that the
+9:58
+operating system is producing and make sure that processes can't just randomly alter their address spaces and
+10:04
+thereby violate the protection okay so address space and dual mode operation
+10:10
+are things that we haven't really talked much about uh since the very beginning of the class and so it's time to bring them back
+10:16
+all right now if you remember the basics of the address space it was the set of addresses that was accessible
+10:25
+to a given thread or process and i just want to toss a couple of things out that you all
+10:30
+know but let's make sure we're all on the same page so if the address of a cpu is k bits
+10:37
+then there are two to the k things that we can access right so if there were only eight bits
+10:43
+there would be two to the eighth or 256 bytes in the address space now we've moved far beyond that unless
+10:50
+you're dealing with little tiny iot devices but um the one thing that is pretty
+10:56
+standard now is things when we're talking about number of things we're usually talking about bytes
+11:02
+unless we say otherwise okay and a byte is eight bits now in the
+11:08
+early days before people really figured out much about computers everybody was kind of doing something different
+11:14
+it turned out that the things that people counted were all sorts of different lengths so there was actually six bits was a standard
+11:21
+because with two to the six or 64 things you can get pretty much all of the printable characters uh
+11:27
+subset of ascii and so that was there were six bit things and then of course 36 bits uh might be uh might be a number
+11:35
+right but today people would stare at you a little strangely if you talked about a 36-bit word
+11:41
+under most circumstances everything is kind of multiples of 8 powers of 2. so 2 to the 10
+11:49
+okay what's 2 to the 10 bytes well that's going to be a kilobyte right or 1024 bytes
+11:56
+and um notice that when we're talking about memory or sizes of things when we talk about a
+12:03
+kilobyte or kb we're going to be talking about 1024 not a thousand
+12:09
+okay now i know in 61a and other early classes you guys all talked about kiwi bites ki
+12:16
+b um uh the real world doesn't often deal with kibby uh
+12:21
+that's something that that you uh see when you're lucky but uh you may need to
+12:28
+interpret uh units when you're out in the real world and usually when you're talking about memory and you're talking about
+12:34
+kilobytes it's a thousand twenty four all right and we'll try to make that clear in an exam but if you're out in
+12:40
+the real world and somebody talks about kilobytes of storage you know they're talking about 1024.
+12:46
+we can do things like how many bits are to address each byte of a four kilobyte page well four kilobytes is four times one
+12:53
+kilobyte which is four times two to the tenth which is two to the twelfth which is 12
+12:58
+bits total all right so you're all going to be great at
+13:03
+doing this kind of log base 2 sort of stuff by the end of the term but you should definitely get more and more comfortable with it like
+13:10
+for instance uh 12 bits here is how many nibbles does anybody know so a nibble is
+13:16
+a single hex digit or four bits so you know how many nibbles are we talking
+13:21
+about here
+13:27
+three good okay so three hex digits gives us a four kilobyte address
+13:34
+okay how much memory can be addressed with 20 bits or 32 bits or 64 bits well two to the k okay use your calculator
+13:41
+app um and of course two to two to the 32 is very common one for us these days which
+13:47
+is you know a little more than 4 billion so there are some numbers that are very useful to get to know
+13:53
+okay so back to address spaces so 2 to the 32 is a is about a billion bytes on a 32-bit machine and we
+14:00
+typically look at that as starting from z o x eight zeros to o x eight f is
+14:06
+f's f c sub losing it eight f's okay and that's uh going to give you 32
+14:12
+bits of address space and those 32 bits will specify a specific byte within that
+14:20
+4 billion bytes okay so how many 32-bit numbers fit in this address space
+14:26
+why is this upside down well i'm just trying to keep you guys uh keep you guys on your toes we'll go
+14:32
+forward or backwards or upside down every now and then um i apologize that it's not always consistent
+14:39
+but um how many 32-bit numbers fit into this address space well that's a question that uh you might ask
+14:47
+yourself sometimes because a 32-bit integer is how many bytes well it's four bytes
+14:52
+it's 32 bits okay so there are two to the 32 over four or about a billion
+14:58
+32-bit integers in this address space okay
+15:05
+what happens when a processor reads or writes to an address well this is an interesting question you
+15:11
+probably haven't thought this through but now you're probably sophisticated enough to know the answer when you when the processor reads from a
+15:18
+particular byte in the address space it probably uh some of it acts like real
+15:23
+memory so if you read from it you get data when you write to it you modify the data when you read back you get the data
+15:29
+you modified however a lot of other things can happen like you could get an i o operation we'll talk about memory mapped
+15:36
+io later in the term where just the act of reading or writing from some address causes data to go in and out of a
+15:43
+of an i o device okay that's memory mapped io or maybe it causes a seg fault where you
+15:49
+try to access something like if you try to access something in the middle here between the stack and the heap
+15:54
+it's possible you'll get a um you'll get a page fault under some circumstances okay or it could be shared memory which
+16:01
+we'll talk about uh later in the term in which case not let not too much later in a lecture or so in
+16:08
+which case uh you might actually be communicating between two processes by setting up shared memory between them
+16:13
+okay so address space is the set of things you
+16:19
+can access and what happens when you do varies all
+16:24
+over the place depending on how you've set that address space up and so that's part of what we're starting today is
+16:29
+understanding how to set the address space up so uh this is the typical structure
+16:36
+of a unix style address space where low the lower addresses typically
+16:43
+have code in them and then there's a stack segment that's at high memory and grows down
+16:48
+uh which in this case is up because we're inverted and the heat grows toward the fff addresses okay and there's a big
+16:54
+space in the middle okay and the program counter or the ipc
+17:00
+depending on what processor you're looking at points to the code segment and the stack pointer points to the stack segment so
+17:05
+these are two registers the pc and the stack pointer which we always deal with okay
+17:12
+and this idea that there's always a big hole in the middle is something you ought to keep in mind
+17:17
+because we're going to talk about that shortly um when we start talking about how to do virtual memory here
+17:23
+there's all we're going to want a virtual memory structure that lets us have holes like this in fact
+17:28
+we're going to want a lot of holes in our space this is just the most common one that you learn about really early in
+17:34
+this class okay and one other thing that you're
+17:40
+going to get to learn about is the s-break sbr k system call is the one that's used to add more
+17:47
+physical memory in the heap and what happens is you're sort of growing this yellow segment uh to be larger by putting
+17:54
+physical memory in there and mapping it okay and so s break is a system call that uh
+17:59
+i believe we have you implement in one of the pro and one of the projects okay it's either two or three
+18:06
+so any questions
+18:13
+okay good why do we want the holes well the answer
+18:19
+is that um even today for um
+18:27
+so there's two questions here so even today uh four uh billion bytes is a lot for most
+18:34
+processes okay unless you're doing some sort of high performance computing and so you never want all of that space
+18:41
+but the processor if it's a 32-bit processor has a whole addressable space
+18:46
+and we know about the stack growing from high memory down and the heap growing from low memory up
+18:52
+which tells us right off the bat that we if we don't want to fill all of this with physical memory there's going to be holes in there
+18:58
+just because the processor can address far more than we want to actually have real memory for so that's one of the
+19:04
+good reasons for holes now and the question about s break is yes indeed so s break is called inside of malik malik is a
+19:10
+user library at user in user code and it calls s-break when it needs more memory to put
+19:16
+on its uh free lists okay so the other thing to recall
+19:22
+is we've talked about the notion of single and multi-threaded processes so you've seen this particular figure over
+19:27
+and over this term but if you recall the address space is the protection environment so that's like
+19:32
+around the whole box and then there's one or more threads inside each of the threads has a stack and a
+19:39
+place to store its registers right that's the tcb and then there's common code data
+19:46
+file descriptors all those other common things that everybody in the same process
+19:51
+shares on the left we have a single threaded process on the right we have
+19:57
+multi-threaded process and we we've spent a lot of time over the last several weeks talking about how to make threads work
+20:03
+now we're going to talk about how to make this address space work and so you can think of threads as the active component
+20:09
+the thing that computes and the address space is is the protected component of a process it's the thing
+20:15
+that is preventing threads from different processes from interfering with each
+20:21
+other okay so what are some important aspects
+20:26
+of this memory multiplexing we're thinking and the reason i put multiplexing down is there's a single chunk of dram that's
+20:33
+typically shared amongst a whole bunch of processes and so the question is what are some important things to think about
+20:39
+so one is obviously protection so we want to prevent access to private memory from other processes
+20:46
+different pages of memory can be given special behavior so that if you try to write a read-only
+20:53
+segment then you're going to get a page fault and a good example of read-only is the
+20:58
+code segment because the code once it's loaded in shouldn't be modifiable in many cases
+21:03
+and if you can make it so it's read-only then different processes can actually share the same code without interfering with each other
+21:10
+okay it's also the case that sometimes we might want to have memory
+21:15
+that's invisible to user programs but available to the kernel and we could do that with mapping okay
+21:21
+the kernel data is uh protected from user programs programs are protected from themselves
+21:27
+etc so protection is a big aspect of this multiplexing the other that's interesting is translation and
+21:33
+we're going to work our way into why translation is important but this is basically the ability to take the processor's accesses
+21:40
+from one address space which is the virtual address space it sees and translate it into the physical address space which is
+21:46
+where the the actual bits get stored in the dram and when there is translation not all
+21:52
+processors have it processor excuse me have it then the processor is going to be using virtual
+21:58
+addresses and uh the physical memory will be in physical addresses and so we're going to
+22:04
+be translating somehow between the two and some side effects of this is uh you
+22:09
+can use translation to help protect and avoid overlap between different processes so each of them can
+22:16
+think they have the the address zero when in fact they'll be pointing at different physical places in dram
+22:22
+okay the other thing is sort of a controlling of overlap so if we have uh multiple processes
+22:31
+they're all running together at the same time we want to make sure that they don't actually collide in physical memory
+22:37
+first of all because that's going to screw up the state but second of all that's where an important part of protecting
+22:45
+and only allowing communication between the parts of different processes address spaces that
+22:51
+we choose and of course the default thing we told you at the very beginning of the class which uh was the by and large the most
+22:59
+uh common thing is that there's no overlap so neither no process can uh write to another
+23:05
+processes address space or even read from it but we're going to start allowing controlled overlap which is when they
+23:11
+can share with each other okay now an alternate view that might be
+23:17
+useful for some of you is to really think about interposition instead so the os
+23:22
+is interposing on the process's attempt to do i o operations for instance
+23:28
+why because you have to go to um you have to do a system call to do i o
+23:34
+and as a result the os takes all of the processes attempted i o and inter intercepts them and
+23:40
+decides whether to allow them okay uh the os interposes on processes
+23:46
+cpu usage okay well an interrupt will allow you the scheduler to take back the cpu
+23:52
+and schedule somebody else right we've been talking about that so really our question today is about
+23:57
+how the os can interpose on processes memory accesses and thereby come up with a uniform
+24:04
+protection scheme and the obvious thing to think about here is it's not practical for the os
+24:10
+code to take over on every read and write of the processor because that would just be way too slow
+24:15
+okay and that's where our memory translation accesses our memory translation mechanisms are going to come into play
+24:21
+where we're actually going to provide hardware support to help us so that the os can do its interposition
+24:28
+and come up with a good protection model but it doesn't actually have to look at every read and write now there's a question here in the in
+24:34
+the um chat about is it possible for a process to demand more virtual memory than we have space for and the answer is
+24:41
+yes and uh then basically what happens is the process ends up getting killed with a segmentation fault of some sort so
+24:49
+if you ever try to exceed the amount of physical memory then the os clearly knows that because it's managing the physical memory and it would
+24:56
+end up killing off that process okay so really we're talking about
+25:03
+interposing a protection model on a process running in a processor
+25:11
+and if you remember we talked about loading at the very beginning where a program
+25:17
+is in storage and what we do is we pull it into memory okay and when we pull it into memory at
+25:24
+that point what we're going to do is we're going to make it ready to run so what's stored on disk isn't always
+25:29
+quite ready to run there's a loading process and what i want to tell you briefly is a couple of ways in which that loading actually can
+25:36
+reflect a translation and protection model in software
+25:41
+okay and so i want to remind you of a few things from 61c
+25:46
+so here's the processes view of memory here where we have some we have some labels
+25:55
+we have some storage that we're putting aside so this is saving 32 words we have some loading
+26:03
+from that data so this is sort of load from data one using and put it into r1
+26:11
+right and we can do some jumps and links and so on if you actually look this is assembly
+26:16
+code at the left but when we load it into memory for execution it's got to be put into binary
+26:22
+okay and so this compiling that and linking that you've been getting uh good at is really the process of turning
+26:29
+this compiler output so the compiler is compiling c it produces assembly and then it gets
+26:35
+linked into physical addresses well for instance if you notice here the start part of the
+26:41
+loop is actually uh i mean this this load that's at
+26:46
+start is basically referencing data that's data one which is a particular address in memory
+26:52
+that address here is actually at address
+26:57
+ox 300 in hex and that's where that data is stored this load instruction is loading from
+27:05
+that address how does that work well during the linking process we put the address 300 hex into that
+27:12
+instruction and it turns out that you don't need the lower two bits in the actual instruction
+27:18
+itself so zero zero c zero is really uh the same as zero three hundred okay because it's
+27:25
+zero c zero times four gives you zero three hundred and so the linker is the part that figures out how
+27:31
+to take all of these references to addresses and turn this into a binary that actually runs on the cpu
+27:37
+okay and that binary has actually been placed in a particular place so
+27:44
+what i said here is oh the data 1 is at address 0x300 why is that well because
+27:50
+we're putting it physical address 0x300 okay and so really this program
+27:57
+in assembly is kind of in a location independent form still and the linking that we do makes it
+28:03
+runnable in a particular part of memory where the address of the data is at 0
+28:08
+300 hex the start is at 900 hex and we've done this linking so that that
+28:15
+instruction that load instruction knows how to get 0 300 hex okay
+28:21
+question so far so this is all 61c kind of quick uh summary here
+28:31
+now what's kind of interesting is um what if let's call this app x so what
+28:37
+if we want to run it again so we have two instances of the same application running but we want to put
+28:42
+it in a different part of memory well one thing we could do is we need some sort of address translation
+28:49
+so that we can put it down here at a part in memory and it will still run okay now if we
+28:56
+don't have actual translation and hardware what we end up having to do is for instance translating and linking
+29:03
+this at a different address so notice what i did here is i put this data at ox1300
+29:11
+hex okay and i've altered all of the offsets on all of the
+29:16
+instructions to point so they're consistent and if i do that then i can load two copies of this thing
+29:22
+they're both been translated slightly differently and linked slightly differently but now they can run
+29:28
+in the same physical memory without needing any hardware translation
+29:33
+okay so i can i can link this in two different ways and now when the processor happens to be
+29:39
+running in this green part of the code everything works because it's self-consistent and it's been linked itself consistently
+29:45
+when it's running in the yellow part it's all self-consistent and it can run self-consistently so this is the compilation and linking
+29:52
+process where i'm linking to different physical parts of memory and i want to pause just for a second
+29:58
+there to let that catch up with everybody notice that trying to run the same app
+30:04
+at two different places in memory causes a different binary to be loaded in this environment that we're coming up
+30:12
+with okay and so i'm hoping that people are starting to say well that seems
+30:17
+inconvenient right because it means that you're dynamically linking things at load time
+30:23
+differently depending on where they are in memory and that also means that you can't just
+30:29
+move these around in memory okay is everybody with me on that so far
+30:41
+okay i'm hoping everybody kind of remembers this idea of assembly language being
+30:47
+linked for a particular load point in the address okay so
+30:55
+there's many possible translations and in fact every different place i can put this in memory i have to translate the physical machine
+31:02
+code differently to make sure that all of my addresses that i use inside that application are consistent
+31:09
+so where do we do this translation well we could do this at compile time we could do it at link or load time
+31:15
+uh war execution time with the right hardware support so right now so far i'm showing you at uh
+31:23
+link or load time when we load this in to the to the processor okay um so
+31:30
+here's kind of something that you've all been doing but haven't really thought about it so you start with your source program
+31:36
+and you run the compiler which produces some assembly which then assembles it into an object module
+31:41
+so if you look back here the object module is kind of the compiled or assembled version of this
+31:48
+assembly before i've actually done my absolute linking okay and then i can take a bunch
+31:54
+of those.o modules with some other ones maybe for libraries i can link them
+32:00
+and now i have a load module okay and that's kind of what we've done here this is now a loadable module
+32:07
+and then the loader can have the system library involved okay and i can load all that
+32:14
+together and i can statically link libc if i want or i can dynamically link libc
+32:20
+and what that really means is that there's actually libraries that are
+32:26
+pre-loaded already and running on the processor and only when i start running do those addresses get
+32:32
+linked okay and so addresses can be bound to final varia values pretty much anywhere along this
+32:37
+path so what i was showing you back here was we were binding the final addresses
+32:43
+at the point at which we were loading so that was a linking and loading combination process
+32:48
+another thing that would be done if we did it statically like this is we might link in the libraries at that time
+32:53
+for for one last little uh bit of linking before it starts running okay but that's not what you typically
+33:01
+do because typically what happens is you get all the way to the loader the loader loads it in
+33:06
+and then the dynamic libraries are actually linked at the time that things are running so there's a little bit of code that's
+33:12
+put in there instead of you're called the lib c routine you're thinking about kind of a stub
+33:17
+and as soon as that starts running then we jump into the dynamic linker and link
+33:23
+to a version of libc that's actually running already on the machine and that's how we can
+33:28
+actually have a whole bunch of dynamically linked libraries that are
+33:34
+read only from a code standpoint and basically shared by all of the running tasks on the system
+33:40
+and thereby we have a lot less memory space that's taken up by dynamic libraries are essentially shared
+33:46
+across all the programs okay so dlls are these dynamically linked libraries and they're linked at
+33:52
+the time that the program starts running so let's talk about unit unit
+34:00
+programming which is back in the old old days when you could sort of have one thing
+34:05
+going on at once okay and uh here unit programming has no
+34:10
+translation or protection in hardware at all the applications always run at the same place in physical memory
+34:16
+and there's only one application running at a time but when you when you take your compilation chain and
+34:22
+you link something and you make it ready to load you have to come up with absolute uh values for all of the offsets inside
+34:29
+there just like we did back here where we hard coded at load time exactly all of the
+34:35
+addresses and that was only good for a particular load point in memory okay so this is uh
+34:43
+our oper this is basically what we did back in the old old days before
+34:48
+we had more powerful machines now this is actually a bit before my time but um and by the way for you guys i
+34:54
+flopped this again so we now have all the high addresses are at the top and the low ones are at the bottom so
+35:00
+we'll try to do that a little more consistently um but the application that's running gets the illusion of
+35:06
+having a dedicated machine because it's got a dedicated machine okay so this is not terribly interesting
+35:12
+from an address translation standpoint so let's quickly move on from this and see what else we could do well if we
+35:18
+wanted to take that idea and multi-program it which is kind of what we've been talking about
+35:24
+uh so far in this term we could do this without translation or protection
+35:30
+by making sure that we never overlap different applications accidentally and we have to
+35:36
+link them for exactly where they belong in memory and by the way that's like microsoft windows 3 1 or the original
+35:41
+mac os macintosh and so what we show here is that application one is running at one
+35:47
+place and application two is running at another the operator operating system is running up in high memory
+35:53
+and the loader or linker combination basically adjusts the application for a particular part of
+35:59
+memory okay and the translation is done at load time
+36:04
+and very common in the early days okay kind of until about windows 95 or
+36:10
+whatever in the microsoft side when they started doing something more powerful all right
+36:18
+now um there's really no protection in this okay so it's quite possible that application one or two
+36:24
+could reach out and start overriding the operating system and crash the whole system now this was
+36:30
+considered a a feature because you could get all of these
+36:37
+various drivers and other modifications the operating system you can download them from uh all over the the network and
+36:45
+you know enhance your operating system to do good things this was a an early time where uh people
+36:52
+were much more naive about uh the dangers of doing that sort of thing and there weren't as many people
+36:57
+out there trying to screw you up but we've uh clearly moved beyond this primitive multi-processing
+37:03
+to something else okay now the question here is does this in this environment are all jumps
+37:09
+relative no they don't have to be relative because when we link like we did back
+37:14
+here we're actually coming up with an absolute
+37:19
+set of binary code that's been configured to be exactly good to run at this particular place so
+37:26
+jumps don't have to be relative jumps can be absolute because we've actually modified things at load time to run in this particular
+37:33
+part of memory does that make sense
+37:43
+okay so
+37:49
+now this is not to say that we wouldn't like to have a lot of relative uh jumps because that would be far fewer
+37:55
+things that have to actually get changed on the way into the system um but let's start adding some
+38:01
+protection so can we protect programs from each other without translation of course so we did we talked about uh basin bound
+38:08
+way back when and by the way the idea of a base and bound protection came from the cray one
+38:14
+uh way back this by the way is the cray one it's one of my favorite device one of my favorite machines here
+38:20
+because it had this circular configuration with seats around the
+38:25
+outside i like to think of this as the love seat configuration and it was circular because it was
+38:33
+cooled and every wire was carefully measured to make it as fast as possible okay and um this
+38:40
+is uh back when when engineering was uh came down to actually measuring wires
+38:47
+and everything okay and notice that what we've done with base and bound now is we're
+38:53
+protecting to say that well if application 2 is running it can't exceed the base and bounds and therefore
+39:01
+it wouldn't be able to write into the operating system it wouldn't be able to write into application one okay and we already talked about this
+39:07
+if you remember this slide from one of our early lectures and the idea here is literally that the
+39:15
+program is busy running in this yellow segment right here's our original program which we thought of
+39:21
+as uh going from zero to whatever some limit one you know zero one to the
+39:27
+once we load it into memory and we've linked it for that particular part of memory
+39:32
+then the base and bounds kind of just prevent the program from getting outside of it
+39:37
+the actual program cpu is basically just running instructions and it might have an
+39:44
+address like one zero one zero zero zero and what happens is that address before we allow it to go to
+39:49
+dram is just compared is it um you know is it greater than or equal to the base and is
+39:55
+it less than the bound and if so we let it go forward otherwise we fault it okay so this particular instance is now
+40:02
+a feature of the hardware the base and bound because as the addresses are coming in from the processor we are actually
+40:08
+checking these in hardware before we allow them to happen so um it certainly it requires hardware
+40:14
+support but this hardware support's very simple and uh but the os has to set the base
+40:19
+and bound registers in order to make this work okay now um
+40:26
+it requires a relocating loader to work we talked about that already but you have to be able to take your program
+40:32
+and relocate it so it's runnable starting at one zero zero et cetera all right and notice there's
+40:38
+no actual addition on the address path so this is still fast we're just checking kind of off
+40:44
+the edges to see whether we should we should allow that access to go forward or not
+40:50
+now we talked about this this is kind of fine and dandy but it's still requiring
+40:56
+this relocating loader and uh wouldn't it be nice if instead we could just come up with one
+41:02
+linked version of the original program that could run no matter where it was in memory okay but to do that we need to start
+41:08
+doing our relocation in hardware rather than in the loader so up until now we've been talking about
+41:14
+doing this relocation and final linking kind of in the compiler
+41:19
+but now let's see if we can do this with translation okay and so in general the idea of translation which we've also
+41:25
+brought up a couple of times this term is that you'd have a cpu that's busy using virtual addresses
+41:31
+and those addresses go into something like a memory management unit and translate from the virtual addresses the
+41:36
+cpu is using to physical addresses okay and so now there's suddenly there's two views of memory
+41:43
+there's the view from the cpu or what the program sees and we call that virtual memory and then there's the
+41:48
+view from the memory side which is the physical memory so if we were to ask ourselves where every bit is actually stored well it's
+41:54
+stored in the dram somewhere and there's a physical address but that physical address
+41:59
+for that bit is physical and it's different from what the cpu uses okay
+42:06
+and there's a translation box in the middle and that translation box is kind of the topic for the rest of the lecture we're going to talk about
+42:12
+what's in the translation box and as you might imagine there is as the cpu produces virtual
+42:18
+addresses and we translate them into physical addresses something is in the middle here that
+42:24
+takes a little bit of time because it's hardware uh and so the virtual address goes in we
+42:30
+take a you know some number of nanoseconds whatever it is what comes out is a physical address
+42:36
+okay um now is uh the question is is there only one
+42:42
+translation per system no once we have a general translator we can translate any way we want in fact we're
+42:48
+going to talk a lot about what those translations look like okay and so you can map addresses any way you
+42:54
+want once you got the flexibility and so that's the important question here notice by the way i also show this
+42:59
+untranslated reads or writes so typically you can go around the mmu but only if you're in uh
+43:05
+in user system mode excuse me okay so once we have translation now
+43:12
+it's much easier to implement protection okay so clearly if task a can't even gain access
+43:17
+to task b's data there's no way for a to adversely affect b
+43:22
+okay now the mmu the question is does the mmu traverse
+43:28
+the page table faster than you could other i'm not sure if i understand the
+43:34
+question uh entirely here but i will say the following the mmu is doing this translation and
+43:41
+we're very it's very important that that translation in general be a lot fast very fast okay
+43:47
+it's got to be faster than the cache hopefully otherwise what's the point we'll get into speed a
+43:52
+little bit later right once you have things like page tables and so on then the mmu is going
+43:59
+to occasionally be slow and that's where caching is going to come into play
+44:04
+all right so the nice thing about so we'll get to speed later all right so you're going to have to just hold off on worrying about speed
+44:10
+for a moment let's assume it's infinitely fast and then we'll we'll come back from that later
+44:16
+so once we've got translation though every program can be linked or loaded to the same region of user space and so
+44:23
+every program or every process can pretend that it's got the address zero and it's got the address
+44:29
+50 000. because every time we have a different process
+44:34
+that we give the cpu to we change the translation and so now we can give every process the
+44:40
+illusion that it's got address zero which means that all of our uh linking and loading can now be linked and loaded
+44:47
+once no matter where the thing is going to run physically because the virtual address space always looks the same no matter
+44:53
+where it's loaded physically okay so that's a huge advantage here
+44:59
+now this was the simple thing that we started with where we said look rather than just checking we're going to
+45:05
+have base inbound but now what we're going to do is we're actually going to translate addresses on the fly
+45:11
+by taking the program addresses coming out of the processor and adding a base to them okay so notice
+45:18
+that if i have program address zero zero one zero what i do is i add the base of one zero
+45:23
+zero to it with an adder and what comes out is a higher address because i'm adding a
+45:30
+base to it and that's the physical address so now what we've got here in blue is now physical addresses okay
+45:38
+and and what's coming out of the pro the processor are virtual addresses and the way those are related is with a
+45:44
+very simple addition operation okay and
+45:49
+if you notice uh the basin bound um the base is related to this
+45:56
+translation the bound typically we check the addresses coming out of the cpu
+46:02
+and so we make sure they're not too big and then we add the base to them and then we let things go forward
+46:07
+okay the good thing about this simple mechanism is it's very simple we just have an
+46:12
+adder and the original program can now as i mentioned can all be linked no matter where this yellow piece ends
+46:19
+up it always looks the same because we do this translation all right questions
+46:29
+all right now this is hardware relocation why because we have hardware
+46:35
+that little plus that's relocating for us and what now we can still ask a question can the program
+46:40
+touch the os well no because we don't let the program addresses go below zero so they can't
+46:46
+get up here and we don't let them go above the bound and so basically what we've we've got a little sandbox here that the
+46:53
+yellow code is forced to be in and so it can't screw up the os okay can the base be negative no
+47:00
+okay so the base these are unsigned operations here okay can it touch other
+47:08
+programs well no because no matter whether the program is in memory above or below the yellow thing we still protect it by
+47:15
+checking for not going below zero and keeping uh less than the bound
+47:21
+all right okay so this is pretty simplistic and you
+47:27
+might imagine that um if this were all it is there wouldn't be a whole lecture on this so clearly something more complicated is
+47:33
+going to be needed and let's start looking a little bit at these ideas here so one of the problems with a simple
+47:38
+basin bound is the following so here i'm showing you a chunk of memory we have the os okay and we have a couple
+47:46
+of processes six five and two that are running and over time what happens is while process
+47:52
+2 finished and so that left a big hole and then process 9 showed up and then
+47:57
+process 10 showed up but process 5 left and now process 11 comes along and we can't
+48:04
+find enough space because even though process 11 would fit in the sum of the blank empty areas
+48:10
+there is no area that's big enough for us to fit and if you think about this simple base
+48:15
+and bound that i've got here this requires the memory to be contiguous physically
+48:21
+so we have to actually find a chunk of dram that's big enough to handle all of our data okay and that
+48:28
+just asking for trouble because suddenly we've got a fragmentation issue and really why is there a fragmentation
+48:34
+issue here it's because not every process is the same size okay and as a result of the different
+48:40
+sizes suddenly we get fragmentation and the only fix to this is going to be well we would have to copy
+48:46
+processes 9 and 10 and push them up in memory and then we can make space for 11 or whatever
+48:52
+but there's going to be a lot of memory copying going on which is expensive and that's just to try to
+48:58
+coalesce things together and get out of the fragmentation issue okay so we're missing support for uh
+49:05
+sparse address spaces here also uh if you think about what i've just
+49:11
+told you here is look at process 11 process 11's chunk has to be
+49:16
+contiguous and so if you remember just a few slides ago i said oh we want to be able to have a hole
+49:22
+between the heap and the stack because that's part of the way we use this well we can't get a hole between the heap and
+49:28
+the stack given this basin bound idea because the memory is contiguous here
+49:34
+okay so that already tells us that maybe we need something different okay the
+49:40
+other thing is it's hard flush very hard to do any sharing in memory between two processes because by
+49:46
+definition process five for instance isn't allowed to access any memory outside of its
+49:52
+chunk including the os so the only way that five could communicate with six is maybe
+49:57
+you could set up a pipe where you had to do a system call into the os and then that would call back into process six so pretty
+50:04
+much we forced ourselves to have to do in a process communication entirely by going through system calls
+50:11
+because of the way we've set up this memory sharing okay so one thing we could do which is done
+50:19
+is rather than one segment per process we could have multiple of them and you're already very familiar with
+50:25
+this you got to play with gdb on your very first homework zero right
+50:30
+and what you saw was there's a bunch of different segments that represent things like stack and
+50:36
+program and so on and what we can do is we can have each segment be a contiguous chunk of memory
+50:42
+so the user's view is that there are a bunch of individual segments that are kind of floating in space
+50:47
+the physical view is really that um you know they're contiguous chunks in memory
+50:54
+and once we do this then we can start talking about well this green segment four we'll just map uh that same segment four
+51:02
+into two different processes and now suddenly they're sharing memory and they can communicate with each other okay so the mirror act of having more
+51:08
+than one chunk of memory suddenly gives us much more flexibility
+51:14
+okay now let's talk a little bit about what's in the mmu to give us multiple
+51:20
+segments we already talked about base and bound as being single registers but now we need to have multiple base and bounds or
+51:26
+have i have it called base and limit here so here i'm showing eight of them they might be loaded into the processor just
+51:32
+like they were with the single base inbound and so the segment map is in the processor and now what do we do well
+51:39
+we can take the virtual address and have some chunks of some segment
+51:45
+bits at the top of the address which we split off how many bits are we going to need up here in order to have our eight
+51:51
+segments if we do it this way
+51:56
+anybody figure that out three very good why because two to the three is eight all right so the top three bits we use
+52:01
+to pick the uh segment the rest of the bits we'll call the offset okay and so the offset will get added to the
+52:09
+base and that'll give us a physical address which will then check the limit to make sure we're not too big
+52:15
+that'll give us an error if we've gone too big and now suddenly we've got a
+52:20
+multi-segment base inbound and this is a little more flexible right because just by having base two limit to the
+52:27
+same for different processes now suddenly we have a chunk of memory that can be shared
+52:33
+okay and we have as many chunks of physical memory as their entrance entries here and i don't know if you
+52:38
+noticed um but uh i've also got these valid or not valid bits and so some of these segments
+52:45
+might be intentionally not set up as valid okay
+52:51
+now how does this relate to segment registers in the x86 this is very similar with one slight difference
+52:57
+which is notice in this particular model we grabbed the top three bits of the address and used
+53:02
+that to tell us which segment register whereas in something like the x86 model
+53:07
+those bits actually come out of part of the instruction the instruction in coding and you take a
+53:14
+few bits off and that tells you which segment register you're dealing with rather than having to pull them out of the segment
+53:20
+uh some bits out of the virtual address absolutely the same idea though all
+53:26
+right so um and and so if you were to look at what's going on inside of an x86
+53:32
+processor you know this is using the uh the es segment it basically decides which
+53:37
+segment it is based on the encoding and then it uses that to look up in the segment table
+53:43
+okay so what's the v or n this is whether it's valid or not valid so typically when we do an access we're
+53:49
+going to not only look up the base and limit and check the offset giving us an error
+53:55
+but we'll also check the valid bit potentially giving us a different error if we try to access a not valid segment
+54:02
+okay so suddenly we're getting into an interesting model here
+54:07
+which isn't quite where we want to be but it's starting to show you all the major interesting aspects of a translation
+54:14
+scheme where there are certain requirements on the addresses
+54:19
+namely we we can only talk about segments that are currently valid
+54:25
+there's also uh certain constraints on the offset in this case where the offsets can't be too big
+54:31
+et cetera and we're starting to look like i said had certain uh access requirements valid or not
+54:38
+valid we'll get more sophisticated here in a moment okay questions
+54:46
+now uh what you should how large are segments well segments in this case suppose this is a
+54:53
+32-bit address and we take three bits off the top
+54:59
+what's the biggest segment that we could have
+55:08
+how do we do that yeah 2 to the 29th exactly so this particular scheme could
+55:13
+have a really large segment right um and so the the size of the segment is really the
+55:20
+maximum size of the segment has to do with the maximum size of the limit in this case okay good
+55:27
+now um here are the x86 model the the basic original uh 8386
+55:35
+introduced um protection but also had these segments and so these segments there's a six of
+55:41
+them that you're well familiar with the code segment stack segment and then four other segments are typically used
+55:48
+and this is a typical segment register just like the green ones from the previous page
+55:53
+and it's not quite the same as what it was but it's close so this
+55:58
+index in the segment register actually points into a table that then looks up the uh the set of
+56:06
+segment registers that you have access to okay so this is just one little level of indirection but it's pretty close and so
+56:12
+what's in cs for instance is these 16 bits the index is used to look up in another
+56:19
+table to get the base and limit and then there's a couple other things so for instance the uh the current rpl
+56:24
+level okay is the uh what level you're executing at are you executing at kernel
+56:30
+level or user level for instance remember there's two bits here because there's four levels um segmentation is fundamental
+56:37
+in the x86 way of the world okay and so you can't just turn segmentation off it's in every
+56:44
+it's in every axis okay so you know here if you were to look at every instruction there is some segment
+56:50
+portion of that instruction um that's there okay and it may be implicit
+56:55
+or it may be explicit but there's always a segment portion of the access when you're dealing with x86
+57:01
+what if you just want to use paging or some other flat scheme we'll talk about that in a moment but typically what you
+57:07
+do is you just set the base to zero and the bound to all of memory and now you you've effectively said i'm
+57:13
+not going to worry about my uh segments anymore because i'm effectively treating them as pointing it
+57:18
+all off memory okay all right and uh by the way when you get into the
+57:25
+64-bit version of the x86 scheme all but the uh the top um two
+57:33
+segments fs and gs all of the other segments basically are uh effectively have a base
+57:40
+of zero and a limit of of two to the 64th so they're essentially non-functional
+57:46
+we can talk more about that a little bit later okay so i want to give a very simple example here again just to walk
+57:51
+us through so if you look here's four segments okay so one two three four
+57:56
+that means two bits taken out of the address out of a 16-bit address so this is a really small
+58:01
+address space here's the virtual address space here's the physical address space and i want you to notice that i've
+58:07
+divided this into things that started zero zero things that start at
+58:12
+four zero eight zero zero and c zero zero and if you think that through
+58:19
+this address if you strip the top two bits off of zero x zero zero zero zero what you
+58:25
+think of is there's the top two bits are all zeros here the top two bits are zero one here the top two bits are one zero and here
+58:31
+the top two bits are one one now if what i'm saying is a mystery to you it's time to start reviewing your
+58:37
+hex so you should get to where you know uh zero through f very cleanly and you know exactly what
+58:43
+the four bits are so that you can strip that off easily but we'll assume for a moment you know that so what that means is segment with
+58:50
+the id 0 where the top two bits are zeros i look up here and i say oh segment id
+58:56
+0 has a base of 4 and a limit of 8 so that means that this little pink
+59:01
+chunk here gets mapped to this little pink chunk in physical space by this scheme similarly this
+59:09
+chunk of cyan i should call this magenta i suppose this little chunk of cyan gets mapped to this chunk how do i know
+59:16
+that well because four thousand is a zero one in the upper two bits which uh segment id zero one has a base of
+59:23
+four eight zero and a limit of one four zero zero which means that it goes from four eight
+59:28
+hundred to five c hundred okay and similar et cetera okay
+59:35
+and we can start talking about oh yeah this yellow chunk is something we share with different apps or whatever
+59:41
+there's lots of ways to decide how to put controlled overlap into your use of
+59:46
+physical space once you have the ability to do this mapping okay so mapping
+59:52
+is pretty powerful and the other thing to keep in mind is this green table which is in the processor needs to
+59:59
+get swapped out every time i change from one process to another because i'm changing the address
+1:00:05
+translation so when i change from one process to another i save out the green table on one processor and i load in the green table
+1:00:12
+on another okay all right
+1:00:18
+now i want to give you another example of translation okay so here is
+1:00:23
+some assembly and here's some virtual addresses okay so blue here is
+1:00:29
+virtual because the processor is going to be running there here is my uh segment registers
+1:00:36
+all right and we are going to pretend to be processors i don't do this too often because it's time consuming in class but
+1:00:42
+let's simulate a bit of this code to see what happens so let's start the program counter at 0x240 and notice
+1:00:49
+that's a virtual address because this is what's in the actual program counter of the processor okay so the program
+1:00:56
+counter has a 0x240 and the question is if it wants to load the next instruction for that program
+1:01:03
+counter what happens well uh it says it's going to fetch 0x024
+1:01:11
+what happens in the mmu is it takes this address which is 16 bits notice and by the way this is zero two
+1:01:18
+four zero so zero is zero zero two is zero zero one zero four is zero one zero zero and zero is
+1:01:26
+zero zero zero zero okay uh again maybe you wanna write out
+1:01:31
+hex to binary uh and put it under your pillow and and sleep with it tell you until it
+1:01:37
+absorbs into your brain if this is not something you're comfortable with but once i translate the address
+1:01:44
+into bits i can look and i say oh look the top two bits are zero which means i'm in the code segment
+1:01:49
+and so that means i'm in virtual segment zero zero zero what's the offset well the
+1:01:55
+offset is pretty much everything else well if i take the top two bits out of there what's left over is still two four
+1:02:00
+zero and so what i do is i take my base which is zero four
+1:02:05
+zero zero zero and i add it to the offset of two four zero and what do i get four two four zero
+1:02:11
+voila so the physical address has been translated from this virtual uh instruction fetch
+1:02:19
+to four two four zero and at that point i fetch from dram at four two four zero and i get that
+1:02:25
+instruction which is an um load um address um into dollar a0 from var x so now i've
+1:02:33
+got the instruction loaded okay
+1:02:39
+all right and what i want to do is i want to load this var x address which is zero
+1:02:47
+four zero five zero into address a zero now notice four zero five zero is a
+1:02:54
+virtual address and i'm loading it into register a0 question do i translate the four zero 4050
+1:03:02
+into a physical address before i load it into register a0 can anybody tell me whether i do that or not
+1:03:12
+good no why
+1:03:19
+everybody who said no is correct
+1:03:26
+okay that's right good the process only sees virtual addresses
+1:03:32
+so this is a virtual address four zero five zero and it gets loaded into a0 great answer so i don't translate
+1:03:39
+because i'm not going to dram here i'm just loading a constant address into a0 okay
+1:03:45
+now next instruction we're going to fetch well we we're at 2 4 0 now we're at 2 4
+1:03:51
+4 because we incremented the pc by 4 okay because in this risk and processor
+1:03:57
+the addresses are 30 or the instructions are 32 bits in size um we translate the 244
+1:04:03
+into 4244 which is exactly what we just did in the previous step but the next instruction we bring
+1:04:11
+the the jump and link to string length okay and um we're going to
+1:04:18
+jump to where the string length is and once again we're going to move the 248 which is the return after jump and
+1:04:25
+link into the return address okay so the typical risk processors like risk
+1:04:31
+five that you guys dealt with in 61c there's a return address and that a return address is going to be 248
+1:04:37
+which is once again a virtual address and since we're drive we're jumping to uh virtual address 360
+1:04:44
+we put that into the program counter now i want everybody to appreciate the fact that the only time we translate is
+1:04:50
+when we go to dram which so far the only time we've done that is when we load the instructions we
+1:04:56
+have to figure out where those instructions are stored in dram okay now we get to this string length
+1:05:03
+okay where we're going to load a value into v zero of zero so we
+1:05:10
+we translate uh the physical address here is four three six zero we get it okay we're gonna move um the uh
+1:05:18
+constant zero into v zero okay that's what that instruction do it does and we're going to increment
+1:05:23
+the pc by four and last thing we're going to show you here is we're going to fetch this instruction
+1:05:29
+okay so so far the only time we've done any virtual translations to physical is when we load the
+1:05:34
+instruction but now look at this this instruction is a load byte so not only do we load the uh
+1:05:41
+instruction which we fetch from four three six four okay
+1:05:46
+but now we wanna load the uh the value that's at address
+1:05:52
+stored in dollar a zero so we have to take that dollar a zero which is four zero five zero and translate it well
+1:05:58
+four zero five zero looks like this in hex i mean in binary zero one zero zero zero zero zero zero one
+1:06:05
+zero one zero zero zero this is virtual segment one because the top two bits are one
+1:06:10
+got the data that tells us the base is four eight zero zero therefore the physical address is four
+1:06:16
+eight five zero okay all right and then
+1:06:21
+as a result we load a byte from four eight five zero into t zero et cetera and we're good to go okay all right now if you notice
+1:06:33
+we actually did do a virtual translation right we figured out top two bits bottom bits are this 50
+1:06:39
+when we add the the base plus the 50 we get four eight five zero so this is showing you the translation
+1:06:47
+going to dram both when we're loading instructions and when we're doing data accesses all right i realize that was a long
+1:06:54
+process here but i just wanted to talk through that once in class so that everybody had seen it once okay do we
+1:07:00
+have any questions on this before i move on
+1:07:09
+okay now does the os have special instructions that access physical addresses directly yes in most cases
+1:07:16
+there's a way to go around the mmu okay the other thing that the os has access to is this green
+1:07:22
+set of registers so only the os ought to be able to modify this which means only when you're in system mode not in
+1:07:28
+user mode are you allowed to change the green registers okay
+1:07:34
+all right so what are some observations about what we just did there so we're translating on every instruction fetch
+1:07:39
+loader store okay that's fine the virtual address space has holes in it we that's good right if
+1:07:46
+we look here we've got some holes in the virtual address space
+1:07:52
+okay that may be getting us part of our where we wanted to be
+1:07:59
+when is it okay to address outside a valid range well this is how the stack grows okay if
+1:08:05
+we look at our stack back here and i'm going to go back to this previous figure
+1:08:10
+okay we might have stack is is a base 0 limit 30 uh
+1:08:17
+3000 i mean so that's this green chunk we could figure out that if the process tries to
+1:08:24
+go outside of that it's effectively wants to grow the stack because it gets a page fault or a
+1:08:30
+segmentation fault in this case by trying to access an illegal address that's outside of the limit
+1:08:36
+the os could take that as an indication that that needs to put more physical memory in there and it could grow the
+1:08:41
+segment in that case okay but you can see that there's some limits to what you can do because you can't run into another segment
+1:08:48
+all right the other thing is clearly we need
+1:08:55
+protection mode in the segment table for example code segment might be read only data in stack might be read write etc so
+1:09:01
+we want to start putting protection bits on the different segments what do you have to save and restore in
+1:09:07
+a context switch well this particular scheme that we came up with the segment table stored in the cpu not
+1:09:14
+in memory because it's small and therefore we need to uh every time we switch from one process to
+1:09:19
+another we need to store the green segment table out to
+1:09:25
+memory and pull in the green segment table from memory for the next process and if we want to put a whole process on
+1:09:31
+disk we have to swap it all out we'll talk about that in a section okay
+1:09:37
+all right now what if not all the segments fit in memory so if i take the set of all processes that
+1:09:44
+i want to run and they need more physical memory than fits one option is you just kill them off if they don't fit
+1:09:51
+a less drastic option is in fact to do swapping okay this is an extreme form of contact
+1:09:56
+switch where you take whole segments send them out to disk so that
+1:10:02
+other processes can use the physical memory okay now of course the cost of contact
+1:10:08
+switching excuse me is a lot worse in that case okay
+1:10:13
+because you got to go to disk remember what's the number i told you guys a disk is like a losing a million instructions worth of
+1:10:20
+time okay and notice that because of the way we set up our segments this is extremely
+1:10:26
+inconvenient they always have to be kept together as a whole so if you look at that green
+1:10:32
+chunk of memory it doesn't matter how big it is the whole thing has to be swapped out to disk um we don't have any option in putting a
+1:10:39
+slight part of the segment out there okay so you might imagine that we need something
+1:10:44
+better here because this is not quite what we need so far so a desirable alternative to swapping
+1:10:49
+everything might be some way to keep only the active portions of segments in memory at any given time
+1:10:56
+and swap out the ones that are idle and that needs something better than this whole segment at a time
+1:11:02
+thing that we've gotten ourselves into we need something finer granularity
+1:11:07
+okay so problems with segmentation are one must fit variable size chunks into
+1:11:12
+physical memory leading to to uh fragmentation um you have to move processes around multiple
+1:11:19
+times remember just to deal with fragmentation remember i showed you that you had a set of processes some left you've
+1:11:25
+added some new ones and pretty soon your memory is all fragmented and your only option here is to move stuff around so
+1:11:30
+that seems inconvenient you have to swap the whole thing to disk okay and so really there's multiple levels of
+1:11:38
+fragmentation that are bad here and just to remind you guys of the different types of fragmentation
+1:11:43
+there's external and internal fragmentation so external fragmentation says there's uh gaps between allocated
+1:11:49
+chunks of memory that need to be coalesced together and so we're really talking about external fragmentation here
+1:11:55
+internal fragmentation says you've allocated a chunk of memory and you don't need all the memory within the
+1:12:00
+chunks and it's possible that we allocate our segments larger than we needed and now we've got
+1:12:07
+fragmentation inside of them but this external fragmentation is clearly a major problem
+1:12:12
+with our model so far so that leads to this picture which i've shown you several times this term
+1:12:19
+and the idea there is we want a smaller quanta of stuff right so we want to go
+1:12:27
+through this translation but maybe rather than having whole segments worth of chunks maybe we actually have
+1:12:35
+many we divide the data into lots of little pieces which we're going to call pages translate each one of them separately
+1:12:41
+and now we have a lot more control over placement okay and so that's going to be general
+1:12:46
+address translation not just this simple base and bound segmentation that we've been talking about
+1:12:52
+okay so we're going to do fix size chunks okay and this is a solution to fragmentation first and
+1:12:58
+foremost so physical memory is now going to be page size chunks and i'll tell you right off the bat a
+1:13:04
+page is typically a four somewhere between 4k and 16k let's think 4k for a moment bytes
+1:13:11
+okay remember which is uh you know four times 1024 right every chunk of physical memory is
+1:13:17
+now equivalent and so therefore you can just use a vector of bits to handle allocations
+1:13:22
+there's no longer this weird um keep track of all the free
+1:13:28
+segments and their sizes and then figure out if you have to coalesce them together etc now pretty
+1:13:34
+much any chunk of memory is the same size as any other chunk of memory and so really we only need this huge bitmap
+1:13:40
+that tells us which ones are free and which ones are in use so that seems advantageous right um
+1:13:47
+should the pages be as big as our previous segments well no because that clearly left us into some
+1:13:52
+problems with fragmentation so what we want is to have smaller pages okay now the original ones in original
+1:13:58
+unix were kind of in the 1k size you can get up to 16k we're gonna think about four which is kind of in the
+1:14:05
+middle here okay and so that means that what we're recalling segments like the stack segment or the code segment or whatever
+1:14:12
+is really comprised of a bunch of individual pages that we're then going to put together
+1:14:17
+into a virtual memory space for the processor to access okay and so our mmu
+1:14:23
+memory management unit is going to do something more than just this base and bound translation it's actually going to translate
+1:14:29
+from one page uh set of pages to a different set of pages from virtual to physical so how do we
+1:14:36
+get simple paging okay so this is our first chunk first try at this right so
+1:14:42
+rather than having a register set of registers inside the processor which gives us the base and bound
+1:14:48
+we're going to change gears for a moment and actually have a single register called the page table pointer and it's going to
+1:14:54
+point at a chunk of memory now that's going to have a set of pages to
+1:15:01
+translate okay in the page table for a moment we're going to have one page table per process and it's going to have a single page
+1:15:08
+translation in it called a page table and that's gonna be stored in memory okay and for those of you that are
+1:15:15
+thinking ahead this is not quite what we want yet we're gonna get to what we want next time but we're gonna get closer this time
+1:15:20
+okay so these this green portion now resides in physical memory not in the registers of the processor it
+1:15:26
+contains physical page and permissions for each virtual page so if you notice page 0 here
+1:15:32
+is valid and read-only page 2 is valid and can be both read and written etc
+1:15:38
+okay page 4 is not valid and how does our virtual address mapping work well here's our address
+1:15:45
+we're going to take the top set of bits and that's going to be our virtual page number and the bottom set of bits are
+1:15:52
+going to be the offset and this offset is going to have enough bits for our page size so
+1:15:58
+we've decided on a 4 kilobyte page which means the offset is 12 bits and
+1:16:03
+the virtual page number is pretty much anything else it's all the rest and so now that offset
+1:16:08
+in our translation is really easy because all we do is we take it out of the virtual address and we copy it over the physical address so
+1:16:15
+the lower 12 bits of the physical address is exactly equal to the lower 12 bits of the virtual address okay and then the
+1:16:22
+virtual page number is used as an index into this page table so if those remaining bits happen to be
+1:16:29
+zero one then that represents page one and so we take the virtual page number
+1:16:34
+we look it up in the page table it says it gives us the physical page id
+1:16:40
+that's a page number that's page number one that we copy into the physical page
+1:16:45
+frame number and now we've got our physical address so we take the virtual page number look it up in the page table copy the
+1:16:51
+physical page number into our physical address and we're good to go okay
+1:16:57
+and if you look at this for instance by the way i'm talking about 1k pages here for a moment so if the
+1:17:03
+offset's 10 bits then you might have a 1024 byte pages
+1:17:08
+and so it's 10 bits that gets copied the remaining bits well if it's a 32 bit address then 32 minus 10 is 22 bits
+1:17:15
+so there's four million entries those four million entries are used to index into the page so one of four million
+1:17:21
+options uh which page it is we look it up okay and of course we got a check bound so
+1:17:27
+this page table is uh only so big and so in this case there's only six entries here and so the
+1:17:33
+page table size says that if this virtual page number is bigger than six we get an error and if i try to do
+1:17:40
+something that the permission bits don't allow like i'm trying to write when i'm only allowing reading here then i
+1:17:46
+get an access error okay now every oh
+1:17:51
+the os does give every process gets a page table pointer that's exactly
+1:17:56
+correct all right and the way we've set this up so far is every process also gets a page stage
+1:18:03
+table size as well okay so they get a pointer and a size kind of like base and bound but now this
+1:18:08
+is a level of indirection on page granularity okay and by the way by the time we get to
+1:18:14
+next time we're no longer going to have a page table size because this is not going to be quite what we want okay
+1:18:22
+now when the data to process wants something more than a page that's not a problem because we just
+1:18:27
+use page zero and page one contiguously we find pages for it in physical memory and all
+1:18:33
+of a sudden the virtual address has two pages worth of virtual address that's physically backed
+1:18:38
+so there's uh the nice thing about this paging is that you can allocate physical data any way you
+1:18:45
+absolutely desire uh to give you whatever set of contiguous addresses you like
+1:18:51
+okay so this isn't this is ultimately flexible okay i hope i answered that question
+1:18:58
+so let me show you a very simple page table example this is a silly one but it gives you the idea we have four byte pages
+1:19:05
+okay a four byte page means that we only have two bits offset right and the rest are the page
+1:19:12
+id and so what happens here is if we have eight bit addresses since two bits are the page id
+1:19:19
+then the top six bits our address uh our page zero which tells us the
+1:19:24
+the base is four of the physical page zero zero zero one zero zero that's
+1:19:30
+the number four we copy zero zero to uh the offset there and that tells us that
+1:19:36
+this pink set of virtual addresses turns into this pink set of uh physical addresses and we can do the
+1:19:42
+same with uh the blue and the green where here notice that the blue ones cyan are
+1:19:48
+zero zero zero zero one because it's uh you take the ox4 and you split it out so
+1:19:55
+this is um page one which turns out into page physical page three and that's why this
+1:20:02
+chunk of cyan maps to this chunk in the physical space now and the green one similarly and now
+1:20:08
+we might ask well where's six well the the thing about six is six
+1:20:14
+if we split it into the offset which is two bits and the page id we see the page id is still one
+1:20:20
+and the offset is one zero or two so we basically are in this blue region right and address six is between
+1:20:28
+four and eight so that makes sense and all we do is we take zero zero zero zero one one and that's our
+1:20:35
+new physical page we copy the uh offset to the offset and we're good to go and that's
+1:20:40
+over here and that's the same is true with nine okay and what's nine well nine is
+1:20:45
+zero zero zero zero one zero zero one lower two bits are copied the uh upper
+1:20:53
+six bits tells us which page id we want that gets copied over and we find out
+1:20:58
+that we're up here so virtual address nine turns into physical address five in this
+1:21:04
+translation scheme okay questions
+1:21:13
+now good question if i fragment pages across physical memory does it matter
+1:21:20
+and it depends on what you mean by that but let's assume here that we're looking at this
+1:21:25
+figure and let's just talk about that so notice the processor sees three pages in a row that it can use and
+1:21:32
+it could have a data structure that spanned all three pages if it cared right because that's that's okay and notice how those are
+1:21:39
+split all over the place okay and the answer is it doesn't matter from the translation standpoint
+1:21:46
+how this works okay however there are certain cases where the dram
+1:21:54
+might be a little faster if things are next to each other but that's going to depend a lot on your
+1:21:59
+architecture by and large i would say it doesn't matter how scrambled they are in physical memory
+1:22:04
+uh the processor gets to use them in virtual memory okay and um when we get more into
+1:22:12
+performance it's going to be more about which of these pages are on disk versus in memory than how
+1:22:17
+they're scrambled amongst each other okay and the other question is will it ever
+1:22:24
+be the case it's only partially loaded if it's across multiple pages if i have a data structure here yes
+1:22:29
+so it's possible that this blue thing is going to be out on disk where the pink thing isn't and so if i start reading a data
+1:22:36
+structure in memory and i get to the blue part that may cause a page fault which has to pull stuff off of disk and we'll
+1:22:41
+get to that next time as well okay now what about sharing i want to just show you a little
+1:22:48
+bit here here's an example where process a here's its page table and i'm going to
+1:22:54
+map this page number two to some chunk in memory and here we go process b has a different
+1:23:00
+page table pointer and a different page table and it's going to have something that ends up mapping to
+1:23:07
+exactly the same physical page now because we did that
+1:23:12
+now process a and b can share data by writing in their shared page and each can see what the other wrote
+1:23:19
+i hope you all see something weird about this though process a sees that data
+1:23:25
+at one set of addresses namely where up top here at 0 0 0 1 0 process b sees that same data in
+1:23:33
+a different place which is zero zero one zero zero so these two
+1:23:38
+virtual addresses map the physical page different places so you would never really wanna do this probably
+1:23:44
+unless you had some sort of data you were sharing that didn't mind where it was if this is a linked list you want to
+1:23:50
+make sure that the mapping in the page tables is at the same place in the two virtual processes
+1:23:56
+or in the two processes and we'll talk about how to do that with when you're setting up shared memory segments okay when we get to that
+1:24:04
+now if you bear with me for just a second so where do we use page sharing all over the place so the kernel region
+1:24:10
+of every process has the same page table entries and the process can't access at a user
+1:24:16
+level but when you go for a user-to-kernel switch now the colonel can access those pages we're going to talk about the meltdown
+1:24:22
+bug next time and that will be an interesting issue that we'll have to
+1:24:30
+talk about but for now the kernel can share the same pages obviously between different processes
+1:24:37
+different processes running the same binary we talked about that earlier but if we have uh i don't know what your
+1:24:43
+favorite editor is here but enacts running twice on the same machine all of that code
+1:24:49
+is read only and it's mapped to the same shared set of pages between two processes and so their code
+1:24:56
+segments actually end up mapping to the exact same physical dram and now those two processes can run away happily
+1:25:03
+uh sharing the same data okay i have started a holy war by saying
+1:25:08
+emacs vi vi so now um by the way i'm a big fan of emacs i apologize to all of you out there um so
+1:25:16
+user level system libraries are another great example of sharing okay we share dynamically linked libraries which
+1:25:23
+i mentioned earlier in the lecture and the way that works is the the actual
+1:25:28
+code is shared and it's linked into every process um automatically okay
+1:25:35
+and you can have shared memory segments between different processes usually shared at the same point in
+1:25:41
+their virtual address space as a way to allow you to literally talk to each other in shared memory okay
+1:25:48
+and you can share linked lists and objects and everything okay now the memory layout for linux
+1:25:55
+is kind of like this okay it's a little bit different than we've been talking about so typically the kernel space
+1:26:01
+is up high the top one gigabyte in a 32-bit machine and the lower 32 gigabytes are
+1:26:07
+for the user uh code and although we've been talking about the stack starting at the very top in fact it's
+1:26:13
+stop it starts at a random offset and the um things like dynamic libraries
+1:26:19
+are at a random spot and the heap is at a random spot and the reason that this randomness is introduced as to where the starting
+1:26:25
+point is is it makes it a lot harder for an attacker that breaks in uh to your process or the kernel
+1:26:32
+to find your data because you've moved it all over the place okay and notice just from this figure all of
+1:26:38
+these holes in the space so um as a thought for uh from now till next time is what we've
+1:26:45
+come up with doesn't work with holes very well okay because this page table is contiguous and if we have
+1:26:51
+uh you know if we have four uh um if we basically have a whole bunch
+1:26:57
+of pages we need and with a bunch of holes in it we need to have enough page table space to cover everything
+1:27:02
+okay so this is going to be a problem and are these holes used well right now they're not used for anything
+1:27:08
+in the stack these holes are going to help signal that we need to put more physical memory after we sort of try to go below
+1:27:15
+the currently assigned stack so yes the holes can be used once they've been mapped okay so i
+1:27:21
+should let you guys go i'm gonna and you could have more than one page for the stack but you
+1:27:28
+only put the minimum down there for now okay so um we'll talk about some of these
+1:27:33
+other interesting questions i want to let you guys go for now but we start we talked a lot about segment mapping okay so segment
+1:27:39
+registers within the processor by default um the segment id is associated with each access maybe
+1:27:45
+because it's a couple of bits in the address or because it's in the actual instruction
+1:27:50
+every segment has base and limit information and these segments in some cases can be shared okay we
+1:27:57
+started talking about page tables so in this case memory is divided into fixed size chunks of memory virtual page number is pulled out of the
+1:28:03
+top of the address the lower part is the offset you just copy the offset you translate
+1:28:09
+from virtual page number to physical page number and unfortunately right now we have
+1:28:14
+really large page tables because of all of uh the way we've done this next time we'll have multi-level
+1:28:20
+page tables where we can deal with sparseness much better and the page tables are much less
+1:28:25
+uh overhead all right so um we'll let you guys go for now and i hope
+1:28:31
+you have a great night we'll see you on
+1:28:39
+wednesday

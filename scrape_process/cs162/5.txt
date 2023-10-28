@@ -1,0 +1,1658 @@
+0:02
+welcome back to 260 162 everybody i almost said 262. um
+0:08
+we are uh out of mars and the upside down it appears because there's actually some
+0:14
+non-orange light that's happened today but it's still a bad air quality so that's not great but
+0:20
+let's see what we can do today and continuing our topics we're going to be talking a little bit more about the user's view of the system so that
+0:28
+when we really dive in to details inside the operating system you'll have a good
+0:34
+clue uh why we're doing what we're doing so today we're going to talk about
+0:40
+communication between processes we were talking about how to create them uh up and how to create threads but now
+0:48
+we're going to talk about communicating between them we're going to introduce pipes and sockets and
+0:53
+tcpip connection setup for web servers for instance and the thing to think about here is our
+1:00
+mental model here is going to be uh process a on one side of the network talks to process b
+1:05
+on the other side and they use read and write just like the file interface okay so
+1:12
+the other thing i just wanted to keep everybody in mind here is we talked about creating processes with fork
+1:18
+so the fork basically copies the current process all of its address spaces the state of
+1:23
+the original process is duplicated in the parent and the child that's the address space the file
+1:28
+descriptors etc and what i'm showing here uh basically is giving you a brief
+1:34
+way to look at this when fork returns once the two processes have been created
+1:40
+fork returns in each of them and in one of them it returns something bigger than zero that's the parent and the other one it
+1:46
+returns zero and that's the child and i um show you this on this side here uh once
+1:52
+we've forked this is the parent the fcpid greater than zero and it's actually executing a weight which
+1:58
+says it's going to pause or go to sleep until the child exits which is this other piece of code
+2:03
+with a 42 which is in this case an error so most cases with unix return code of zero is
+2:09
+uh what happens when there are no errors so i saw an interesting uh question up on uh piazza i thought i
+2:16
+would say something about so the question is why fork i mean if it's really creating two identical
+2:21
+processes what's the point and the point is there are two processes where there was one before
+2:27
+okay so fork is basically how you create new processes
+2:32
+this is mostly true because as i mentioned here linux has something called clone which gives you more options than
+2:38
+regular fork but fork was the original mechanism way back in the first versions of unix and so its
+2:45
+semantics are partially historical but the question of why fork is really
+2:50
+that's the way you get new processes so um last time we talked a lot
+2:56
+about the fact that uh in unix pretty much everything's a file okay uh obviously uh you can talk to files
+3:04
+with read write you can talk to devices you can do inter-processor communication
+3:09
+which we're going to show today but that interface is pretty constant okay and among other things it's going to allow
+3:14
+this simple composition uh find piping into grep piping into word count etc
+3:20
+that you're um getting used to uh with your programming at user level and you're going to actually
+3:26
+implement when we get around to project two uh this particular modality of of
+3:33
+communication with the kernel is you open everything before you use it okay and so uh all of the access control
+3:40
+checking is done on open and if you get returned something then you know that you were successful in
+3:45
+opening the other important thing is that in unix the kernel is extraordinarily agnostic
+3:52
+okay it's agnostic to what the underlying structure of the data is that means that
+3:59
+everything is essentially bite oriented regardless of whether it's coming off of a disk 4k at a time or off of a keyboard one bite
+4:06
+at a time now the question of uh if processors are composed of threads that's forking a process fork all the threads so we answered that
+4:13
+last time the answer is no so you've got to be very careful only the only the thread that actually executed
+4:20
+fork is recreated in the child process so the other thing we briefly talked about was the fact that colonel buffers
+4:27
+reads and writes to give you that byte-oriented uh behavior so it basically takes
+4:34
+from the disk it might take 4k or 8k or 16k at a time and it buffers it internal to the kernel so then you can
+4:40
+read 13 bytes and then 12 bytes and then 196 bytes without having to go to the disk all the
+4:46
+time because that would be extraordinarily inefficient writes are also buffered so when you write
+4:52
+you don't have to wait until it gets pushed out to the disk before it returns back to the user
+4:57
+okay and then because we had open before use we also have an explicit close operation that uh typically you use when
+5:03
+you want to close something out and clean everything up although the kernel uh will do that if your process
+5:09
+just ends and you haven't closed things so i wanted to put together a kind of a
+5:15
+walking pattern for thinking about today's lecture and this is going to be one process so we're not
+5:22
+talking about inter-process yet but it's a web server which you've all used a lot
+5:27
+and here we have the standard three layers we've got the user level and notice that even a
+5:33
+server is running at user level we have the kernel which is all of the kernel code that's giving
+5:39
+the glue and the virtual machine and so on is all done in the kernel and then the hardware of course has got
+5:45
+things like networking and disk and so on and so we could imagine that the server process starts up and the first thing
+5:52
+it does is it's going to open some sockets to get ready to listen to
+5:58
+incoming requests we'll get to that in a moment but notice that that first thing it does is a read and that
+6:05
+read goes to the socket and it has to take a system call to do that and the first thing that happens is
+6:11
+wait okay why because there's no data yet so that server gets put to sleep
+6:16
+or the thread that did this gets put to sleep the server could be multi-threaded as we'll talk about because there's no data and notice we've
+6:23
+used read so we're actually going to be communicating with the network in the same way that we did with
+6:28
+the file system okay and sometime later data is going to come in
+6:34
+from remotely over the network and for instance this might be a request to the web server for reading a certain url
+6:40
+it'll generate an interrupt we haven't talked about that yet it'll copy things into the socket buffer and then
+6:48
+poof the weight condition is no longer going to be true and we're going to be able to wake up and remove ourselves from the kernel and
+6:56
+basically return from reed so this we we went into the kernel with reed but we stayed there for a while and then
+7:01
+eventually we returned from read with data and so there's a request and now that request since we're talking
+7:07
+about a web server is likely to need to get something off the disk so it executes a read to a file descriptor for the disk uh
+7:15
+file system and now it's going to wait a little bit because potentially the disk
+7:20
+has to be accessed with the device driver so that may take some time to pull things off the disk and then the
+7:26
+disk interface will eventually hand back the requested data which again will remove the weight condition and
+7:32
+return from the read system call with data at which point we format the reply like a http
+7:38
+reply we go back to our network socket with a write and that again is a syscall boundary
+7:45
+which will send the packet out going and notice that we don't have a weight condition here because i'm assuming that the buffers aren't full and the data
+7:51
+just goes out and of course after 12 we're going to just repeat and do another read okay and we're going to
+7:57
+see that a lot in a little bit of the lecture today we're going to talk
+8:02
+more about this network communication thing here how does this work okay but before we get there i did want
+8:08
+to point out one thing which is what you see here is uh if you recall we were stalled on our reed
+8:15
+both for the network and for the disc for a little while and the kernel took all the responses in
+8:21
+from the disk and from uh the network and saved up and buffered
+8:26
+them so that we only got returned what we asked for okay so the boxes here uh inside the
+8:32
+kernel are slots for bytes or whatever okay think of them this is a generic queue of some
+8:37
+sort the case of write means essentially that
+8:43
+when we write our data it goes into the kernel and is buffered by the kernel and we can return immediately back to the
+8:48
+server to uh do another read if we want to okay now again to remember
+8:57
+we talked about both high and low level apis for file data and also for io now here's an
+9:05
+example of the high level streams which all have almost all of them have an f in front of them so like f
+9:11
+open and f close and f read and f right and they um when they return they return
+9:17
+a pointer to a file data structure okay and that file data structure
+9:24
+has inside of it the fact that this was successfully opened and potentially um if it was
+9:31
+successfully opened uh that also has information required to do the reads
+9:36
+or the writes depending on what you ask for an error is returned from the operating system and from the
+9:43
+library in this case with a null file star so if your file star is zero or null then you know that it
+9:49
+failed and you use this pointer that was returned for all subsequent operations
+9:55
+okay and data in the high level streams are buffered in user space in addition to the kernel okay so now
+10:02
+here's a question does the kernel buffer network traffic indefinitely before any data gets returned at all to read
+10:08
+so um if you don't execute a read and you open a socket and a bunch of data arrives
+10:14
+then what will happen is it'll start filling up in the socket and eventually that'll fill up and it'll back up to the
+10:20
+sender and tell it to stop sending data and then as you start reading it'll pull
+10:25
+data out of the network and empty the socket buffer and then things will get started again we'll talk about that later in the
+10:31
+term to contrast this high level stream uh streaming infrastructure where there's
+10:38
+actually buffering at user level we have the low level raw interface which is basically using
+10:43
+system calls directly that's like open create and close okay and notice that what returns from
+10:49
+them from open on success is a file descriptor okay and that file descriptor says uh
+10:58
+which file was opened but the way it says that is not something you can figure out it's something the kernel does it has a
+11:04
+table inside of file descriptor to file descriptive description okay data structures and so
+11:12
+um you're going to get back an integer here that you're not going to know what to do with the one integer that does matter for
+11:18
+instance is less than zero or minus one says this was a failure okay and then you got to check error and
+11:23
+then finally since streams that's the high level and up in the um system calls that's a
+11:30
+low level like open create close or tightly related each other if you take a stream and you run file no
+11:36
+on it file number you'll actually get back the internal file descriptor that's uh part of that stream okay
+11:44
+all right so the um the flags here
+11:51
+are saying whether you're doing reading or writing to the file that's what you want to do to it the uh bit uh permissions are what other
+11:59
+people can do to it so this is kind of what you want to do locally and the permissions are what other people can do for it
+12:05
+okay um the question is does this lead to a vulnerability where other
+12:11
+methods could try a random number to access a file they shouldn't so i'm assuming that what you mean is
+12:16
+you randomly choose an integer and then you try to use it in read or write so the point is that all of the access
+12:23
+control is done on open and then the kernel for your process
+12:28
+puts a pointer into there of a mapping between the file descriptor
+12:34
+number and the actual internals of the open file and the best you would
+12:40
+get by randomly selecting something is uh maybe you'll pick one that was open
+12:45
+but then you already have permission to use it because it's your process if you pick something that's not there
+12:50
+there's no way you'll get another person's file because that mapping between numbers
+12:56
+and open file descriptors are is actually uh unique to the process so random random descriptor numbers doesn't help
+13:02
+you here now um we also talked about the representation of a process inside the
+13:08
+kernel so if you look here um the process of course has its address space which we're going to do a lot with in a couple of
+13:14
+weeks it's got registers for at least one thread which is there's always one primary thread in a process there could
+13:20
+be more it's got this file descriptor table which maps numbers to open file descriptions and notice by
+13:27
+the way there's always zero one and two that are started up when you start a process we didn't include them here but we did
+13:34
+talk about them last time this is uh the standard out standard error in standard in
+13:40
+okay um so this descriptor table gives you a
+13:45
+redirection and each open file has a description that's in internal kernels data
+13:52
+structures okay so file descriptors are per process file descriptions are not necessarily
+13:59
+okay and we talked about that last time for instance here uh here's process one and two perhaps
+14:05
+this is the parent process is one and the child is number two after fork you uh you copy the address
+14:11
+space and the registers of the thread and the file descriptor table which happens to point to now a shared file
+14:17
+description and if you take a look at the end of last uh lecture we talked about some of the uh good and bad consequences of this
+14:26
+okay and then of course zero one and two are uh typically attached to the term terminal
+14:32
+okay but uh on the other hand you can redirect them which is where piping comes into play
+14:40
+okay the position variable is how many bytes you've read so far in the file except you've got to
+14:45
+be careful because this is the position that the kernel knows of if you're using the streaming interfaces
+14:51
+with f in front of them there's a different buffer inside of the user space that also keeps track
+14:57
+of the position for your reading through the f read and f right and if these two uh
+15:02
+so these two uh pointers are not necessarily the same and you should take a look i uh the very end of one of the recent
+15:08
+lectures there's a discussion of that okay and yes the position variables how many
+15:14
+bytes not that you've read so far it's the position of the next thing that's going to be read so that you can change the position with
+15:20
+the various seek operations okay so if you were to seek back to 100
+15:26
+read seek back to 100 read you could do that over and over again and keep reading the same thing and this position wouldn't change in
+15:32
+that case now um okay so that's a very quick
+15:38
+reminder of of things i just wanted to talk to about some brief administrivia of course homework one is is almost due
+15:45
+so hopefully you're making great progress on that project one should be in full swing so that's
+15:50
+been released uh your groups have been set and your discussion sessions hopefully have been
+15:55
+set so um you're all you're all up to for good here it's time
+16:02
+to get moving make sure that you figure out how to have your partners meet
+16:08
+uh regularly okay because that's important um you should be attending your
+16:13
+permanent discussion session uh remember to turn on your camera and zoom and
+16:19
+discussion attendance is mandatory so your tas can get to know you so that's important
+16:25
+okay the other thing i'm sure you're well aware of is our first midterms coming up october 1st
+16:30
+roughly two weeks from thursday sorry this is three weeks from tomorrow i didn't change that but it's two weeks
+16:35
+from thursday um and uh be prepared okay um the
+16:44
+last thing is again plan on how your group collaborates we're gonna be giving you guys credit for um showing us
+16:51
+some selfies of all four of you uh talking in zoom with your cameras on but um except for
+16:58
+just that you should consider doing that so try to meet multiple times a week because even in uh
+17:04
+real space not virtual space people that don't meet regularly the projects end up failing at
+17:10
+the end of the term and you don't want to do that so try to keep your groups moving okay now we had a couple of questions
+17:16
+um on the uh on the chat here um so the question
+17:23
+about uh since this calls are expensive is it possible to pre-request threads and then schedule them at user level
+17:29
+the answer is yes and we'll talk more about that i'm going to give you a brief example toward the end of the lecture where we
+17:35
+talk about thread pools for instance for web service web services so that's a
+17:40
+good idea now the uh the selfie by the way that i
+17:45
+was talking about is showing a video uh a um screen capture
+17:50
+from zoom okay um because you're supposed to be using your cameras with meeting with your
+17:55
+uh partners as well okay you don't have to have video uh screenshots fine um and then the other
+18:02
+uh question is will the descriptor have the same value across processes only if
+18:08
+uh the file descriptor is shared because you had a parent that uh executed fork then
+18:15
+the child will have all the same file descriptors if you open the same file in different
+18:20
+processes independently there's absolutely nothing that says that the file descriptors have to be the same unless you're doing some
+18:26
+tricks with dupe or dupe too which is something you're going to learn well how to use okay
+18:32
+so today we're going to talk about communicating between processes so what if a process there's multiple of
+18:39
+them wants to communicate with another one why might they want to do that well perhaps they're sharing a task so both
+18:46
+you know both of them are doing something or perhaps there's a cooperative venture with some security implications what do
+18:52
+i mean by that well clearly if you have a bunch of threads in a single process it's easy for them to communicate
+18:58
+but perhaps you don't trust everything that that other code is doing and so you'd like to have separate processes
+19:03
+but then you want to have them communicate okay and this is not uncommon
+19:09
+so the process abstraction is designed to discourage this right it's set up to make it hard for
+19:16
+one process to mess with another one or the operating system okay that's by design that's a feature
+19:22
+so we got to do something special that's agreed upon by both processes and so think of this as punching a hole in
+19:28
+the security but doing so in a way that's uh okay to the two
+19:34
+processes so we start off with no communication then we've got to communicate okay
+19:40
+and we call this inter-process communication not surprisingly now if you remember i
+19:46
+just wanted to re-emphasize this and we're going to talk a lot more about page table mappings and so on uh
+19:52
+in a week or so but if you remember there's a page table that does these translation maps for you
+19:59
+and it basically says that process one's code goes to the table and maps to some part of physical space that's different from
+20:06
+process two's code so notice they're using completely different parts of the physical dram
+20:11
+and the same for data heap and stack and as a result they can't alter each other's data right
+20:19
+that's by design so that's part of our protection so um
+20:24
+we got to figure out something else for communication and if you think about it we've already talked a lot about
+20:30
+something that works right we've talked about how you could have a producer which is a writer and a consumer which is a reader
+20:38
+separated in time communicate how do we do that with a file okay we already talked a lot about how
+20:44
+when a parent process creates a child process they share uh the file descriptor table and so if
+20:51
+you have a file that's been open for reading and writing and then you produce a child process
+20:57
+then the two of you can exchange data through the disk okay so that's easy okay
+21:04
+can anybody say why this might not be desirable
+21:13
+yeah so slow why slow well you're not really trashing the disk per se but it is slow because what you're
+21:19
+saying is in order for communication which is already in memory you've got to go out to disk and back
+21:25
+okay so this this doesn't seem particularly desirable for that reason but i do want to point out that this
+21:32
+idea of writing to some file descriptor and then reading from a file descriptor is our standard unix io mechanism so
+21:41
+whatever we come up with is going to be very different here okay now i did see
+21:46
+an interesting uh question in the chat and this is going to be the first time i tell you this today so here's your fact for the
+21:53
+day does anybody have any idea of how many instructions
+21:59
+you lose by waiting for a disk to pull data
+22:06
+okay well it's not 100 billion but it is a million okay so a million is a good rule of
+22:13
+thumb um especially when you have multi-issue processors that are running more than one thing at once
+22:18
+so think at least a million okay and so going out to disk and back is not
+22:25
+good it's very slow now of course what we haven't talked about yet is caching
+22:31
+inside the kernel so in reality you could write and read without ever going out to disk
+22:36
+but this interface by its very nature tries to push data out to disk and so i'm basically taking something
+22:42
+that ought to be a quick communication through memory and you know adding a disk onto it for
+22:48
+some goofy reason so this seems like this might not be always desirable and you may want
+22:53
+something else when you don't care about keeping your data persistent is there a faster way yes
+22:59
+there is now one thing we also won't talk about today is this do you see what i did here see the red
+23:05
+so what i did was yes initially it was impossible for uh processor program one to talk to
+23:13
+processor program two through memory because we mapped it that way but we can also choose
+23:18
+to map certain parts of memory so that both of them share it so that's what's read here both
+23:24
+mapped to the same page in memory and then you can do things like have data structures that are shared you can
+23:30
+have linked lists that are shared all sorts of cool stuff so this is pretty
+23:36
+uncontrolled but is fast and we'll talk about how to make this work after we've gone through how uh
+23:43
+how um we can communicate and set this up okay so we're not gonna get there yet
+23:49
+okay so we're going to need locks we're going to need a lot of stuff so before we go to this shared memory model
+23:54
+let's understand a few things okay but today's inter-process communication is going to
+24:00
+be a little different than this okay what else can we do all right so disks
+24:05
+aren't great well what if we ask the kernel to help us in other ways like an in-memory queue
+24:11
+okay that's a producer put stuff on the queue and the consumer consumes stuff and we'll use system calls for security
+24:18
+reasons so we're not going to open up uh security and uh by the way
+24:24
+you know if you do this shared memory thing you got to make sure that you're okay with the process complete the other
+24:30
+process completely reading and writing the data that you're reading and writing okay so you have to do this carefully
+24:37
+but what else could we do well here we go here's a queue okay so notice this is not a disk anymore but process a
+24:44
+executes a write system call which puts stuff in the queue and a process b executes a read system call which re uh
+24:50
+removes things from the queue and now suddenly we've got communication wouldn't that be great okay
+24:58
+um so some details before we figure out how to do this some details of what we might want is
+25:04
+uh for instance well when data is written by a it's held in memory until b reads it okay that sounds good
+25:10
+um it's the same interface we use for files yeah that's good much more efficient because nothing goes
+25:16
+to disk okay but we have some questions here like how do we set it up
+25:21
+um what if a generates data faster than b can consume it then the queue is going
+25:26
+to get full or what if b consumes data faster than a can produce it well then the queue is going to be empty
+25:33
+so what do we want to do uh for these second things well what if a is generating data too fast what do we need
+25:39
+to do
+25:45
+anybody have any ideas so how do we tell it to slow down what what might be the simplest thing well not a
+25:53
+lock yeah wait very good weight is the key okay so as i'm gonna teach you and
+25:59
+you're gonna hear over and over again not a semaphore we haven't gotten there yet what you're gonna hear over and over
+26:04
+again for me in the next couple of weeks is the way you solve synchronization problems is by waiting
+26:10
+so in this particular instance what we want is when process a executes a write system call but the
+26:15
+queue is full we want a to go to sleep okay and b if b tries to execute a read
+26:21
+system call and the queue is empty we want to go to sleep right and the important part is that um
+26:28
+we want uh once there becomes memory space if a is asleep we want to wake it up and finish the right
+26:34
+system call and furthermore once there's data in q if b is asleep we want to wake it
+26:40
+up and return from read okay now the question here is why weight rather than a lock well the answer is
+26:46
+locking is all about waiting okay so this is a type of locking but it's a type of locking that's
+26:52
+particularly convenient when we're uh doing writes and reads to a an api in the kernel because the kernel
+26:58
+can put those threads to sleep and wake them up again when it's time okay
+27:04
+um and deadlock here uh is only a problem if
+27:12
+well there's no deadlock here because there's no cycles you might be saying is there a live lock issue here where b gets put to sleep and has never
+27:18
+woken up that's a bug because process a has uh refused to put any data in there
+27:26
+and in fact what you can do is you can set up reads to uh and rights to time out after a
+27:32
+certain amount of time if they're uh if they're not satisfied so um it's not possible for process a to screw process b up
+27:38
+uh if it doesn't write anything okay yeah if there's a cycle um
+27:46
+that's a that's a different problem let's uh let's hold on to that for now okay all right so
+27:52
+here's the first thing that looks exactly like that cue that i wanted to talk about which is the unix
+27:58
+pipe um it's also part of posix and it's essentially just a queue we
+28:04
+call it a pipe but process a writes to the pipe process p reads from it they use the same
+28:10
+read and write interface we've talked about before and now we've got communication across process boundaries
+28:17
+the memory buffer here is going to be finite okay well why because memory is finite and if
+28:24
+producer a tries to write when the buffer is full it blocks and it's put to sleep until there's
+28:29
+space and if consumer b tries to read when the buffer is empty it blocks which means it's put to sleep until there's
+28:35
+data so this has exactly the semantics of what we wanted okay and there's a system called
+28:42
+called pipe which you will become very familiar with soon which uh looks like this you you
+28:49
+call pipe and you give it a pointer to a a two element array that can store two
+28:56
+integers and why is that well we need to file descriptor for both ends of the pipe for both the input end and the output end
+29:02
+and so what this pipe call does is it uh opens up creates a pipe and opens up
+29:09
+two ends and returns two file descriptors so when you write on the the input end it goes into the pipe and
+29:15
+when you read from the output end it comes out of the pipe okay now the question about how do we
+29:20
+know if there's data in the pipe can somebody answer that
+29:26
+do we have to monitor do we have to pull it every now and then to check
+29:35
+hamming codes nope no hamming codes so how do we know
+29:42
+there you go perfect we had a great answer there if process b is reading and there's no
+29:48
+data it goes to sleep the kernel knows when process a writes because process a wrote okay the kernel knows this okay
+29:56
+the pipe is not a it's not a separate process the pipe is just some memory in kernel space
+30:01
+and so when process a goes to right the kernel as part of putting the data
+30:06
+into the pipe checks and sees that well the read there's a reed waiting so it just wakes it up so because this is all running inside of
+30:13
+the kernel the kernel knows okay and so the kernel knows when process a writes whether b
+30:18
+needs to be woken up and it knows when b reads whether a needs to be woken up and so that's purely
+30:24
+an advantage of being a kernel internal kernel interface okay all right questions
+30:36
+so the pipe is not a process the pipe is just a cue inside of kernel memory whose interfaces
+30:42
+are using system calls read and write okay this is not necessarily in general
+30:50
+standard in and standard out this is uh you can do anything you want okay so you yourself could create a pipe
+30:57
+with uh new file descriptors that aren't zero one or two
+31:02
+okay um are there other examples of process beside
+31:08
+read and write i'm not sure i understand the question
+31:16
+so processes do all sorts of stuff okay um but reads
+31:22
+and writes are the way that we do communication either with other processes or with the file system
+31:28
+okay so you get two new file descriptors exactly this is an array of two file descriptors and
+31:35
+i'm going to show you for instance uh an example here so here's an example where we actually make an
+31:40
+array of integers that's got two slots in it that's this uh int pipe fd of two and then i call the
+31:46
+pipe system call by saying pipe i give it the pointer to that array and if what comes back is a minus one
+31:53
+then that's a failure okay that's a pretty standard idea in unix and we say there was a failure in
+31:58
+return otherwise we succeeded and now we have two file descriptors for two ends of the
+32:04
+pipe and so the uh pipe fd of one is the right end and pipe fd of zero is the
+32:11
+read end and you should do a man on pipe by the way to see the the uh
+32:17
+interface there but so all we have to do for instance is if i have a message
+32:22
+which is message in a pipe and i s and i write that into the pipe and i have an extra
+32:28
+plus one here after string length this lets me make sure i write the not only the message but also the uh
+32:34
+null at the end and when i'm done it writes to the pipe and then on
+32:39
+and then i immediately read from the pipe and i just get the data back okay now why are there two closed calls
+32:46
+because there's two file descriptors open a right end and a read end oh by the way why is it say
+32:51
+pipe fd of zero yes that's a bug hold on
+32:57
+sorry my uh my mistake now
+33:08
+so um sorry about that so now if you uh
+33:14
+as we're continuing let's take a look at this so let's look at what else we can do so let's do pipes between processors okay so
+33:23
+um the question here about where is the data it's buffered in kernel space
+33:28
+yes so because we're using system calls like write and read we're going from user space into the kernel
+33:34
+to access that pipe um and so the buffering is entirely in the kernel okay
+33:42
+all right now so this right now this is only one process so it
+33:48
+creates the pipe and then it uses it so this is this code example is a little uh goofy
+33:53
+because the process writes into the pipe and then immediately reads from the same pipe okay so there's no there's no two
+33:59
+processes hold on just a sec okay we're getting to that example and how do we get to that example well
+34:05
+we execute pipe which gives us two file descriptors there it is so there's the um the first file
+34:12
+descriptor is the read end and the second one is the right end okay and then when we do fork
+34:19
+poof all right now we've got a parent process and a child process that are sharing a pipe so now if you
+34:26
+notice what i did earlier here i said was a little goofy as i wrote in
+34:31
+the right end and i read from the read end i actually have as an option here now
+34:36
+both processes the parent can read and write the pipe and the child can read and write the pipe
+34:42
+okay but that's a little goofy right so um what we typically do is the following we
+34:48
+we uh generate the pipe and then we fork okay which i already kind of showed you
+34:55
+in this picture but now depending on what we do we close one file descriptor in one process and
+35:01
+the other one and the other one so for instance here if pid is not zero then um we are the um
+35:09
+we are the parent and what we're saying is really should be a pid greater than zero sorry about that we are the parent and in that case
+35:16
+we uh write to the uh the right end which is number one and we close the read end
+35:23
+whereas in the child uh we read from the read end but close the right end
+35:30
+okay now the question here of can we use the heap for the pipe
+35:35
+the answer is the kernel's got the pipe so you don't have any control over where it is now you may ask the maybe you're asking
+35:41
+the question here of where is this uh
+35:47
+array with two file descriptors in it certainly you could use the heap for that if you wanted although it's
+35:53
+probably not necessary because you're probably going to basically create a pipe in some
+35:59
+uh place and then use it right away but you could certainly put the the two
+36:04
+file descriptors in the heap if you liked okay and if you wanted two-way communication you don't really need to
+36:11
+have uh well you don't have to have two pipes but then the communication would get
+36:17
+interleaved but you could create two pipes one for each direction certainly okay and we'll get to what happens with
+36:25
+closure in a moment here so the the answer to the question on the chat is if if you have a file
+36:32
+description table entry and there's anybody still pointing to it then it stays
+36:38
+uh open okay
+36:46
+so writing to the read end and reading from the right end is not guaranteed to do anything useful
+36:51
+okay so um here's in graphics i wanted to show you so we're making a channel from parent
+36:59
+to child we've already done fork as you can see here we did pipe and fork so what we're going to do is we're going
+37:04
+to close uh three on the parent side because
+37:10
+we're not going to read at the parent side and we're going to close four over here on the child side and now that
+37:15
+we're done we have uh the ability for the parent to write into the pipe
+37:21
+and then it gets read from the child and so now we can send um data a stream of data from parent to
+37:26
+child but we could do the opposite so here we could close four on the parent side
+37:33
+and close three on the child side and now the child can send data the parent process
+37:38
+okay and um as was asked earlier could we make two pipes certainly we could
+37:43
+make a pipe to go from parent to child and child to parent and they would be separate from each other because they'd have separate cues
+37:50
+okay how do you get end of file in a pipe so you know think about this for a moment a
+37:57
+pipe is just a cue in memory so what does end of file mean what it means is there's going to be no more data coming
+38:04
+and so what happens is after the last write descriptor is closed the pipe's effectively closed
+38:09
+because it only returns eof after the last read descriptor is closed if a write
+38:15
+tries to write it'll get the so-called sig pipe signal we talked about signals last time and if
+38:21
+the process ignores that sig pipe signal then the right will fail with an e-pipe error
+38:26
+okay so you could either capture the sig pipe signal or you could get an error back from right those are a
+38:31
+couple of options and so in this instance here we close file descriptor 4 so now that
+38:38
+pipe is hanging we're not going to garbage collect the pipe yet because there's still a file
+38:43
+descriptor pointing at it but what you can see here is that the only thing that process 2 is going to get out
+38:49
+of reading that cof end of file okay
+38:56
+all right now once we have communication we need a protocol so protocol
+39:01
+is an agreement on how to communicate so in the case of that um that pipe
+39:08
+yeah we can send a stream of bytes from parent to child but how does the child interpret that well
+39:14
+we may need to decide to put them into packets so there are some system calls like send message receive message you
+39:20
+could do for that or you could packetize it yourself and say well i'm going to send you a stream of bytes
+39:25
+where the first one says how many bytes are in the data structure and then i put those number of bytes but that's starting to become a
+39:31
+protocol where there's an agreement for how the bytes are formatted in the channel okay and we're
+39:38
+not going to go into this much today but just to get you thinking here okay um
+39:45
+you've got a syntax to that protocol which says how are the bytes uh structured together um you know
+39:53
+we always have this fight is followed by those bytes whatever and then semantics of what that means
+39:59
+um oftentimes you can describe this by a state machine so protocols can get pretty
+40:04
+sophisticated we're going to talk about the tcpip protocol later in the term um
+40:11
+and another thing which we're not going to talk about today but also later in the term is the fact that across the network for
+40:16
+instance you may need to even translate from one machine uh representation to another so if you
+40:22
+remember the big endian little endian discussion from 61c it could be that when you send a message
+40:29
+from uh one process to another that that other process looks at integers a different way and
+40:36
+you need to reformat the messages to match what they are at the other end now the question here about can you use
+40:41
+higher level constructs like f open and f read on pipes what you're going to do in that instance
+40:46
+is you'd create the pipe and then you can wrap a file star around it there are there
+40:53
+are system calls to do that okay called fdo open for instance okay um this is not quite uh
+41:01
+it's similar maybe to control f endings replaced by line feed endings under some circumstances perhaps
+41:07
+okay and yes this is decoding and encoding but it's needs to be agreed upon via a standard
+41:13
+and so that whole idea of what is the standard for encoding and decoding gets pretty interesting but later okay we'll talk about it and
+41:20
+by the way another word you might be aware of is serialization you probably talked about that in some of your classes like 61b
+41:29
+okay so some examples um some examples here yes people are
+41:34
+mentioning things like utf-8 and uh 16 and so on that's also part of it here's a simple
+41:39
+uh protocol your telephone you pick up uh the phone you listen for a dial tone or
+41:45
+see that you have service um not too many people not too many of you probably even know what a dial tone is anymore maybe you do
+41:51
+but then you dial a number you hear ringing and then all of a sudden on the other side you hear hello
+41:57
+and then you say hi it's john or my favorite is hi it's me it's like well
+42:02
+how do you know who it is um but you might say something like how do you think blah blah blah blah blah
+42:09
+the other side said yeah blah blah blah maybe you wait a little bit to think then you say goodbye they say goodbye and you hang up and
+42:16
+this is actually a protocol where the ringing uh the expectation is that somebody at the
+42:23
+other side says hello it's always a little crazy when you get a spam call and they don't
+42:28
+and then that hello leads to the initiator the call saying what it's about which then uh
+42:35
+gets a response back okay which eventually causes a closing of the channel
+42:41
+okay saying goodbye and then you hang up and these round trips here are very similar to what happens with tcpip
+42:47
+with the fin messages and so on okay so
+42:53
+um the protocol we're going to talk about for today's the rest of today's lecture
+43:00
+is this web server request reply protocol and uh there's a communication channel
+43:06
+of some sort that we need to figure out how to discuss in the middle here but the client might say request over
+43:12
+the network say and then the web server would give you a reply and there's a very carefully uh
+43:19
+constructed protocol here okay and this uh communication from the
+43:24
+client to the web server is certainly going to be running tcp ip but the um
+43:31
+there's more to it because you've got to satisfy http so there's actually uh some standard protocol with the
+43:38
+headers and so on okay all right so this idea of cross
+43:46
+network ipc is an interesting one because potentially you could have one server serving a whole num large number
+43:52
+of clients and many clients accessing a common server starts yielding some interesting
+43:57
+questions like how does the server keep track of the clients
+44:02
+okay so how would the server keep tracking the clients
+44:08
+anybody have any idea there okay so maybe every client has a
+44:15
+different ip address well if you're anything like um
+44:20
+uh you know like myself when you use a web browser firefox whatever your favorite chrome
+44:26
+uh notice there may be a bunch of tabs uh or there may be uh a bunch of pieces inside and in that
+44:33
+case there may be many clients that the server is interacting with that are all at the same ip address
+44:40
+so then what okay
+44:45
+okay i see a lot of sockets and cookies um
+44:51
+i p address plus mac address no that's not going to help you sequence numbers okay so i'm going to try to answer this question oh i saw somebody say port
+44:57
+that's exactly right so each unique communication which we're going to talk about here has both an ip address and a port on
+45:04
+each side and a protocol and as a result each uh communication
+45:09
+channel is unique okay and so the unique id is going to be a five tuple uh that
+45:14
+we're going to talk about in a moment okay so the client let's make sure we understand
+45:19
+first of all what we mean by client server so a client is somebody that asks for service from a
+45:27
+remote server and uh the clients are sometimes
+45:32
+on okay they uh you turn your computers off your turn your um you know you turn your cell phones
+45:39
+off sometimes but it's the thing that typically initiates a contact like here's a get
+45:45
+over http for index.html a server on the other hand is typically always on
+45:51
+up on some well-known address that uh can be accessed by a client and so it
+45:58
+doesn't typically initiate contact with clients but it needs a fixed well-known address
+46:03
+and port in order to be findable by clients and of course you make you make your
+46:09
+request and you get some response back
+46:14
+um now what's a network connection let's be really basic so for this lecture it's a bi-directional
+46:21
+stream of bytes between two processes that might actually be on different machines for now we're going to be discussing tcp
+46:29
+okay which is uh is the basically the control protocol that's used
+46:35
+for um across the network and does error recovery okay and so it's a unique
+46:40
+stream of information okay um abstractly a connection between two
+46:46
+endpoints a and b has a queue going in both directions so there's a queue from data sent from a to b and from b to
+46:52
+a which is just like we were talking about with pipes except that this is potentially across the network
+46:58
+could be on the same machine might be in the same building could be on different uh continents okay
+47:05
+it could even be i suppose between here and the moon and back if there's somebody up there so we need something to help us with
+47:12
+this and the socket abstraction is this idea of an endpoint for communication and the key idea here is
+47:18
+communication across the world once again is going to look like file io with reads and writes
+47:24
+okay so here we go so we have process uh one process is gonna for instance do
+47:29
+a write okay and that's gonna go into a data structure we'll get to called a socket here which is gonna cause the communication
+47:36
+to go across the network to another q and which point process b can read from
+47:41
+that other end of the socket and we get communication and because we're going to be using tcpip
+47:47
+then we don't have to worry about errors in the middle here or anything okay okay the difference between port
+47:54
+and socket is a port is uh uh describing a unique communication
+47:59
+the socket is a data structure including a queue okay hopefully you'll see the difference
+48:05
+about that in a moment okay um if you don't by the end of the lecture make sure to ask again now just as we were talking about with
+48:11
+pipes if we go to read on one side and there's no data that process gets put to sleep until the data
+48:18
+shows up okay so sockets are endpoints for communication they're cues to hold
+48:24
+results um two sockets connecting over the network gives you inter uh process control or
+48:30
+inter-process communication over the network and this sounds great but now you got to
+48:36
+start asking questions like how do you open this what's the name space how are you connect them okay
+48:43
+so um there are lots of different types of sockets it's true
+48:49
+but not all pipes are sockets okay there are ways to get things like pipes uh that don't have sockets
+48:56
+internally and there's also ways of connecting sockets internally that act like pipes okay so for now the pipe
+49:04
+the native pipe implementation is actually not the socket implementation on a lot of unix
+49:13
+distributions okay so we need to figure out how to connect all of this all right um so what are some more
+49:20
+details so the first detail um is that sockets are pretty ubiquitous
+49:25
+um what i said about posix not being ubiquitous everywhere is not true about sockets so sockets are
+49:32
+pretty much implemented on almost any operating system that wants to communicate over the network okay you pick it it's got it um it was
+49:40
+standardized by posix but this is part of the standard that is always there okay
+49:46
+the thing you ought to know about which is fun is that sockets came from berkeley
+49:51
+and the berkeley standard distribution unix version 4.2 was the one that first introduced sockets all right
+49:58
+definitely go bearers on this this release had a whole bunch of benefits to it and a lot of excitement uh from
+50:04
+potential users in fact people that were there at the time it was released have told me stories about
+50:10
+uh how there were runners waiting to uh get the tapes that had the latest
+50:16
+release on them so that they could uh quickly take them to where they were going to be uploaded and to their computers and run so
+50:24
+berkeley 4.2 bsd had a lot of buzz okay go bears and
+50:30
+so you can be proud of that now um the same abstraction is for any
+50:36
+type of network so you can be local within the same machine so as i mentioned before you could imagine two
+50:42
+sockets being connected inside a machine using the sockets libraries in the kernel
+50:47
+and it would look like a pipe but what i said earlier is that not all pipes implementations use sockets okay because
+50:54
+it's a simpler interface the internet um you can go across with tcpip and udpip
+51:01
+and at the time of 4.2 bsd there were a whole bunch of other networking protocols so tcp ip
+51:07
+and udpip were not the only ones there was apple talk and ipx and a whole bunch of native ones
+51:13
+some of which still live in deep recesses of the network okay now um
+51:21
+yeah there's 162 participants in our uh in our class right now that is pretty
+51:26
+funny um so more details on sockets um let's just uh it looks like a file
+51:36
+with a file descriptor so once again our standard uh
+51:41
+our standard idea that all i o is looks like reads and writes to files
+51:48
+is going to be true with sockets okay so write adds output read removes input okay now since this
+51:54
+is an i this is io there's no notion of lseq so there's an example of what you might think is a part of the
+52:00
+standard interface that just doesn't make any sense for sockets it also doesn't make any sense for pipes
+52:06
+okay now how can we how can we use sockets to support real
+52:11
+applications well a byte stream by itself is not necessarily useful
+52:17
+okay so a bi-directional byte stream uh has no boundaries to messages it doesn't
+52:23
+necessarily have any interpretation so we already talked about this you need to add syntax and semantics
+52:29
+you possibly need to have a serialization mechanism okay and so we will talk at another
+52:36
+uh time later about rpc facilities and so on okay
+52:43
+now there was a question about kafka which is a different thing so we'll uh we'll talk to that about the
+52:49
+end of the term okay so there is no notion by the way as of append here because there's no notion of seek so
+52:56
+when you write it just goes to the end of the socket so sockets keep things in order just as tcpip keeps the stream in order
+53:03
+okay so there's no append in this instance because you can't seek now um and or or the other way to say
+53:10
+that is every write is in a pin okay
+53:16
+so let's uh dive right in with a simple example here so i'm going to build we're going to call it a web server but
+53:22
+it isn't really doing http so this is a little bit of a misnomer but let's suppose that the client sends
+53:28
+a message and the server echoes it that's it so the client sends it server echos it okay so it's an
+53:35
+echo server and what do that might look like well here i have an example of the network you
+53:41
+could say the left side is i don't know berkeley and the right side is beijing
+53:46
+and we've set up a socket between the two now what that means is
+53:53
+uh the green boxes the two of them on the left are part of the same socket they're just
+54:00
+the two cues going either direction and the two green boxes on the right are part of the sockets on the server side okay so we have two
+54:07
+boxes for the client two for the server and that's because it's bi-directional when you set up
+54:12
+something okay now um the first thing that i kind of indicated already is the server
+54:19
+it's going to set up these sockets which we don't have any idea how to do quite yet but what it's going to do is it's going
+54:25
+to immediately do a read and of course the socket is empty on the read side and so all that's going to
+54:30
+happen is it's going to enter the kernel and it's going to wait okay and we saw that earlier when i
+54:36
+showed you the the web server example at the very beginning the lecture what happened is you did a read and if there wasn't any
+54:42
+data you went to wait okay meanwhile a client comes along
+54:47
+and it's going to set up an echo so one of the things that we need to do is uh
+54:54
+from the user we have to figure out uh what they want to send and so maybe we do an f get string
+55:00
+from standard in okay so this is a streaming input which will wait until you hit a
+55:05
+carriage return um and then it's going to send the data over the socket by writing it okay so
+55:13
+it's a write system call to the socket file descriptor here's our buffer and notice because i
+55:18
+say string length of send buff plus one i'm sending uh the the null character at the end of
+55:23
+the string in addition to the string this is things to start thinking about as you get comfortable with c
+55:29
+um and meanwhile that write can go on right away without the data actually going out as you remember because rights
+55:35
+are buffered in the kernel and so yes the socket's going to try to send it but we return from the right
+55:41
+almost immediately at which point we go and try to read to wait for the response and of course we go to sleep
+55:47
+because there's nothing in uh there's nothing in the read side on the client of the socket just like there's nothing
+55:54
+on the read side for the server okay meanwhile
+56:00
+back at the fort the uh right gets sent out across the network
+56:06
+to the other side at which point uh the data wakes up the read
+56:11
+process the server process wakes up it might print the thing on the local console okay
+56:17
+and um and then it also writes the echo back okay
+56:24
+at which point it gets sent across the network it wakes up the client maybe print
+56:29
+something on the screen and then of course we can loop back and do it over and over again okay and now we have an echo server
+56:36
+okay so the fgets just to be clear here is only asking for the user here to type in the string
+56:42
+that they want to send it's the right that actually sends it across the network okay
+56:50
+so what it means here uh the green boxes are the socket pieces inside the kernel
+56:56
+these white boxes are representing code places where you're interacting with the kernel so
+57:03
+mostly on either side the client and the server server are user level the green boxes are in the kernel and
+57:09
+occasionally when i do a write or a read i enter one of the white boxes okay and potentially i have to wait
+57:17
+all right now um you can force you can try to force the
+57:23
+uh the kernel to send the data but in fact and there are there are ways to do that with flush but by and large it'll just
+57:29
+send it right away so you're not you're not too worried about that okay
+57:35
+now this is not four sockets this is only two sockets okay it's a socket is
+57:42
+a double-sided endpoint for communication so the two greens on the left are the client and the two greens on the
+57:48
+right are the socket and the server okay so this is only two sockets
+57:55
+and each side has two cues that's why there are four green boxes okay now
+58:02
+let's look at this in code a little bit okay so the client code what you see here is we have to get
+58:08
+ourselves a buffer which has some maximum uh input size um so a socket is bi-directional because
+58:17
+there are two cues inside of it okay a pipe only has one queue so it's unidirectional yes
+58:22
+if you look here we had to get ourselves some character buffers and the max in and max out are defined
+58:27
+somewhere else in this file and then we go over and over again and
+58:34
+we basically say uh we grab the send buff oh i guess i temporarily broke this code i apologize
+58:40
+but um forget the while assume this is while true we basically grab the send buff uh
+58:47
+from the user and then we write it out okay and then we clear out the receive buff and we read it and then we just
+58:53
+keep looping okay and the same on the server side we read the data we uh
+59:01
+write it to um standard out and we uh echo it okay and so what
+59:08
+happens is our right goes across the network and wakes up a read and then the right on this side
+59:13
+goes across the network and wakes up a right and this repeats over and over again
+59:18
+yes it looks like dna it's true now and notice it's it looks like dna i
+59:24
+guess yeah so what assumptions are we being are we making here
+59:32
+so one of the things is we have no error correction code for what happens if a packet's lost okay
+59:38
+because we're assuming that if you write uh data gets read back so with a file unless your disk is full
+59:44
+the assumption is always when you write to it you can read it back when you write to a tcp socket the
+59:50
+assumption is the read on the other side happens okay it's like pipes okay if you put it
+59:56
+in it'll come out on the other side okay let's uh let's hold off on the chatter on
+1:00:01
+on the uh the chat for now okay um and the other thing that's important is
+1:00:07
+the assumption that um we have an in-order sequential stream so when i put data
+1:00:12
+multiple writes into the input side of a socket on the opposite side
+1:00:19
+it'll come out in exactly the same order not a different order so that that's a property of the tcpip
+1:00:25
+protocol every byte that goes in comes out in the same order and comes out only once okay so that's a
+1:00:32
+really nice semantic and it's why everybody loves tcpip okay there are some disadvantages to
+1:00:38
+tcpip but this is a pretty big advantage okay and so when you're ready uh
+1:00:44
+when the data is ready on the other side what happens well the file read gets whatever's there at the time
+1:00:49
+okay so this is why to do a real version of this you need to check uh you need to come up
+1:00:55
+with a protocol that says i'm gonna maybe write uh into the the first thing i write is
+1:01:00
+the number of bytes to expect and then i write those bytes and then on the other side i read the number of bytes i'm expecting
+1:01:07
+and i keep looping with read until i get that number of bytes so to really do this correctly you need
+1:01:12
+to have a protocol that you've defined that lets you do things like message boundaries okay but
+1:01:18
+for now we're not worrying so much about this we're also assuming that we block if nothing's arrived yet just
+1:01:24
+like pipes okay so tcpip plus uh sockets
+1:01:31
+is very much like a bi-directional pipe that goes across the globe okay it's it's a very
+1:01:38
+simple pipe to two ends of the planet which is pretty nice or a pipe on the same machine or a pipe to
+1:01:45
+different machines in the same building they all act with exactly the same interface
+1:01:50
+okay all right um now socket creation
+1:02:00
+i think we might be interested in here okay so for instance file systems uh provide a collection of
+1:02:06
+permanent objects in a structured namespace all right so if you think about it the um
+1:02:13
+the uh whole point of the file system is that i can name a file so that i can open it
+1:02:18
+you know slash home slash kuby slash uh classes slash cs 161
+1:02:25
+162. whatever there is a namespace the problem with sockets is what's the namespace okay so
+1:02:32
+files exist independently of processes and it's very easy to name a file with
+1:02:38
+open but when you start talking about sockets sockets are kind of by their very nature transient and really only functional
+1:02:45
+when they're connected okay so pipes partially get us that way
+1:02:50
+right it's one commit one-way communication between processes on the same physical machine it's got a single queue it's created
+1:02:57
+transiently by pipe and it's passed from uh parent to child
+1:03:05
+in a way that allows us to share between two processes and notice that in that instance there isn't any name space per se but rather
+1:03:12
+we called pipe and the fact that the file descriptors are now shared is how we end up with the connection between
+1:03:17
+the two processes okay the reason a pipe is unidirectional
+1:03:24
+is although the two processes each have a right pointer to the right
+1:03:29
+hand and the read end if they both try to write the the the data will get interleaved and so
+1:03:35
+i don't consider that bi-directional because you can't have two clean communications you get too garbled
+1:03:41
+combined communication so that's why you always end up closing one channel or
+1:03:46
+another and if you really want bi-directional communication with the pipe as i said earlier in the lecture you
+1:03:52
+create two pipes okay now sockets have this problem that a we're
+1:04:00
+not on the same kernel so you know that's a little bit of a problem um and we need to somehow address
+1:04:06
+something all the way across the planet how do we do that well it does have the two cues for
+1:04:12
+uh you know communication in each direction processes can be on separate machines um
+1:04:19
+so there's no common ancestor to pass something from one to the other in fact we could be here in berkeley and
+1:04:25
+in beijing or pick your favorite uh other place and um how do we name it there's
+1:04:32
+certainly no common ancestor of those processes all right so um what are we going to do
+1:04:37
+well the name space of course is ip so you're all very familiar with this namespace so for instance a hostname
+1:04:44
+like www.eecs.berkeley.edu is an example of a name
+1:04:50
+that can be uniquely identified across the network and use to route traffic to it now of course
+1:04:58
+we're going to have to talk about things like dns and so on later in the term but that host name really
+1:05:04
+translates directly to ip okay and so what is ip well ip
+1:05:10
+addresses depending on whether you have ipv4 or ipv6 are 32 or 128 bit integers and so for
+1:05:17
+instance www.eecs.berkeley.edu would translate into some ip address
+1:05:24
+okay which now would allow us to actually communicate across the network but as i mentioned
+1:05:29
+earlier the ip address is not enough if you have a browser with a bunch of tabs in it
+1:05:35
+each one of those tabs has the same ip address because there's only one machine and so you need a way to uniquely name
+1:05:41
+a connection and that's where ports come into play ports are part of the tcp ip and udpip spec
+1:05:48
+they're 16 bits so there's only really 65 536 of them and the first 1024 are called well-known
+1:05:57
+okay um and the well-known uh ports are ones that are are much
+1:06:03
+harder for you to uh bind anything to and in fact you're going to need to be super user to use them
+1:06:10
+there are some ports between 1024 and 49 151 which are typically registered ports
+1:06:16
+like for instance 25 565 happens to be the uh the port for uh minecraft server
+1:06:23
+that's an important one for you all to remember and then there's a bunch of dynamic ports or private ones
+1:06:28
+and you'll see in a moment uh what they're about okay so if we look it's a connection set
+1:06:36
+up over tcpip we're going to need something that's special here we the server needs to
+1:06:42
+set up a the process of uh waiting for a client to connect and
+1:06:49
+that's called a server socket so the server uh
+1:06:54
+basically produces a server socket okay and that server socket listens
+1:06:59
+on typically well-known ports that have been registered uh with a standardization agency and you
+1:07:06
+can you could register them but it's very hard to get the ports in that lower 1024 registered
+1:07:13
+typically people have ports that are just well known in the higher portions okay but now once the server socket is set up
+1:07:21
+now the client uh will be able to communicate which is because this socket
+1:07:26
+the the thing the server does after creating it is it says listen which says um go to sleep waiting for an incoming
+1:07:33
+connection okay listening see that's an ear by the way so this client creates one its end of
+1:07:39
+the socket sets a request to the other end by using
+1:07:44
+the ip address and the standard port and at that point the server
+1:07:50
+executes an accept which says well take this connection and let's make it real enough that we
+1:07:56
+can communicate so in that instance the server says oh i accept and the kernel then takes
+1:08:03
+this connection creates another endpoint and notice these are both green
+1:08:08
+and the either end of them there's a final connection phase and now when you're done
+1:08:14
+those two ends represent two ends of a bi directional socket and this is tcpip yes okay
+1:08:22
+and when you do ping okay ping is not uh is is different than this so ping uh
+1:08:29
+does not set up a connection ping is the icmp protocol which is just a datagram protocol
+1:08:35
+okay so we haven't gotten to por we've talked about ports a couple of times but ports are really what's going to make
+1:08:41
+this connection unique okay so let me talk about ports again so both sides of the socket let's just look at the green
+1:08:47
+ones have associated with them a five tuple which is the source address
+1:08:52
+the source ip address the destination ip address the source port the destination port and the fact that this is a protocol
+1:08:59
+like tcp ip together those five things mean that this yellow connection is unique
+1:09:05
+from all other um connections that we might make between those two servers
+1:09:10
+okay or between those two ip addresses excuse me okay so um why how does this work well i already
+1:09:17
+mentioned that the client side of this connection um is typically in that upper range above
+1:09:23
+49 000 of randomly or dynamically assigned uh port numbers so when a client first
+1:09:29
+does this connection they assign themselves a random port so now they have their ip address a random
+1:09:35
+new port for that connection the server side has its own ip address which is what i'm remotely connecting to
+1:09:42
+and it's well known port so here's a good one 80 is a port you all ought to know okay
+1:09:48
+that's basically the typical web server port and so what this connection did is it went from the client
+1:09:54
+up to the server socket and said hi i'd like to make a connection on port 80 and the server says okay i
+1:10:01
+will make that connection for you and when you're done you have two sides those are the two green sides
+1:10:07
+of a connected set of sockets each green thing is a socket on either side and why is
+1:10:15
+this yellow one different from any other yellow ones well because it's got these one of these five things on the left are
+1:10:21
+unique okay so what is a port again a port is a 16-bit integer that helps define a
+1:10:28
+unique connection okay so each server socket
+1:10:34
+has a a particular port that it's bound to
+1:10:39
+so i'll show you this in a moment but this server socket if this were a web server it would be bound to port 80 and so the
+1:10:45
+incoming connection is asking for that ip address at that port 80 and that's the
+1:10:52
+connection that's being requested and so all yellow connections
+1:10:57
+for this server socket are all going to have the same destination i p address and destination port number but
+1:11:03
+they're going to have different ip addresses or ip or ports for the client
+1:11:10
+okay this is not ping so ping is something completely different
+1:11:16
+it's kind of like our echo server but it's a it's a datagram protocol okay this is tcpip okay
+1:11:24
+now the client tells the server what its ip address and por and uh ip address
+1:11:32
+import is the server knows what its ip address import is and so when you're done you have a unique connection
+1:11:39
+if the same socket excuse me if the same client wants to make another one
+1:11:44
+then it needs to come up with a unique port for its side because otherwise there wouldn't be a unique yellow
+1:11:49
+connection so in that example of the web browser we talked about with all the tabs
+1:11:55
+every tab would have a different local port associated with it even though we're talking to the same
+1:12:01
+let's say remote server that has the same ip address and is all port 80.
+1:12:07
+okay all right i'm going to move on from this um but just keep in mind that this every
+1:12:13
+yellow connection has this unique property of a unique five tuple okay and 80 is a common one
+1:12:20
+that's web uh browsing without um web browsing without any
+1:12:27
+security 443 is the https protocol 25 is send mail etc so the in the uh
+1:12:33
+question about localhost colon 500 says it's port 500 on the local machine yes that is correct
+1:12:41
+good in fact you could see sometimes people that have local servers that they're using for iot devices for
+1:12:48
+instance it'll often be ip address colon 8080 or colon 8000 that's pretty common
+1:12:54
+okay now so all the server sockets are not operating out of the same port
+1:13:00
+there's one server socket operating on the port 80 and it spawns all the new sockets that are
+1:13:06
+communicating with port 80. there if you have port 443 or you have some other port like 25
+1:13:13
+that will be a different server socket that spawned listening on port 25.
+1:13:18
+so there's one server socket for all the port 80s connections one server socket for all of
+1:13:25
+the port 443 et cetera connections okay now so in concept
+1:13:34
+what happens here is the server creates the server socket that's this blue one and part of that creation is uh binding
+1:13:41
+it to an address which is its current host ip address and the port like 80 that it's going to do service on and
+1:13:47
+then it's going to execute listen which means at that point we are listening for the connection for incoming okay and
+1:13:55
+basically we are going to try to execute accept and that'll put us to sleep until
+1:14:00
+somebody actually comes in okay so later uh the client
+1:14:06
+creates a socket and it does a connect operation which says i want to connect to
+1:14:11
+a remote server that has this host name or this host excuse me ip address import
+1:14:17
+which uh assuming we've did this correctly will go across to the server uh which is busy
+1:14:23
+listening um the the system call will accept it in which case this three uh three-way
+1:14:28
+protocol happens and when we're done we now have a connection socket on either side with a unique
+1:14:36
+five tuple defining this is a unique connection and every subsequent client that tries to do this will get a
+1:14:42
+different unique five tuple or unique connection okay now the once the server's
+1:14:50
+ready it says oh i have a socket okay i'm going to do a read request on the socket well of course that's going to go to sleep right away
+1:14:56
+until the write request from the client comes in and says i want to look at some http address and meanwhile
+1:15:04
+there'll be a read okay on the other side that wakes up writes a response that will get sent to
+1:15:09
+the other side and we do this combined write the request wait for the response here we go
+1:15:15
+read the request write the response on either side okay so each connection socket the
+1:15:22
+server owns has a different port that is correct okay now when we're done we close the
+1:15:28
+client socket and then the server goes back and does another accept and that's how we serve
+1:15:34
+multiple requests for now okay now you can see probably right off the bat uh
+1:15:39
+if by the way there's no race condition because the incoming connection requests go into the server
+1:15:44
+and they're put into the queue using synchronization uh that we haven't talked about yet okay no
+1:15:50
+race conditions um so the client protocol that you see here is pretty simple so look
+1:15:57
+we uh we first get an adder info structure defining uh the host that we're trying to connect
+1:16:03
+to okay with hostname and port name and so this is look up the host
+1:16:08
+basically i'm not going to show you that until the end of the lecture if we get there but this is going to return a unique hostname port
+1:16:14
+name combination for who i'm trying to communicate with i'm going to create the socket file
+1:16:19
+descriptor and then um so that's now i have a socket here so the client's got this
+1:16:25
+file descriptor which is an integer the socket structure is inside the kernel okay and then i tried to do a connect
+1:16:34
+and that connect immediately says uh waits until the connection finishes and
+1:16:39
+then when it emerges this sock file descriptor is no longer a disconnected socket it's a
+1:16:45
+connected socket and now we uh can go ahead and do our client operations whatever that are
+1:16:51
+whatever they might be which could be doing lots of reads and requests and over and over again and then closing
+1:16:58
+okay the server side is a similar idea but it's it's got this server socket so
+1:17:04
+if you look here we set up uh which address family we want we bind it which means basically we
+1:17:11
+say that we want to listen on a certain address and port okay and so binding basically
+1:17:18
+attaches an address to a socket creating the socket just makes the cue we bind an address to it and then we do
+1:17:23
+listen instead of connect and now in this while loop over and over again we accept the next connection
+1:17:29
+we process it we close we go and accept another one okay and so we just do this over and over again and we're good to go
+1:17:38
+can anyone see what's wrong with this protocol
+1:17:43
+what seems unfortunate about this particular server implementation yeah one connection at a time right so
+1:17:50
+this can't be good so uh what can we do well first of all how might we protect
+1:17:56
+ourselves because if you notice we're kind of running right here we're kind of running in the
+1:18:03
+same process over and over again we might want to protect ourselves so what we can do in that case
+1:18:10
+is actually take what i just showed you and add a fork and let the child communicate with the
+1:18:16
+client and do a wait until the child is done close the connection uh and go back
+1:18:24
+okay and notice when we fork because we fork the listen socket is gonna end up on
+1:18:31
+both sides and of course the child doesn't need the listen socket because it's not a server so it closes the listen socket on the
+1:18:38
+other hand the parent doesn't need the connection socket because it's not serving the client and so it's going to close the
+1:18:44
+connection socket so this is just like the pipe example i gave you earlier where we create a pipe we fork and then
+1:18:49
+each side closes one of the two file descriptors
+1:18:55
+all right we're not serving multiple yet we're just putting protection in here so now every child uh is running
+1:19:02
+in a protected environment we haven't gotten to the multiple yet okay but you can see we're coming with that
+1:19:08
+the only thing i did that's a little different here is i when i once i accepted that incoming connection i four
+1:19:15
+and here if i'm the child which is pid equal to zero i close the server socket
+1:19:21
+i at that point i go ahead and serve the client and then i close the connection socket and exit meanwhile
+1:19:27
+the server closes the connection socket because it doesn't communicate with the clients and it waits okay so this is
+1:19:34
+all that we changed but of course we want concurrency okay or parallelism if that's available
+1:19:40
+at least concurrency would be even better because if we could have multiple clients requests going on
+1:19:46
+simultaneously then when one of them is sleeping because it's doing a disk access the other one could be being served
+1:19:53
+okay so even if we don't get parallelism we still want more than one request going on at once
+1:19:58
+so we've kind of broken that so far okay and why do we need protection well um
+1:20:04
+what we can do is we can in that other process we can limit access uh to only those things that let
+1:20:10
+it connect with a small part of the uh file system or whatever to make sure that uh we are safe okay
+1:20:18
+and just uh i know we're running low on time hold on for just a second we're almost done the question of why we're closing
+1:20:24
+sockets here is because when we fork we fork all of the file descriptors
+1:20:30
+and on the child side it doesn't need the server socket that's being listened on and the and the
+1:20:36
+parent doesn't need the connection socket okay and so we're closing either side
+1:20:42
+so here's a simple example where what we're going to do is we're not
+1:20:47
+waiting here right so after we fork the parent closes the connection socket and goes back and accepts another one
+1:20:52
+immediately okay and yes the child could listen all right so
+1:20:57
+what you do with the child code is you make sure to do all that closing and then you set up your environment before
+1:21:03
+you start doing the processing okay but if you notice here
+1:21:08
+we close the connection socket and we immediately go accept another one so all i did by removing that weight right
+1:21:14
+here you see the i commented out weight now suddenly we have concurrency
+1:21:19
+okay multiple requests at once now there's a comment in the chat saying this seems heavyweight well it is because we're
+1:21:25
+creating a brand new process every time okay now
+1:21:32
+it's uh it's not it's the same okay so let's be careful about this i
+1:21:37
+want to i see some chatter in the chat i want to make sure we got it uh server socket is the same all the
+1:21:45
+time but we don't use it for communication we use it for listening okay so the parent has the server socket
+1:21:51
+and it's the one doing accept and so it just do that does that over and over again and each time accept comes back it comes with a new socket
+1:21:59
+connection okay and each child gets a different socket connection so the parent
+1:22:05
+keeps accepting new connections every one of these connections is a unique because it's got a different file
+1:22:11
+five tuple it's got a different at least remote ip address and port combination could be
+1:22:16
+just the port but something there is unique and it's got a unique process so every loop that every accept gets a new
+1:22:23
+process for a new child uh connection okay um
+1:22:31
+now just before we uh finish up a little bit here so the server address so one of the ways we set up the address
+1:22:37
+at the server side is we say which port we're interested in and you may ask if the port is a 16-bit integer why is this a char star well
+1:22:44
+many of these interfaces you can do man on them basically take in a char star which is a
+1:22:51
+string representation of a number okay but anyway what we do here is we set up
+1:22:56
+things like what family are we communicating with with this socket and the way you've got to think about families here is that you when sockets
+1:23:03
+first came out there was not only ip out there there were many other options so what we're basically saving
+1:23:08
+is we're going to be a stream which means tcp ip we're not going to say what family it is because we're going to take whatever
+1:23:14
+comes in and we're going to bind to a particular server and port okay there's a flip side with the client
+1:23:22
+which is probably more interesting you guys should look at this after the lecture but if what comes in is uh a particular
+1:23:28
+host name and port that we're interested in then we can look it up by using
+1:23:34
+something called git adder info and what that does is that returns uh a structure
+1:23:41
+the server structure which is an adder info that has all the information about what
+1:23:46
+i p address and port uh we are so that then we can bind for the server socket
+1:23:53
+okay so finally uh if we're willing to not have protection
+1:23:58
+on every uh connection but instead we wanted lightweight we could do threads so here's an example where instead of fork
+1:24:05
+all we do is we create a thread the spawned thread handles the request and the main thread just goes back and
+1:24:11
+accepts again okay and so now that's a thread per connection that sounds great
+1:24:17
+unless you get slash dotted okay and you could easily have a situation where so much incoming traffic spawns so many
+1:24:24
+threads that you crash your kernel this is bad so what should you do there
+1:24:31
+how do you prevent uh well it's true you can't fork but we're not forking here
+1:24:36
+right now anyway we're just doing threads limit the number of threads great okay and the way we do that i'm only
+1:24:43
+going to start talking about this briefly today but the way we limit threads is we can create something called a thread pool
+1:24:50
+which has this basic idea where we create a bunch of threads at the beginning but it's a fixed number
+1:24:55
+and then every time an incoming request comes in we put the connection on an incoming queue and then when a
+1:25:02
+thread becomes free it just goes back dequeues the next connection and handles it okay so um this is a way of thread pool
+1:25:10
+is a way of bounding the number of threads all right so we're done for today so in conclusion we've been talking about
+1:25:16
+inter-process communication with how to get communication facilities between different environments namely different processes okay pipes
+1:25:25
+are an abstraction of a single cue and you can create it in a parent and then uh pass
+1:25:31
+it off to children and decide which direction you want it to go
+1:25:36
+sockets are an abstraction of two cues but across the network potentially and you you have
+1:25:43
+two ends you have a read end and a right end on both sides okay so you can have two streams that are not interleaved with
+1:25:49
+each other you get file descriptors back from the socket it gives you a single file descriptor that you can both read and
+1:25:56
+write to the same file descriptor so this is different from a pipe it's one file descriptor
+1:26:01
+that handles both reads and writes and the direction that things go in depends on whether you're reading or writing okay
+1:26:08
+and you can inherit file descriptors with fork facilities which is why for instance here when we did this example uh
+1:26:16
+when we forked we end up we ended up with all of the sockets on the child side and the parent side which meant the child
+1:26:23
+and the parent had to close off uh the sockets they weren't using all right
+1:26:28
+um i think we're good for now um i'm gonna call it a night thanks for hanging with me everybody and uh we'll see you on
+1:26:35
+wednesday have a good night

@@ -1,0 +1,1690 @@
+0:03
+all right everybody welcome back to uh the third lecture of the virtual cs 162. um tonight we're
+0:12
+going to uh dive right into some material and try to give you a programmer's
+0:18
+viewpoint of this so the first several lectures we're going to basically talk about
+0:24
+what you as a user level programmer might see from the operating system before we get really in depth in how the
+0:30
+operating system gives that view so that's basically our goals for today we're going to talk about
+0:36
+threads what they are and what they aren't and why they're useful so we'll give you some examples and
+0:43
+we'll also talk about how to write programs with threads and some alternatives to using threads
+0:50
+okay so um if you remember from last lecture we talked about four
+0:56
+fundamental concepts were uh where the focus was really on virtualizing the cpu
+1:02
+and one of them was the thread which is essentially an execution context uh fully describes a execution state
+1:10
+with program counter registers execution flag stack etc we talked about an address space which is the
+1:16
+set of memory addresses that are visible to a thread or a program we'll talk more about that we also then
+1:23
+talked about a process i did see some questions on piazza about is something a thread or a process
+1:30
+that's the wrong question so as i responded a process
+1:36
+is basically a protected address space with one or more threads in it so typically you talk
+1:42
+about a process with threads and the question of uh is it just a thread or is a process
+1:48
+involved usually involves protection and then the final thing that we finished up with was this essential
+1:55
+element of modern operating systems which is hardware that can do dual mode operation
+2:00
+and protection which is really boils down to there being two states uh kernel state and user state where
+2:08
+only certain operations are available in kernel state and as a result the kernel is able to provide
+2:14
+a protected environment okay so uh just again recalling from
+2:20
+last time we talked about how to take a single processor or single core which is going to be
+2:27
+pretty much where we talk about for the next several lectures and give the illusion of multiple
+2:32
+virtual cores so what you see here is the programmer's viewpoint is going to be that there's a set of cpus that
+2:39
+are all talking through a shared memory even though there's only one actual cpu
+2:44
+okay and we're going to think of threads as a virtual core and multiple threads are achieved
+2:52
+essentially by multiplexing the hardware and time so we talked briefly about this idea of these three virtual cpus
+3:00
+executing on the single cpu by loading and storing registers in memory as we go so
+3:06
+we sort of load uh magenta's registers run for a while then uh the cyan ones and the yellow
+3:11
+ones and etc and the thread is executing on a processor when it's actually resident in
+3:17
+the processors registers and it's uh idle or asleep when it's not and we'll talk a lot more about the
+3:23
+states of a thread once we get into the internals of the operating system but each
+3:29
+each virtual core or thread has a program counter a stack pointer some registers both integer and floating
+3:36
+point in most cases and the question of where it is well it's on the real physical core
+3:42
+or it's saved in memory a chunk of memory we call the thread control block and the difference between these two
+3:48
+things is whether it's actually running right now or in sort of a suspended state
+3:53
+the other thing we talked about uh was this idea of an address space which is
+3:58
+the set of all addresses that are available to a given processor or thread at any given time
+4:06
+and we talked about how 32-bit addresses give you 4 billion bytes operations and 64 give you 18
+4:14
+quintillion addresses 10 to the 18th some of you may know 10 to the 18th as an exabyte
+4:20
+but that's the general idea of an address space what's more interesting for our purposes
+4:27
+here is going to be the virtual address space which is the processor's view of memory where the address space that
+4:33
+the processor sees is independent of the actual physical space and in most cases that's involved some
+4:39
+explicit translation so the processor brings out virtual addresses they go through some
+4:44
+translation to get to physical addresses and um for the purposes of this particular
+4:50
+lecture uh here's a thought that you can put in kind of use throughout the lecture which
+4:58
+is this idea of translation through a page table and again we said 61c did talk about that
+5:05
+we'll talk about it in a lot more depth but here we have two virtual i
+5:10
+programs or threads or whatever you want to talk about them and they're operating in their address
+5:15
+spaces with code and data and heap and stack and all of those things and what happens is the addresses
+5:21
+come out of the processor and they go through a translation map and again however that works we don't
+5:27
+really care for the moment and after they're translated they get translated into physical
+5:33
+addresses so the code of this blue thread or process basically gets translated into this particular chunk of
+5:40
+physical memory whereas the green code gets translated into this particular chunk
+5:46
+okay now the question that uh is in the chat here is our virtual address is handled by the os or by the cpu hardware and the answer is
+5:54
+yes so in reality these little translation maps are
+5:59
+usually part of something called a memory management unit in hardware but the operating system is
+6:06
+uh responsible for configuring these things by setting up something called a page table
+6:11
+and so we will talk a lot about that so don't worry if you don't remember the details
+6:17
+and in fact 61c hardly talked about that but for now imagine that there's
+6:22
+actually a translation map that basically takes these addresses from processor one
+6:28
+turns them into the blue ones and from processor two or pro virtual processor two turns them into
+6:33
+the green ones and notice that if we translate it right
+6:39
+then blue can't even touch anything that green is addressing because there's no way for blue's
+6:44
+address space to get transformed into something that addresses the green physical
+6:52
+memory okay and notice also i have the operating system down here which is completely separate as well so
+6:58
+this simple idea of translation gives us uh quite a bit of protection
+7:06
+okay all right now um are there any questions on that are we
+7:12
+good and let's try to um keep the uh the chat for actual questions here so that we can
+7:18
+uh get questions from people so let's keep this mental image here of uh page translation
+7:24
+and uh how it protects green from blue and both and the operating system from both of them
+7:30
+and let's move on so if you remember we talked then about uh processes the question here about where
+7:36
+we store the page table is that's actually going to be stored in the operating system itself in a way that is not addressable to the
+7:43
+two i uh to the green or blue okay and um
+7:48
+the the reason that uh parts of uh user space can't address all of physical memory is
+7:54
+exactly what you see here not every address you take all the addresses that are possible and they
+8:00
+just don't translate to things that are green or white from the blue side and that basically prevents
+8:06
+the processor the blue one from actually even addressing green or white okay and
+8:12
+we'll talk more about this as we go okay now so if you remember when we
+8:18
+talked about processes again a process is basically a protected environment
+8:23
+with one or more threads here's one with a single thread your um
+8:29
+your pin toss projects that you're going to be dealing with essentially have a single thread per
+8:35
+process but real operating systems or i will say more sophisticated ones can have
+8:41
+multiple threads okay and so a process is really this execution environment with restricted
+8:47
+rights one or more threads executing in a protected address space
+8:52
+okay which owns a chunk of memory some file descriptors and some network connections
+8:57
+okay so uh a process is an instance of a running program if you have the same
+9:03
+program running twice it'll have it'll be running in two different processes and why do we have processes as an idea
+9:10
+okay is uh that means that those two processes are protected from one of one another
+9:17
+and uh the os is protected from them so this idea of processes is really
+9:24
+one in which it's the essential protection idea that we're going to be talking
+9:30
+about in the early part of this class okay modern os is pretty much anything that runs outside of the kernel
+9:36
+runs in a process for now okay so the last thing we talked about as i
+9:43
+mentioned was dual mode operation and here processes execute in user mode
+9:49
+and kernel executes in kernel mode but as folks on the on the chat have really uh talked about
+9:56
+couple times here is if you think about this translation for a moment if blue is able to alter its own page
+10:02
+tables then all of bets are off for protection right if blue can alter translation so that some virtual address
+10:08
+which was previously not valid can somehow map to green or
+10:13
+white then you know all the protection is broken there so really we need some way to make sure that the user code
+10:20
+can't alter those page tables among other things and so that's where the dual mode operation comes into play
+10:26
+okay so uh processes running in user mode um are running with a bit set in the
+10:34
+processor says user mode and in kernel mode that's when the bit says kernel mode and it's only if you
+10:39
+happen to be in kernel mode that you can modify things like page tables okay and we'll get into much more
+10:44
+detail in that as we go on so this is still not quite enough okay you
+10:51
+have to make sure that user mode apps can't just randomly go into kernel mode and execute anything they want because
+10:57
+what's the point right and so we talked briefly about very carefully controlled transitions
+11:03
+between user mode and kernel mode and that careful control transitions
+11:08
+uh basically allow us to make sure that the only way to go from user mode to kernel mode is
+11:15
+when doing things that the writer of the kernel supports okay and
+11:21
+putting things in kernel mode is typically done only with extreme care because things that are running in
+11:27
+kernel mode have uh control over all of the hardware and so typically only the operating system
+11:33
+developer puts things in kernel mode all right we'll talk about some
+11:39
+slight versions of that that are a little different as we get uh further in the course but for now pretty
+11:44
+much only the developer the operating system puts things in kernel mode okay and here's an example of something
+11:50
+we'll talk about today for transitioning from here's the user process running in
+11:55
+user mode excuse me with the mode bit 1. making what we're going to talk about is
+12:00
+a system call which goes into the the kernel executes some special uh
+12:06
+function and then returns to user mode and that system call is very restricted so
+12:12
+yes it turns on the mode bit to one meaning uh that we're well or zero in this case
+12:19
+saying that we're in kernel mode but it only allows you to do that if the code you're calling is one of a
+12:26
+very small number of entry points and so an example of this might be open a file or
+12:32
+we're going to talk today about start a new thread or start a new process so this could be a fork system call
+12:38
+and so that dual mode operation involves this extreme restriction
+12:43
+okay so what are threads okay so a thread is a single unique execution
+12:50
+context talked about that it provides an abstraction
+12:55
+which might be a single execution sequence that represents a separate separately schedulable task okay that's
+13:02
+also a valid definition threads are a mechanism for concurrency so
+13:07
+we're going to talk a lot about that uh understanding that um because of threads you can have
+13:13
+multiple uh simultaneous things that overlap each other and that can be very helpful
+13:19
+protection is completely orthogonal okay so again that question of is this a threat or a
+13:25
+process is the wrong question the process is the protected environment the threads run inside of it and that
+13:31
+process would include for instance an address space plus a translation map through a page table
+13:37
+okay all right by the way the mode bit
+13:43
+there's a question about the mode bit here let's just say that a mode bit equal to one is user mode and zero is kernel mode
+13:50
+but this is completely dependent upon the um dependent upon uh the
+13:56
+particular piece of hardware and in fact in x86 there's even more than just two
+14:02
+options here so for now there's user mode kernel mode okay that's what we need to remember
+14:08
+okay now what are threads okay so protection is this orthogonal
+14:14
+concept but let's dive into the motivation for why we even bother with threads
+14:19
+okay so um and and yes i will say one other thing
+14:26
+since this topic is coming up in the chat so one way in which things get added to
+14:31
+the kernel is device drivers and we mentioned last time that those are weak points
+14:36
+in reliability typically and those device drivers are things that get added uh only if you're a supervisor okay
+14:46
+and uh and you've made a decision that you're you're willing to add this to the to the kernel
+14:51
+and risk uh that device driver so what i mean by uh protection being orthogonal now again
+14:58
+is that the protection is the environment the thread is the execution context
+15:03
+okay so those are different things so process has one or more threads in it
+15:09
+okay now for now uh processes contain their own threads and
+15:15
+don't access other people's threads except through communication mechanisms okay so what's our motivation for
+15:21
+threads so operating systems as you can imagine need to handle multiple things at once
+15:27
+okay you know processes interrupts background system maintenance all of
+15:32
+those things keystrokes i'm moving my mouse around i'm drawing things on the screen so
+15:38
+there's many things at once or multiple things at once mtao by the way i made that up but we're
+15:44
+going to use it for the rest of the lecture so operating systems need to handle mtao
+15:50
+okay and how do we do that we do it with threads so examples are network servers have to handle multiple things at once
+15:56
+because there's many threads there are many excuse me network connections that come in at once parallel programs
+16:03
+well by definition if you have a bunch of cpus and you want to run something in parallel you need to do multiple things at once
+16:09
+and a thread uh some threads could be a way to do that and when you
+16:15
+talked about parallelism in some of the 61s one of the ways to do that is with
+16:20
+threads okay now programs with user interfaces invariably need
+16:26
+mtao so that would be again like i said mouse movement keyboard um
+16:32
+if you have a voice interface so the the uh the microphone here is something um
+16:38
+things get drawn on the screen these are all different independent things that can happen
+16:44
+and so having threads available to allow them to happen in parallel is important okay and they're going to
+16:50
+make it really easy to program network and disk bound programs have to
+16:55
+handle mtao because you have to hide network and
+17:00
+disk latency so the question on the chat as i mentioned multiple things at once is a term i just made up it's up top
+17:06
+here multiple things at once okay so um you need to be able to if you're waiting for something to come off
+17:12
+the disk or from the network you want to have a thread that's just sitting there waiting but not blocking everybody else up so
+17:18
+you have another thread doing something else okay so um
+17:24
+now let's keep the let's keep the chat down to just things that we're actively talking about well uh the concept of how processes
+17:30
+communicate with each other is a much more interesting extended one so don't worry we will get to that okay not today but we'll get to it so
+17:38
+threads uh basically are a unit of concurrency provided by the operating system
+17:43
+and each thread can represent one thing or one task or one idea one chunk of code okay and so
+17:51
+um that's that's going to be our model in this particular lecture so let's talk
+17:57
+about some terms that you've heard thrown around as you've come up uh
+18:02
+you know learning about computers so some definitions so multi-processing
+18:08
+is sometimes used when there's multiple cpus or cores acting together on the same task okay
+18:14
+multi-programming is something similar which is multiple jobs or processes
+18:20
+not necessarily running simultaneously so the idea of processing versus programming sometimes gets at that
+18:25
+parallelism versus concurrency multi-threading is just multiple threads in a process
+18:32
+okay and so what does it mean to run two threads concurrently now i know then the 61s they try to get
+18:38
+this idea of concurrency versus parallelism but let's take another stab at it but it thinks what it means for things
+18:45
+to run concurrently is the scheduler is basically free to run the threads in any order and any interleaving
+18:51
+and the thread may run to completion or time slice in big chunks or small chunks or whatever and so concurrently
+18:58
+means overlapping with no control over how that overlapping goes
+19:04
+so here's some examples here's multi-processing where we have a b and c are threads and because let's say
+19:10
+there are three cores in this system all three of them are actually running at the same time
+19:16
+so not only are a b and c concurrent but they're also parallel okay here's a different view where we
+19:23
+have the same three threads but we don't have more than one core or processor we only have
+19:28
+one processor and in this instance we can't actually have things running simultaneously so
+19:34
+one thing that could happen is a could run a while and then b and then c okay where now we're actually
+19:41
+running a to the end and b to the end and c to the end or we could interleave them a runs a
+19:46
+while b runs while c runs well then a then b then c then b etc all right and notice
+19:52
+that um these two options here could happen uh interchangeably
+19:59
+on the same system depending what the scheduler does or whether you have multiple things running
+20:04
+multiple processes could use up cores so that maybe if you have enough things running you get this interleaving
+20:11
+or if you only have one thing running you get multi-processing okay and so the very important thing to
+20:18
+note here is the moment we move into this idea of concurrency we have to
+20:23
+design for correctness we can no longer just throw up our hands and write a bunch of code and hope it works
+20:29
+because any code we write has to work regardless of what the scheduler decides
+20:35
+to do for this interleaving let me say that again the moment we
+20:40
+start with having more than one thread and a concurrent system we now have to start thinking about correctness
+20:47
+and you could think about correctness and just write a bunch of stuff and keep
+20:53
+changing it until it sort of looks like it works and i guarantee that is a bad idea
+20:58
+because it will stop working at three in the morning or you can design
+21:04
+for correctness with the proper locking schemes or parallelism constructs or whatever and we'll talk a
+21:09
+lot about that as we go and then you can be sure that no matter what the scheduler throws at you this
+21:15
+will do the right thing okay questions so we're gonna we're
+21:21
+gonna try to teach you how to design for correctness that's gonna be our goal
+21:26
+okay and again the difference between multi-threading and multi-programming is perhaps somewhat historical
+21:34
+but multi-programming came up in the days of the original unix systems where there was only one thread
+21:41
+per process so process had a single concurrency and add air space associated with it
+21:47
+multi-threading kind of comes up in the in the era where you can have more than one
+21:52
+thread per process so it's really kind of multi-programming might be one thread per process
+21:59
+multi-threading might be more okay now we're going to talk about
+22:04
+advantages in a bit okay so just hold on to that question
+22:10
+so concurrency is not parallelism so look here this is parallelism a b and c running
+22:15
+together at the same time this is not parallelism all of these are
+22:20
+concurrency they're the possibility for overlap okay so concurrencies is about mtao
+22:27
+multiple things at once parallelism is about doing multiple things
+22:32
+simultaneously okay where simultaneously again if i were to take a slice uh across here
+22:41
+and look at a given cycle on that multi-core processor for instance i would see
+22:46
+there's an instruction from a an instruction from b and an instruction from c all running at the same time whereas if
+22:53
+i have only one core i see that there's really only green pink or blue
+22:59
+okay so example two threads on a single core system
+23:05
+are executing concurrently but not in parallel okay each thread handles or manages a
+23:11
+separate thing or task okay and but those tasks are not necessarily executing simultaneously
+23:18
+okay now i'm not actually talking about amdahl's law which got brought up in the chat because amdahl's law is
+23:26
+about the ability when you have parallelism to actually get
+23:31
+use it successfully so if you notice here green pink blue might not uh
+23:38
+you know the green might run a little bit and then you have to wait for uh pink and blue to finish before you can do anything
+23:43
+this might by amdahl's law be very poor because the cereal section is large okay so um we're going to be uh talking
+23:51
+about um we'll talk about parallelism a bit more as we go on
+23:56
+okay now here's a silly example for threads okay remember my favorite number pi okay
+24:04
+and so here's a thread where we say main and uh we compute pi to the last digit and then we print the class list
+24:10
+okay so uh what's the behavior here
+24:16
+anybody are we
+24:26
+yeah so first of all this is going to run forever um until we unplug it or
+24:32
+hit control c or something what about the class list yeah class list will never get executed
+24:39
+so this particular instance is an example where
+24:44
+uh running the first one to completion and the second and then the second one
+24:50
+means the second one never runs and okay and furthermore if you think about
+24:56
+this we have not told the system that it can interleave these because we haven't introduced any
+25:02
+thread so this is a process with one thread and all it can do is first run compute pi and then run
+25:08
+print class list so threads using threads correctly starts with giving the system uh notification of
+25:16
+what can actually run concurrently and then the scheduler can start doing different things for you
+25:22
+okay so for instance here we could add some threads now create thread here is just
+25:28
+a um is just a general abstraction for however you create threads in your system
+25:34
+but if this somehow creates a thread which is computing pi on argument pi dot text and this is
+25:39
+somehow creating a thread that's printing the class list on classlist.txt
+25:44
+what we've started out here is we've actually introduced concurrency to the system in a way that allows it to
+25:52
+now start scheduling things in an interesting way all right create thread here is some uh
+25:58
+abstraction of spawning a new thread i'll actually give you p threads later in this in this lecture um as one instance
+26:05
+but this should now start behaving as if there's two cpus in the system virtual cpus and as a result we will see
+26:13
+um digits of pi perhaps showing up in pi dot text interleaved
+26:18
+with uh the class list getting printed okay and so why is that well because
+26:25
+we've created two threads and now the scheduler can interleave them and go forward now notice that this
+26:30
+previous version even if you had a multi-core with a hundred cores on it it's still gonna
+26:35
+behave the same way because we haven't told the scheduler that there are multiple threads that can run okay
+26:41
+we've only there's only one thread that's in this code okay now
+26:50
+let's uh talk some administrivia here so as uh you know homework zero is due
+26:57
+uh tomorrow and uh you really gotta get going on it what homework zero is particularly important
+27:03
+because it uh gets you set up with all of the uh infrastructure for cs 162. gets you
+27:10
+set up with um your github account and so on okay
+27:15
+uh it gets you set up uh with your virtual machine gets you familiar with cs 162 tools and
+27:22
+it reminds you a bit of programming in c which uh also i'm hoping that most of you went to the
+27:28
+see review session yesterday i think that there were some videos that came out of that so you should be able to look at them
+27:34
+but remember homework zero is through thursday tomorrow okay project zero was released yesterday
+27:41
+and um you should uh be working on it okay it's due next wednesday
+27:46
+and project zero is like a homework should be done on your own okay and um by the way i'm i'm very
+27:53
+happy to hear that uh that uh the review session went well that was our intention
+27:59
+um you know c is is uh a language that you probably don't have enough familiarity with
+28:04
+uh yet you will have plenty by the end of the term and it's good that uh good to get moving on okay so um
+28:12
+the uh other thing of course we mentioned is slip days you have uh because of the complexity of
+28:18
+being virtual you have four slip days for homework and uh four slip days for project that's a
+28:23
+little more than we normally give but um i would say bank those don't spend them right away
+28:30
+okay um and uh because basically you know i'd save them
+28:36
+for more the end of the term because when you run out of slip days and you turn things in late you don't get any credit so okay and um i don't have a direct
+28:44
+estimate on project versus homework but teach the project zero is like a homework so get moving on it
+28:50
+um the other thing which i hope uh everybody realizes is that friday
+28:57
+that's two days from now is drop day so you need to make a deci this is an early drop class you need to make a
+29:03
+decision about whether uh you're gonna keep the class or not
+29:08
+okay and um uh you know it's very hard to drop
+29:14
+afterwards i don't know um we had a student a few years ago who
+29:19
+will remain nameless who didn't realize they were still in the class they had kind of stopped paying
+29:26
+attention and about halfway through the term they realized they were still in the class and they went to drop it
+29:31
+found out that it was an early drop class and they were uh they were petitioning their
+29:37
+department they weren't in the ecs to allow them to drop it and last i'd
+29:42
+heard that didn't go so well so um that was because i think they're one uh late drop
+29:48
+that you get uh they'd already used up and so they basically were stuck so don't be stuck this is actually bad
+29:54
+for you this is an awesome class i i like to think this is you know the most awesome class but perhaps i'm overstating it
+30:01
+but if you don't want to be in the class drop it please um and let other people in so um
+30:08
+i don't want to overstate that anymore but uh all right um and by the way as of tonight we're
+30:14
+probably going to let the rest of the folks on the on the wait list into the class as well as concurrent enrollment so i think we
+30:20
+are now uh everybody's in okay unless you don't want to be in which case you
+30:25
+better drop okay all right any questions on
+30:34
+administrivia i i just wanted to uh make sure i told that story about early drop
+30:40
+okay uh dsp related uh policy you can talk to me individually and uh about it okay now
+30:48
+i i have everybody's letters and so on so okay as far as collaboration policy i've
+30:55
+said this before but i just want to state it again i'll i'll stop uh saying this every lecture but
+31:03
+be careful about your collaboration okay watch it carefully so explaining a concept to somebody in another group is
+31:09
+fine discussing algorithms or testing strategies is fine discussing debugging approaches
+31:17
+is fine searching online for generic algorithms like hash tables or whatever
+31:22
+that's also fine notice that these are not details about projects or homework these are
+31:28
+higher level ideas or concepts okay that that's fine what isn't fine are things like sharing
+31:34
+code or test cases with another group or individual including homeworks so i know there was
+31:40
+a proposal on piazza to have homework study groups or whatever but in cs 162 the homeworks are actually graded
+31:47
+and uh they are part of our checking policy to make sure that nobody's sharing code
+31:52
+so um make sure to do your homeworks on your own and by the way the home doing your homework's on the own on your own we've
+32:00
+chosen the homeworks carefully to help you with the projects so that's another reason why it's very
+32:06
+important to make sure that you do the homeworks because they will help you along with ideas in the projects okay um
+32:14
+you can discuss cons high-level concepts but no details okay nothing like well i would do this
+32:21
+or i'd have a variable that did that you can't do any of that idea okay um copying or reading another
+32:27
+group's code or test case is not okay copying or reading online code or test cases from prior years not
+32:33
+okay helping somebody in another group to debug their code not okay okay yeah now um
+32:41
+you know we compare projects and homework submissions against prior years submissions and online solutions and take actions if
+32:48
+we see uh significant overlap and don't ask your friends
+32:53
+don't put them in a bad position by asking them to give you an answer to a homework that's happened and
+32:59
+it got caught and it's bad for both parties so all right enough on that so let's go
+33:06
+back to the topics all right um if you a negative number on
+33:11
+the waitlist i guess that's i have no idea what it means i think it means that there are uh that we are basically
+33:18
+allowing everybody in now at this point but um i think we may or may not let new people in so
+33:24
+um so let's go back to threads which is our big topic and we'll get to uh processes as well but um
+33:32
+back to jeff gene's numbers everybody should know uh i brought this slide up the first day just to show you the huge
+33:39
+range of numbers okay you know in uh everything from half a nanosecond or or
+33:46
+uh hundreds of femtoseconds up into you know seconds okay and really
+33:52
+these up here in the seconds uh or in the in the millisecond range here can be problems
+33:59
+okay because disk seeks you know tens of milliseconds uh etc you can't wait all of that time
+34:07
+tens of milliseconds before you do something else and so you want ways of overlapping uh i o and compute
+34:14
+and so these this number set here tells you right off the bat a very good motivation for threads okay
+34:21
+which is handling io in a separate thread to avoid blocking other progress now
+34:28
+threads masking i o latency so disk does disk seek also include ssd
+34:34
+we'll talk a lot about uh disks and ssd a little later in the term
+34:39
+as you may be well aware so ssd typically doesn't have a seek time like a disk
+34:46
+does okay because ssds are a solid state that's what ss stands for
+34:51
+uh but there is an access time to the disk so even that access time uh is time that you could be off doing
+34:58
+something else okay so it's not going to be as big as 10 milliseconds but it'll be microseconds that you might want to
+35:03
+do something else in so um threads are in typically at least three states and
+35:08
+when we get into schedulers and in the internal of the operating system you'll see more about these but roughly
+35:14
+speaking a thread could be running which means it's actually got
+35:20
+a processor or core and it's getting cpu cycles out of that hardware or it
+35:26
+could be ready which it means it's eligible to run but not currently running
+35:31
+or blocked and if you remember that picture i showed you earlier let me pop it back up here just because it's
+35:37
+an easy way to say this maybe it's not that easy in this instance here if we can run a b
+35:45
+and c what that means is that while a is running b and c are ready but not running okay
+35:51
+they're on the ready list you'll see more about this as we go and as soon as a is
+35:57
+the scheduler decides that a is done in this instance then it picks b off the ready q or in this instance
+36:03
+where we're alternating between a b and c we have a we'll be running while b and c are ready and and uh et cetera
+36:10
+okay and we're going to show you a lot more about how that actually works but for now uh what's useful is really this idea of
+36:17
+running ready or blocked which is a new one which is that that thread went off to do
+36:23
+an operation and it made a system call to the kernel to say read uh from disc or from a network and it's
+36:30
+actually not on the ready queue and it's ineligible to run okay and this is where the true power um
+36:38
+this is where the true power of the threads come into play because if we have two threads then one of them can be
+36:44
+blocked and off of the ready queue while the other one's running now a question about uh can only one
+36:50
+core uh can a core run only one thread at a time yes by definition a core
+36:56
+has a hardware thread it's running um and that thread uh you know gets pulled
+37:02
+off the ready queue now i will i will talk soon about simultaneous multi-threading where
+37:08
+perhaps this gets a little fuzzy okay but um for now uh the other question how
+37:14
+do you get from blocked to ready is basically the operating
+37:19
+system notices that a thread is blocked on i o the i o comes in and then at that point it puts the
+37:26
+thread on the ready queue and takes it out of blocked okay because it's ready to run because the thing it was waiting for is ready
+37:34
+okay we'll get to that in much more detail uh not today so one of the once the i o
+37:40
+finishes the os marks it is ready okay and uh and so then you know as a
+37:46
+result we're gonna have multiple virtual cpus going through where any given core has one thing
+37:52
+that's actually running and then the scheduler's got the rest of the things ready so here's an example
+37:59
+where if no threads perform io then essentially they're always on the ready queue or running and so here we have two
+38:05
+threads uh while magenta is running cyan's on the ready queue and while cyan's running magenta is on the ready
+38:10
+queue and while magenta's running oh you guys get the point if we put io in here we get something more
+38:17
+interesting right so here's an instance where um the magenta
+38:22
+runs and at some point it does an i o operation and that's going to take it
+38:28
+completely onto the ready queue and put it back um on the on a weight cue okay so off the run it's
+38:37
+not going to be running it's not going to be on the ready q it's going to be on a weight cue associated with that i o and now this the blue item which we're
+38:43
+assuming is just computing pi or something gets to just keep running and there's no reason to switch because there's no other thread
+38:49
+in this instance that can run on the ready queue okay and then eventually when the i o
+38:56
+compute completes the magenta is put back on the um on the ready queue and at that point
+39:02
+it's it's now available to be run now a question here about can it go
+39:07
+directly from block to running so that doesn't happen that way um just because the scheduler gets
+39:13
+involved and again we'll talk more about that and it needs a chance to run its policy to decide
+39:18
+um just because something's on the ready queue it may or may not be the next thing to run and so we typically go from blocked to
+39:25
+uh to the ready queue not running immediately okay so um perhaps a better example for
+39:32
+threads than computing pi although given that pi is a cool number i couldn't imagine a better example
+39:37
+might be the following where we create a thread to read a really large file maybe pi and we create a thread to
+39:45
+render the user interface and what's the behavior here is that we still respond to user
+39:51
+input even while we're doing something large okay so this first thing maybe runs part
+39:57
+of a windowing server or what have you or it's running the event loop for the for
+40:02
+the windowing server this other thing is doing something that might be either i o or computationally intensive this
+40:10
+is a great use for threads okay threads for eye for a user interface and threads for compute
+40:17
+is a common common pattern okay everybody with me on that
+40:24
+now um you know hopefully having done homework zero you
+40:30
+know how to compile a c program and run the executable so this typically creates a process
+40:35
+that's executing the program and initially this new process has only one thread in its own address space
+40:41
+with code globals etc question we might make is how do we make
+40:46
+this a multi-threaded process well i've kind of shown you this in pseudocode
+40:52
+but once the process starts it can issue system calls to create new threads and these new threads become part of the process
+40:58
+and they share its address space and once you have threads in the same address space now they can read and write each other's
+41:04
+data uh and therefore they can they can collaborate with each other okay whereas if you have threads in
+41:11
+separate processes they can't talk to each other easily and again i know that question came up in
+41:17
+the in the chat a couple of times but the whole point of processes is to make it more difficult
+41:22
+for them to share information that's the protection component and the only way you share in
+41:28
+that instance is by explicitly deciding to communicate
+41:33
+okay so let's talk about system calls this is uh part of we mentioned this earlier
+41:39
+with our dual mode discussion so typically if you look at an operating system we've got this
+41:46
+uh narrow waste idea um or the the hourglass kind of design where the
+41:52
+dista the difference between user and system uh is at the system call interface okay so
+41:58
+things running above here typically run in user mode and that's going to be all the stuff that you uh first start writing when you're
+42:07
+in in user mode and things in the kernel tend to run in the system mode or kernel mode okay
+42:13
+so user mode above kernel mode below and then of course we have hardware here and what's at this the interface here is
+42:19
+system calls and so the way to get from user mode into the kernel through this interface
+42:25
+is by making a system call okay now many of you are probably saying
+42:30
+but i've never seen a system call um well you know the operating system
+42:36
+libraries issue system calls language runtimes issues system calls and so in many cases the system calls
+42:43
+are actually hidden below your programming interface okay now a very interesting question that's in the chat here is well
+42:50
+our system calls standardized across all sorts of operating systems and the answer is no
+42:55
+um in general uh windows and unix and uh you know os
+43:02
+2 and ios and all these different operating systems have different uh system call interfaces but
+43:11
+there are at least one set of attempts to standardize there's a so-called posix interface
+43:16
+and the posix system call interface is shared at least partially across a
+43:22
+bunch of different operating systems okay another question that's in the chat here is if you're an administrator
+43:29
+are you running in user mode yes most of the time however you're allowed to do things that
+43:35
+take you into the kernel uh where you might not otherwise be if you're an administrator and we're
+43:42
+going to tell you how that works but you'll have to hold off on that for a moment so for now let's assume
+43:48
+that user mode um is uh what programs are running kernel mode is
+43:54
+the operating system code and the way you get across this is an extremely carefully
+44:00
+controlled transition okay now here's another way to look at this here we have a bunch of
+44:06
+processes running on an os you know they you know an application or a login window or a window manager
+44:13
+and all of them typically have um an os library that's been linked into
+44:20
+them and those applications are used the operating system by making library
+44:27
+calls and um if you haven't gotten very familiar with this already you will soon which is lib c
+44:32
+that's the standard library for c programmers typically has a bunch of system calls in them that
+44:39
+have been wrapped in a way and i'll show you what i mean in a moment about that that
+44:44
+make it possible to essentially make a system to make a procedure call that then makes a system
+44:51
+call into the operating system and when you do that um
+44:56
+the uh the system call is the thing that makes the transition to kernel mode but the function
+45:02
+makes it easy to use and this is why many of you who haven't taken an operating system class have
+45:07
+never actually looked at system calls directly okay so um libsy is is
+45:14
+question in the chat is is libsy standardized mostly okay mostly
+45:21
+uh if you were to look at distinctions between linux and uh berkeley standard distribution
+45:27
+unix and other versions ios the lib cs aren't always the same
+45:33
+exactly they mostly have all the same things in them but their arguments might be a little different so on all right um but
+45:40
+pretty much libsy all has the same almost always the same things in it all right okay let's think
+45:48
+about similarity rather than difference for the rest of the lecture here because it'll be very easy to get lost in slight
+45:54
+distinctions now the um the library i want to talk about for threads is called p threads
+45:59
+and the p stands for posix okay so posix is that attempt to um
+46:07
+standardize a set of system calls across a bunch of operating systems and there is a
+46:12
+semi-standard threading interface and you can look it up that is called p threads and perhaps the
+46:18
+most interesting thing here to start with is pthread create which is a function call in c that you
+46:26
+can make that's going to create a thread for you okay and typically you have uh
+46:32
+several arguments which are pointers to structures and i'll show you an example how this u is used in a moment that for instance
+46:40
+come back with a thread handle that you can control that thread by stopping it and starting and so on
+46:45
+some attributes of the thread which we will use much here and and also a function to call
+46:52
+and some arguments and so really what does pthread create do ignore all the the noise in the argument
+47:00
+list here it starts a thread running on a procedure of your choice
+47:06
+and that procedure by the way i thought i would talk you through this because everybody ought to hear it once what the
+47:11
+heck does void star parentheses star start routine parentheses parenthesis void star parenthesis
+47:18
+the way you understand things like this is you go from inside to out so what it says is
+47:23
+start routine is a go to left pointer that's the star two a function
+47:31
+that has an argument a void star item which returns a void star so it's a
+47:37
+start routine's a pointer to a function that takes a void star and returns a void star okay isn't that fun now
+47:45
+there's also p thread exit which is something the thread calls to exit if it wishes although if the thread
+47:51
+routine just ends then the the thread is done and then p thread join uh
+47:58
+is something that says given a thread uh handle wait until that thread is done
+48:04
+and then go forward and so join is a way to allow say a parent thread
+48:09
+that has created a bunch of threads to now wait for all the threads to complete before it goes forward
+48:15
+okay now uh what you should do is you should try
+48:22
+p stands for posix all right what you should do is try when you're running in a unix
+48:28
+style container including the ones that you've set up try man p thread so man is the man okay this is
+48:36
+the manual uh the manual command and you say man p thread whatever and it'll tell you about
+48:42
+p threads or man ls or man whatever this is the unix way
+48:47
+to access manual pages what's fun about this or whatever depends on your notion of fun is you can
+48:53
+actually go to a google search and say man p thread and it'll work
+48:58
+or there are also lots of websites out there that you can look at to see
+49:03
+information about pthreads but let's use this to get us some ideas
+49:11
+about system calls and even an example of using pthread since we're trying to talk about what does a user
+49:16
+see so what happens when p thread create is called so what i see here is i see a routine p thread create that
+49:23
+i could call in my c code from main or something like that
+49:28
+so what happens well remember that we're calling system calls and we're hiding it in many cases from
+49:34
+users since we don't want regular users to have to worry about system calls and so really pthread create is a
+49:41
+function that if you were to look inside of the of the library you've linked it with
+49:46
+what you'd see is that um it's really a special type of function
+49:52
+not written entirely in c that does some work like a normal function and then has some special assembly in it
+49:59
+that sets up the registers in a way the kernel is going to recognize and then it executes a special trap
+50:06
+instruction which is uh really a way of jumping into the kernel
+50:12
+think of it almost as an error and then the kernel says oh it's not really an error it's a system call
+50:17
+and by jumping into the kernel this way what we've done is we've transitioned out of user mode
+50:23
+into kernel mode because it's an exception and then that place we jump to very carefully figures out what system
+50:29
+call you want okay and so what happens is we jump into the kernel and the kernel knows that
+50:36
+this is the create system call for a thread and it gets the arguments
+50:41
+it does the creation of the thread and then it returns and that return and that point there's a
+50:46
+special place to store the return value you're going to all become familiar with this and then it returns which takes us back
+50:53
+to user mode and the bottom of this function which grabs the return values and then returns
+50:59
+like a normal function so this function isn't the normal function this is a wrapper around a
+51:04
+system call but as far as the user is concerned it looks like a function and you've just linked
+51:09
+it okay okay and a system call can take a thousand cycles okay it's not it
+51:15
+depends a lot on um what it's doing um it also you have
+51:20
+to save and restore a bunch of registers when you go into the kernel and come out again and we'll talk more about the cost of
+51:26
+that okay so doing system calls is not cheap this transition from user mode to kernel mode
+51:32
+is more than just setting that bit there's a whole bunch of stuff around it and we'll talk about stuff in
+51:38
+another lecture okay now um okay and when you create threads
+51:46
+uh what you're doing is you're basically creating at least initially here a schedulable entity and
+51:53
+uh in that instance multiple things can be running okay and whether we transition to a new thread on during
+52:00
+creation is a different story which we'll get into when we get to actual scheduling but another idea that
+52:06
+i'm just going to introduce for this lecture briefly is this idea of fork join per uh pattern which is
+52:13
+a parent thread creates a bunch of other threads that run for a while these little squiggly things are threads
+52:19
+and then they all exit but what i want to do is i want to wait until they're all done with their job
+52:26
+so maybe they're running in parallel etc and then eventually what happens is
+52:32
+we join namely we wait for every one of them to end and then the single parent
+52:38
+thread continues after all of these are done now there is a good question here which i want to
+52:43
+address briefly is once we enter this assembly code are we contact switching no
+52:48
+no no uh c code when it uh compiles compiles into assembly it's
+52:54
+just that we're doing some special assembly that's a little bit out of the scope of what a c compiler
+52:59
+usually produces and that's why it's typically specified as assembly language okay
+53:06
+the other thing is again don't get too worried about multi-core because what we're talking about works perfectly well
+53:12
+if there's only one core in the system okay keep that in mind all right it will
+53:17
+all run okay so now that we've got fork joint parallelism let's tie everything
+53:23
+together so here's some code i bet you guys thought you were going to get out of this lecture without some complicated code
+53:29
+what we got here is we got a main function call okay and in this main function call
+53:36
+or which is the start of the program we have some uh malik statements we have some thread
+53:43
+creates we have some joins okay and we could ask ourselves how many threads are there in
+53:48
+this program we could ask does the main thread join with the threads in the same order that they were created we could ask do the
+53:56
+threads exit in the same order they were created and if we run the program again with the
+54:02
+result change so let's look here for a moment what we see here is we start by the way this main program
+54:09
+has been set up to take an argument and if there's an argument then we use it for the number of threads
+54:16
+otherwise we use two so assuming there's an argument of some sort we malik data that is big enough
+54:24
+to hold the handles for a bunch of threads so these are p thread t items and um then we
+54:31
+uh print some information like where the stack is okay and uh some other information like
+54:38
+where is this common um item okay and then we go through a loop
+54:44
+and we create a bunch of threads we create n of them and for each thread uh we keep track of its handle
+54:50
+in a thread structure okay so now we've gone through let's say there are four threads
+54:56
+we've gone through we create all four threads and we store handles to them and the reason we do that is so that we
+55:03
+can join at the end but let's take a look at this p thread create what you see here is the thread function
+55:09
+which is surprisingly as i mentioned before thread function is a function that takes a void star and
+55:16
+returns a void star and by putting the thread function here we've implicitly said put a pointer to
+55:22
+that function there so this creates a thread each time each loop it creates a thread that calls thread function
+55:28
+and then finally we are going to go through the thread join to finish and if we were to run this with an
+55:33
+argument of four what's going to happen is the first thing is it's going to tell us uh where the stack is so main stack and
+55:41
+notice that what i did was this t function this t variable that's in the
+55:47
+local variable of main i say take its address and cache
+55:54
+and basically turn it into a long and print it and so here's an address 7ffe2c
+56:04
+is an address that represents the stack for main okay and what's interesting is we do
+56:10
+that uh for each of the thread functions when they run where we have this tid
+56:16
+and we print out the uh the storage location for this local variable tid
+56:21
+and notice how they're all a little different so each thread has its own stack okay and notice also that they run in
+56:29
+different orders and that's because we create a bunch of them and then they get interleaved okay all right and so the question is
+56:37
+sort of how many do we create well it depends on uh the argument do they join in the same
+56:43
+order they were created well yes because we um we go through join and we do a join on the threads in order
+56:49
+zero one two three and therefore the main thread waits for thread zero to finish thread one thread two thread
+56:56
+three and if the thread exits early then when we go to join it just finishes really
+57:01
+quickly okay and then if we run the program again with the result change yes the scheduling is going to be different so
+57:07
+the threads may not wake up in the same order okay so there are five threads here total yes
+57:13
+the four that we created uh with p threads in the original main one okay so there's always a
+57:21
+thread created when you create a program okay now uh if you notice um
+57:28
+now of course p thread exit uh basically when a thread exits it allows the join
+57:33
+to move forward now um this join is not with null this
+57:40
+is we're joining with this thread and this is an argument that we're just not using on on uh the thread join
+57:47
+okay and there's four created by the for loop because in this instance the argument was four and we took that argument to decide how
+57:54
+many to create so n thread equals 2 is only used if we don't have an argument
+58:00
+all right so what about thread state so the states shared by all threads in the process address space okay if you
+58:06
+don't call p thread exit which uh we could easily forget then what happens is um
+58:14
+it's the uh the thread function exiting calls p thread exit uh basically um
+58:22
+implicitly without you having to do it okay all right so the state is shared by all
+58:28
+threads in the processor address space so the content of memory uh is shared i o states shared
+58:34
+uh state that's private each thread in some sense is there's a thread control block in the kernel that's why i have it
+58:40
+red and then there's cpu registers that are either in the processor or in the thread
+58:46
+control block depending on whether it's running or not and a stack okay and what is the stack
+58:53
+well the stack has uh parameters temporary variables return pcs etc so um
+58:59
+one view of what we just did there was there's a bunch of shared state for the the threads which is a heap global variables
+59:07
+in code okay and then the per thread state is there's a thread control block um and a stack and
+59:14
+saved registers for each one of the threads now just to quickly be on the same page
+59:22
+with 61c material if you remember what stacks are good for they hold temporary results and they
+59:28
+permit recursive execution so if you notice here i have some uh pseudo
+59:34
+code for c and notice these labels over here represent the memory
+59:39
+uh that this if statement's at or the memory that this b is at okay so if the if statement's at a
+59:45
+then b might be at a plus one uh these this is just a loose idea here so don't get too hung up on this
+59:52
+okay but if we call a of one what's going to happen is a is going to come in and uh we're going
+59:59
+to create a stack frame okay for procedure a to get called temp
+1:00:04
+is one okay because that's uh a local uh argument and the return is going to take us to
+1:00:11
+exit why is that well when we return from this version of a the next thing is exit and we're done
+1:00:17
+okay and so those are all on the stack and now we sort of say well is temp less than two well yes it
+1:00:23
+is because it's one in that case we're going to run b and what does b do well b creates a stack frame for itself but if
+1:00:31
+you notice here um there aren't any local variables so the only thing we have is the fact that when b
+1:00:37
+returns we're going to go back to a plus 2. why is that well b calls we call b here
+1:00:43
+and then when we return we return to here okay so that return variable is actually put on
+1:00:49
+the uh on the stack okay and now when c runs it creates a stacked frame and
+1:00:56
+eventually we call a of 2 and notice that now we've got
+1:01:01
+we're calling a again recursively so a the first version of a is here on the stack but by the time we go to the
+1:01:07
+second version we're down here and is temp uh less than two no
+1:01:13
+so at that point we're gonna output uh we're gonna print temp which is two and then we're gonna
+1:01:19
+return and what do we return well we return to c plus one which is down here
+1:01:25
+and c plus one is going to return c okay and then eventually we get back to
+1:01:30
+a plus two we're gonna print our one we're gonna return and we're gonna be done okay so there you go that's a stack now
+1:01:37
+the question of can uh is it possible for one thread stack to crash into another
+1:01:42
+absolutely okay and if you look you could say well what's the layout with two threads well
+1:01:48
+we have different stacks in the same address space and if this stack grows too far it's going to mess up the blue stack
+1:01:56
+okay so you know we start having to ask some interesting questions how do we position stacks
+1:02:01
+relative to one another how big are they and so on uh one of the things we'll be able to
+1:02:07
+talk about uh you know in a few lectures is we can put what are called guard pages
+1:02:12
+such that if this pink guy runs too too long and it goes into this empty space it'll
+1:02:19
+actually cause a trap into the kernel which can then make a decision about whether to allocate more memory or to kill off the thread
+1:02:26
+okay and the reason there are no protections in place is because multiple threads running in a process the process is the
+1:02:32
+protection so this is good and bad right it's a liability if you run uh infinite fibonacci style
+1:02:40
+things that run into each other because we all know everybody wants to do that all the time as you learned in 61.8
+1:02:45
+or it's a benefit because now yes the stacks are in the same
+1:02:51
+address space but these two threads can easily share data okay all right and let me i'll get
+1:02:57
+to the sharing in just a second here okay and uh how to allocate more memory
+1:03:04
+uh oftentimes with a thread if you really are running out of space you may need to
+1:03:09
+um there there's an argument you can use to say i need north stack space okay but um this is uh this becomes an
+1:03:16
+interesting question of debugging we'll save that for another lecture but what i do want to say here is the
+1:03:23
+programmer's abstraction is uh one of lots of threads all running
+1:03:28
+kind of at the same time right an infinite number of processors whereas the reality is some of them run and some of them
+1:03:34
+don't okay and and it alternates and that's that idea that we have to we have to create our uh
+1:03:42
+code so that runs correctly despite uh the schedulers interleaving in fact i
+1:03:49
+like to think of the scheduler almost as it's um it's a murphy's law
+1:03:55
+scheduler is the way to think it's gonna do the the interleaving that screws up your code the most
+1:04:00
+and so you need to design for all interleavings which really means you have to do the correct thing with
+1:04:05
+respect to locks okay and so the programmer's view here might be that we have x equal x plus one
+1:04:12
+y equals y plus x etc but in reality one execution could be
+1:04:17
+well they do run one after another and another could be well x equal x plus one runs but then we go
+1:04:23
+off and we run a different one for a while and then we continue or we run the first two guys go off for
+1:04:29
+a while and continue okay so this reordering
+1:04:35
+uh let's not worry about reordering so much as interleaving okay now um
+1:04:42
+so there are many possible executions okay and i think i've i've hammered that point home already
+1:04:47
+but you need to keep that in mind and before you give up and think this is impossible
+1:04:53
+in fact proper locking discipline will take care of you here and and uh
+1:04:59
+make sure that you run correctly under under all interleavings okay and that's um our job over
+1:05:05
+uh the next you know couple of weeks is to give you an idea how you might possibly design things so that they work
+1:05:13
+under a variety of interleavings okay so correctness with concurrent threads
+1:05:18
+has this non-determinism component where each time you run there's a different interleaving
+1:05:23
+okay so the scheduler can run the threads in any order it can switch threads at any time and it
+1:05:29
+makes testing difficult in fact it makes testing uh of all possible interleavings not in
+1:05:36
+principle even possible now there are folks in the department who know how to test up to a certain
+1:05:42
+depth of interleaving and there's some pretty elegant uh results in that
+1:05:47
+mode but um there's one instance where things can be done and that's when the threads are independent and they don't
+1:05:53
+share any state and they're say in separate processes then it really doesn't matter what order
+1:05:59
+they run because uh you'll always get the same answer and that's a deterministic result
+1:06:05
+cooperating threads which are running in the same process suddenly we've got this non-determinism and we have to worry about it
+1:06:12
+so if you could somehow make everything always independent then you've got deterministic behavior and you're in good shape of
+1:06:19
+course even when you think things are independent they're all running on top of the same operating system and we all know that an operating system
+1:06:27
+crash or bug can screw up pretty much anything but let's not worry
+1:06:32
+about that for now so the goal is correct by design
+1:06:37
+so just to point this out we have some race conditions so what if initially x is zero and y is zero
+1:06:43
+and we have two threads one of which sets x equal to one and the other sets y equal to two what are the possible
+1:06:49
+values of x when we're done well that's not even very interesting right it must be one because b doesn't interfere okay
+1:06:57
+more interesting of course is this one where maybe thread a does x equal y plus one and then thread b
+1:07:03
+says y equals two or y equals y times two what are the possible outputs there well it could be one three or five
+1:07:10
+non-deterministically okay and so um
+1:07:15
+more interesting okay now um that's because we're essentially racing
+1:07:21
+a against b and uh this is bad code okay yes this has non-deterministic answers but
+1:07:28
+you wrote code that should never have been written this way okay and we're going to try to avoid race conditions
+1:07:35
+now let me show you a good reason for sharing there were some questions uh earlier so threads can't share stacks
+1:07:41
+and the reason for that fundamentally is that the stack represents the current
+1:07:47
+state of an execution and if you had two threads on the same stack they'd just screw each other up and you'd lose
+1:07:52
+you'd lose that go back through my thread or my stack example and think through that for a moment so
+1:07:57
+threads all have to each thread has to have its own stack now um here we have an instance of for
+1:08:04
+instance a red black tree which you probably ran into in 61b maybe thread a doesn't insert and thread
+1:08:10
+b doesn't insert and then i get if you just wrote code like this that tree would get screwed up okay
+1:08:19
+um so and yes every thread has its own stack in uh in the process
+1:08:26
+okay so um this particular instance of thread a and thread b is
+1:08:31
+absolutely not going to work you're guaranteed to get a wrong result so some uh quick
+1:08:39
+definitions which we are again going to go through in much more detail in subsequent lectures are the following so synchronization is
+1:08:46
+coordinating among threads regarding some shared data in a way to try to prevent
+1:08:52
+race conditions and prevent you from getting the wrong answer so some num some ideas mutual exclusion
+1:08:59
+basically ensures that only one thread does a particular thing at a particular time
+1:09:04
+so one thread excludes the others from a chunk of code it's a type of synchronization
+1:09:10
+a critical section for this uh for this lecture is code that exactly one thread can execute at a time
+1:09:17
+okay it's the result of mutual exclusion and a lock is an object that only one thread can hold at a time
+1:09:23
+and it's used to provide mutual exclusion now these things we're going to talk in
+1:09:28
+much more detail and we're actually going to tell you how to build locks that's going to be an interesting discussion in a couple of lectures
+1:09:34
+but for now a lock is going to be a way to give us mutual exclusion and locks have a very simple interface
+1:09:42
+they you can acquire the lock and you can release the lock and when a thread acquires the lock or
+1:09:49
+tries to acquire the lock what happens is if some other thread currently has the lock other threads that are trying to acquire
+1:09:56
+it are put to sleep and when that thread that has a lock finally releases it then one and only
+1:10:01
+one of those threads is allowed to acquire it so this mutual exclusion given by locks
+1:10:07
+okay namely only one thread can acquire at a time is going to allow
+1:10:13
+us to start building correct code even with a lot of parallelism and concurrency in there
+1:10:19
+okay and don't worry about how to implement this we will talk about that in great detail later but how would we use that in this
+1:10:26
+example well uh the two threads would acquire a lock
+1:10:32
+on the whole data structure or on the root of it okay insert three and then release it or
+1:10:39
+maybe thread b acquires the lock inserts four and releases it
+1:10:44
+um there's a an elegance to how to distribute your locks that you're gonna get to start thinking about
+1:10:50
+like you could have a single lock at the root and if you grab a lock then you know that if a grabs the lock then it knows that
+1:10:57
+thread b can't be anywhere in this data structure so it can just do its own thing and
+1:11:02
+insert and then when it releases then b can know that a is not in the data structure and so on
+1:11:08
+or you can start distributing locks throughout and you can do a more sophisticated thing where you
+1:11:14
+grab a lock and then you grab another lock and so on okay but for this purpose of this lecture
+1:11:21
+think of grabbing a single lock at the root that's going to clean things up for us okay
+1:11:27
+all right now there's an interesting question here about uh single instruction
+1:11:32
+operations on various shared variables and those are uh special types of hardware
+1:11:38
+interlocks we're going to talk about where you don't actually need a lock okay and yes there's plenty of different
+1:11:43
+types of lock although we'll also talk about that as we go forward
+1:11:49
+now p threads again p for posix has a locking infrastructure
+1:11:54
+that thing we just talked about it's called a mutex okay and you can initialize a brand new
+1:11:59
+mutex and then the different threads in the system can use lock and unlock and uh it'll work like i just said okay
+1:12:07
+so you you'll have a single thread that'll come back okay that's that mutex structure and then
+1:12:14
+you'll use that mutex in different threads and as long as they all use the same mutex then they'll all
+1:12:20
+have that locking behavior i just said and and p thread lock will grab the lock and unlock will release the lock
+1:12:28
+okay and a mutex is just another name for lock in this instance okay
+1:12:34
+so you'll get a chance to use these in homework one so here's an example of our thread
+1:12:40
+function for our multiple threads so mutex is a type of block yes and here um our critical section uh
+1:12:47
+could be where we have this common integer that's a global variable but we have a bunch of threads that are
+1:12:53
+on it if you try to increment a global variable uh the simple version of increment here
+1:13:00
+is going to get all screwed up if you have multiple threads on it by grabbing the lock incrementing and releasing the lock then
+1:13:07
+you can make sure that that shared variable uh does not get screwed up okay
+1:13:13
+all right now are there any questions on that before i
+1:13:18
+um i want to say a little bit about processes now before we are out of time so what it
+1:13:25
+means when a thread holds a lock is that the thread has executed the lock acquire operation whatever that is here
+1:13:31
+it's p thread mutex lock and it succeeded then the the thread
+1:13:37
+that succeeded and was allowed to continue has the lock
+1:13:42
+okay so in this instance because this is now a critical section oh there's only one thread
+1:13:48
+that's ever allowed to get past the lock at a time and so only one thread can be in this critical section at a time
+1:13:55
+and we say that that thread has the lock okay
+1:14:03
+and if a thread tries to acquire the lock and the lock is already acquired what
+1:14:08
+happens is it's put to sleep until it's released and then it allow is allowed out so only one thread's allowed in this
+1:14:16
+critical section at a time okay all right and and keep in mind this
+1:14:22
+thread function is run by many threads simultaneously so we're talking about a scenario where many threads are running
+1:14:27
+at the same time okay so let's talk about processes briefly before we uh
+1:14:34
+run out of time here so how do we manage process state so we've been talking about for instance
+1:14:39
+multi-threaded um multi-threaded processes where each of the threads has a stack and some
+1:14:45
+register storage and then of course there's sort of global code data and files
+1:14:51
+okay and um just to let me just say this again answering a
+1:14:57
+question what constitutes a critical section is the piece of code that's being project protected by the lock
+1:15:04
+okay that's the critical section it's the piece of code where only one thread's allowed to execute that little
+1:15:09
+piece of code at a time okay and it could be many it could be many instructions
+1:15:15
+it could be many uh things in there okay now okay so now what we're gonna
+1:15:22
+i'm gonna move on to processes so if you remember the life of a process is the kernel uh execs the process we
+1:15:31
+kind of talked about this last time and then when it's done it exits and we go forward so rather
+1:15:36
+than threads we're actually talking here about creating a brand new address space and moving into user mode okay
+1:15:44
+and once we uh are in user mode then there's a lot of ways that we get into the kernel like we talked about system
+1:15:50
+calls interrupts are another thing that we will talk about where an interrupt might
+1:15:55
+involve say accessing some hardware here and then eventually we return from interrupt
+1:16:01
+or an exception like a divide by zero or um a page fault other things might bring
+1:16:07
+us into the kernel et cetera okay but that's still we're this
+1:16:13
+lecture is about user mode so what how do we create new processes okay so processes are always created by
+1:16:20
+other processes okay so how does the first process start this is like asking about the big bang
+1:16:27
+right well the first process is started by the kernel it's often configured
+1:16:32
+as an argument to the kernel before the kernel boots and it's often called the init process and then that init process creates all
+1:16:38
+the other ones in a tree okay and all processes in the system are created by other processes at
+1:16:44
+that point now um we're only going to have time for a couple of these process management
+1:16:50
+apis here but the first one here that's easy is exit so here we have main
+1:16:56
+okay the process got created we execute exit it ends the process okay so this is not
+1:17:02
+particularly um maybe interesting to you except for the fact that every process has an exit
+1:17:09
+code which can then be grabbed by its parent where the parent is going to be the process that created it okay
+1:17:16
+and by the way this is completely different from the dota knit segment in the elf library so notice that um this
+1:17:23
+uh initial process the init process is actually a process okay that's running in the system and
+1:17:29
+you can find it typically if you know where to look okay because it's typically if it exits
+1:17:34
+then the then the system crashes and goes away so exit's not maybe that interesting
+1:17:39
+except that it has an argument and zero means successful exit whereas anything else is non-zero says
+1:17:47
+unsuccessful and the parent process can find that okay so what if we let maine return
+1:17:53
+without ever calling exit well in that instance you actually uh get a an
+1:17:59
+implicit exit as well okay the os library calls exit for you
+1:18:06
+successfully all right the entry point of the executable is in the os library so
+1:18:11
+the os library when you do a compile and link uh basically says that main is the
+1:18:17
+program that gets called almost think of this as the the first thread actually calls main and then it exits and it kills off the
+1:18:23
+process when you execute exit okay and um exit code and return code will
+1:18:30
+essentially do similar things okay now and if you
+1:18:35
+notice uh if main returns the library calls exit all right so let's look at uh
+1:18:42
+something more interesting and unfortunately we're not gonna have a lot of time for this but hopefully you guys can stick around for
+1:18:48
+five more minutes i want to talk about fork because fork is one of the most interesting strange
+1:18:53
+things that we're going to talk about for process management because it's it's sort of a legacy
+1:18:59
+uh operation in some sense but it's also kind of the backbone of a lot of the way that unix operating systems work and
+1:19:05
+it's the one that you're looking at as well pintos is going to be similar to that and fork is used to create a
+1:19:13
+brand new process and what it does is it copies the current process
+1:19:20
+uh entirely so if you imagine that you have one process with all of its address space what fork does
+1:19:26
+is it copies the whole thing to another process okay or to another
+1:19:33
+address space and then it starts running in the other address space so now when you're done you have two
+1:19:38
+identical copies of things running whereas before you only had one so fork
+1:19:44
+is really taking and duplicating everything about a process
+1:19:49
+okay and this is going to be a little weird so this is why i'm hoping you'll give me this extra five minutes
+1:19:56
+with the return value from fork is uh basically one of three things if it's
+1:20:02
+greater than zero then you know you're running in the original parent and the return value is the process id
+1:20:09
+of the new child if you get back zero you know you're the new child and if you get back
+1:20:14
+less than zero it's an error okay and pid here means process id
+1:20:20
+okay so the state of the original process is duplicated in both the parent and the
+1:20:26
+child okay pretty much everything address space file descriptors etc
+1:20:31
+so here's a good example where uh we're running along and we call fork
+1:20:37
+okay and at the point that we call fork as soon as we return from fork a very weird thing happens we now
+1:20:44
+have two processes that are running two of them and those two processes are
+1:20:51
+identical except for the thing that comes back from fork so in one of them
+1:20:57
+we get a value greater than zero and the other one we get a value equal to zero
+1:21:02
+and only when fork fails because uh say fork has run out of memory or something
+1:21:08
+then only one of them comes back and we say fork failed now there was a question about fork a
+1:21:14
+fork bomb that would be an instance where we are forking so many times uh that we have so many processes running
+1:21:20
+that memory runs out and uh we're toast and often that's usually because of a bug in the operating system
+1:21:25
+or something okay but if you notice um in this instance where uh things work
+1:21:33
+the original process does not get killed it's happily running but it comes back with cpid greater than
+1:21:40
+zero all right and the child comes back with it equal to zero and if you notice here so that means the
+1:21:47
+parent is running there okay so let's take a look here so we uh we call
+1:21:52
+fork and now suddenly we have two things that have returned from fork and two
+1:21:57
+different processes and one of them the original parent that's what p stands for
+1:22:03
+has cpid greater than zero which is the uh p id of the child and basically you can
+1:22:09
+say well my i get my own pid i can say i'm the parent of that child otherwise you can say here's my pid
+1:22:17
+okay okay now um memory allocated by other threads
+1:22:24
+so typically the memory is going to be duplicated but you're only going to have one thread running initially in that
+1:22:29
+other that other process okay now if you fork and fork again
+1:22:36
+you would end up potentially with a tree that was a question except for the fact that if you could
+1:22:41
+have uh the parent do the fork again but the child not and then you'd have three processes
+1:22:47
+running okay so uh it may be a tree but it doesn't have to be a
+1:22:52
+binary tree okay so again we're gonna make sure that we leave with this rather
+1:22:58
+strange concept okay it's that once we execute fork in the original single process when we're
+1:23:04
+done there's two of them two that are identical except when one
+1:23:10
+of them runs fork returns a value greater than zero and when the other one runs fork returns
+1:23:16
+zero and that is the way that those two processes know whether they are the parent or the child
+1:23:23
+okay and you're thinking about this too hard if you try to think about somebody's created already at somebody
+1:23:30
+else in fact what happens is the memory space is exactly duplicated
+1:23:36
+and the original parent uh there are there is information in its process uh
+1:23:42
+table as to whether it was the parent or not and so we will get the return back and
+1:23:48
+the processes are put in a tree inside the kernel because the parent has linkages to all of its children
+1:23:54
+okay and if the child calls fork then it becomes apparent for the things that it just created okay
+1:24:03
+and so we get everything's duplicated including the stack
+1:24:09
+and they're not the same address space because they're duplicated address spaces they have the same values not the same address space
+1:24:17
+now um lest you go away from this lecture thinking that sounds ridiculously expensive
+1:24:24
+how can that possibly be the right thing to do i will tell you that you play tricks with page tables so that you don't
+1:24:30
+actually copy everything what you do is you copy the page table and you set them as read-only
+1:24:36
+and you do some tricks okay that's going to be topic for another more fun discussion and yes linux has a
+1:24:42
+version of a fork called spawn that doesn't actually do this copying but again we'll
+1:24:47
+get to that later i want you guys to all understand fork for now okay and here is a race for
+1:24:53
+you okay and uh the question is
+1:24:59
+if you look what happens here if we fork and we say in the parent we uh have i
+1:25:05
+equals zero time plus one and we go forward and in the child we go backwards
+1:25:10
+what gets printed out does anybody want to uh make an argument about this what is it print
+1:25:18
+does it get confused where i goes up a little and then down and then up a little and then down
+1:25:24
+i see somebody says infinite loop
+1:25:32
+yes great different i because the processes are completely different
+1:25:37
+i is completely different and the parent goes up and the child goes down and they don't interfere with each other
+1:25:42
+the only thing that happens is that interleaving might be different based on scheduling very
+1:25:48
+good okay because the prints are printing the same standard out all right good um
+1:25:55
+and then uh we will pick up with this next time because we're out of space but for exec by the way here look this is the
+1:26:02
+code the way we create a brand new process is we fork a new process and then we call exec
+1:26:10
+which immediately says throw out all of my address space and replace it with this new program
+1:26:15
+and that's how a new program is created all right so in conclusion we've been talking
+1:26:21
+about um yes it's true for global variables are copied as well so they're completely separate address spaces with
+1:26:27
+no interaction because they're separate processes they are not threads so there's only racing for
+1:26:35
+i o ordering on the same output screen but not anything to do with any of the computations all right
+1:26:42
+so threads uh are the unit of concurrency okay uh they're abstraction of a virtual
+1:26:48
+cpu a process is a protection domain or address space with one or more threads
+1:26:54
+and we can see the role of the os library and the system calls are how we control uh access an entrance
+1:27:01
+uh to the kernel okay and the finally uh the question was if the
+1:27:06
+parent gets killed does the child die no what happens is in fact when the parent gets killed
+1:27:12
+if the child is still running then a grandparent uh inherits the child and ultimately
+1:27:19
+init inherits the child if it's still running so all right
+1:27:24
+i'm gonna say goodbye to everybody sorry for going over a little bit but i wanted to make sure that we talked about fork
+1:27:30
+uh may you all have a great uh holiday weekend remember no class on uh monday and also
+1:27:37
+remember that uh friday is drop day so if you want to be in the class great if you don't please drop all right
+1:27:44
+ciao all and have a great weekend
+1:27:51
+bye

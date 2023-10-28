@@ -1,0 +1,1720 @@
+0:03
+welcome back everybody uh it's hard to believe but uh we're on lecture 16.
+0:09
+term has been flying by and we've been talking about virtual memory and so uh we're gonna continue in that vein
+0:16
+today um i wanted to fill out a little bit more of the caching discussion that we
+0:22
+had last time just to remind you again about average memory access time this is 61c material that hopefully you'll be
+0:29
+familiar with but um if you remember the average memory access time is uh composed of
+0:37
+two different hit times probabilistically now we're in this situation where we have a processor
+0:42
+talking to say an l1 cache which is talking to dram and the trick is to figure out how the
+0:48
+cache improves our performance and to do that we have an aggregate hit rate probability that we
+0:54
+come up with the cache and the hit rate is the percentage of the time that uh we actually get a hit
+1:02
+in the um cash and then the miss rate of course is one minus that the hit time is how long it takes when
+1:09
+we hit and the missed times how long it takes when we miss so this is not rocket science here but
+1:14
+um i just wanted to put up some uh definitions and equalities here just to
+1:20
+uh to make sure we're all on the same page here clearly the hit rate plus the miss rate better be one or something
+1:25
+weird's going on um the other thing is the hit time which is the time to get from the l1
+1:30
+cache is actually a part of the miss time as well so when we talk about miss
+1:36
+time it's not only the penalty which is going down to the dram and pulling it into the l1 cache
+1:42
+but then we have one more hit time afterwards so this missed time we're talking about up here
+1:47
+is actually hit time plus miss penalty okay and then of course the missed penalty is the average time to go from
+1:53
+the lower level which in this case is dram all right so this is all 61c if you were
+1:58
+to take some of these uh blue items and put them into the original equation and rearrange things a
+2:04
+little you'd actually see that another way to talk about average memory access time which
+2:09
+is the one i often prefer uh for a reason i'll show you in just a second it's really the hit time plus the
+2:15
+fraction of time you miss times the missed penalty okay and um so
+2:22
+why do i like this one better well suppose we've got more levels okay so we have an l1 cache and an l2
+2:29
+cache to dram well then we can just take our new equation that was in red up
+2:35
+there we say the average memory x time average memory access time is the time to hit in the l1 cache
+2:42
+plus the miss rate in the l1 cache times the missed penalty okay i haven't done anything but just
+2:48
+copy here but what's interesting about this is what's the missed penalty in the l1 well that's the time to get it out of
+2:55
+this l2 uh dram combination and so if you notice the missed penalty of l1
+3:02
+is just the average time to get from the lower level which is really just the hit time of l2
+3:07
+plus the miss rate of l2 times the miss penalty of l2 okay and you can do this recursively
+3:13
+this case that miss penalty of l2 is just the average time to fetch from the dram
+3:18
+and so average memory access time of this total combination is the hit time at the l1 plus the miss
+3:25
+rate at the l1 times and then in parentheses the hit rate excuse me the hit time of l2 plus the
+3:31
+miss rate of l2 times the miss penalty of l2 okay and so on so you can keep doing
+3:37
+this recursively modern chips like the ones we've been talking about typically have three levels of cache on chip
+3:43
+these days l1 and l2 is part of the core and then every core has an associated
+3:49
+slice of l3 for instance and then there are many of the cores on chip all right
+3:55
+good now the other thing uh we've been talking
+4:01
+about of course is caching in general applied to translation and that gave us our translation look aside
+4:06
+buffer or tlb and um okay there's a good question here that's on the
+4:12
+chat which is could you start accessing dram in parallel with the cache yes in fact that's an optimization
+4:19
+that's often done with uh server class chips where they'll actually start a dram access even while
+4:26
+they're busy doing the uh checking in the cash the downside of that is twofold one you're burning energy because dram
+4:34
+is one of the biggest uh non-pipeline consumers of energy so that's going to
+4:40
+be expensive from an energy standpoint and it also means that if you're accessing a dram it means that somebody
+4:46
+else couldn't be accessing a dram so if this dram is shared you've just slowed things down but in a
+4:52
+typical server environment where maybe you don't worry quite as much about power but you really want performance
+4:57
+then you could certainly uh start a fetch early even while you're looking in the cache
+5:03
+so applying caching to tl to translation as we said we just basically have the tlb which is
+5:09
+a cache and so we say here's a virtual address is it cached if the answer is yes we go ahead and we go to this physical memory
+5:16
+which is a combination of caching and dram whatever because we have a physical address and
+5:21
+so this is a very fast path on the other hand if we miss it then we've got to go to the mmu to translate
+5:26
+which means walking the page table we get our result back we'll store it in the tlb cache for next time and then
+5:32
+we'll go ahead and access and of course oftentimes there's the ability to go around the
+5:38
+translation entirely so the question of this of course is one of page locality does it exist so
+5:45
+that we'll mostly be hitting in the tlb and we kind of made the argument that uh yes there's there's a fair amount of
+5:51
+page locality uh certainly in the instruction and stack uh accesses but even the data
+5:56
+accesses have some good locality in them and we can build a tlb hierarchy if we want
+6:03
+this lookup to be fast and so um rather than having a fully associative
+6:09
+128 or 512-way tlb we might have a small direct map cache
+6:15
+as a first level tlb and a more highly associated associative second level cache
+6:22
+and we just showed you the equations on the previous page of how you might analyze that
+6:28
+okay now um so and again the other thing i
+6:34
+wanted to point out this is a slightly different picture of the the hierarchy than i showed you before
+6:40
+um what notice that between the dram and the secondary disk i've actually got uh flash or ssd storage which is uh pretty
+6:47
+much more modern system i will point out that the page tables are in memory
+6:52
+okay and so um we want we're hoping that those will mostly be cached the other thing i'm showing you here is
+6:58
+that things like registers l1 l2 cache l3 cache main memory are all accessed in
+7:04
+hardware and however the when we're talking about
+7:09
+caching and as demand paging and that's what we're doing with this lecture then all of that's managed in software
+7:15
+kind of by the os and so the main memory becomes a cache on
+7:21
+ssd or disk and so um that's all going to be managed in software and today is
+7:26
+going to be the day that we talk a lot about how do we manage that those page tables so that we get
+7:33
+sort of the best result from our caching and notice the tlbs are up here very fast kind of at the
+7:40
+speed of registers and then the page tables in dram and so on
+7:45
+are are much slower by many orders of magnitude and so the key is going to be we're hoping that our tlbs get enough uh
+7:53
+locality to help speed up the page tables okay so what we started uh
+8:00
+talking about last time was demand paging mechanisms and the page table entries in the page
+8:06
+table uh make it possible to build uh demand paging
+8:11
+okay and so we know that in the intel chipset um well we know that in general ptes
+8:17
+there's a valid bit and when that valid bits set equal to one the page is in memory and the hardware
+8:23
+can go ahead and do the reference when it's not set to one or zero the page is not in memory and you get a page
+8:28
+fault okay and um of course in the intel chips this is called
+8:34
+present as opposed to valid but it's the same idea and so what i showed you here this is
+8:41
+again something we had uh at the end um is basically suppose the user
+8:46
+references a page with an invalid page table entry we hit a page fault then uh
+8:52
+what do we do well the memory management unit at that point was walking its way through the page table
+8:57
+found an invalid entry um and caused the page fault and so now we're going to have to do
+9:03
+something which is we need to pull that thing off the disk for instance and what does the os do in this case
+9:09
+well it has to find it on disk and then it's got to find space where is it which page is it going to put in dram
+9:17
+which page is it going to use in dram to to handle this fault and the and at steady state all of the
+9:23
+dram is potentially full and so the first thing we got to do before we can even handle the page fault
+9:29
+is we got to choose an old page to replace okay and uh that's going to be a big
+9:35
+topic for today how do we replace a page which one do we choose and so let's suppose we know how to do
+9:42
+that already we picked a page the first thing we're going to do is say well if that page has been modified or
+9:48
+the dirty bit is one we need to write the contents back to disk because it's got
+9:53
+up to more up-to-date contents that are actually on than are actually on disk and so um we got to clear that page out
+10:01
+before we can even use it and then we're going to change its page table entry in any cache tlb to be
+10:07
+invalid okay if you remember the reason we want to do that is that we're reusing the page for something
+10:13
+else and so the page table entry originally said this was a valid translation but we got to set it to
+10:19
+invalid and then the tlb is a cache on the page table entry and the tlb is going to be
+10:24
+incorrect and so we got to throw that tlb entry out okay and so some process lost a page in
+10:31
+the process here and uh if it needs to get it back it'll of course get another page fault and pull it back
+10:36
+in off the disk then we've got to load the new page into memory from the disk and of course that's a process that can take time
+10:44
+a million instructions worth so while we're loading the new page off disk and actually while we're writing the
+10:49
+contents back to disk if we do this inline then we're putting the process to sleep
+10:55
+and then when the page comes back and the memory is now full with the new page we get to update the page table entry in
+11:02
+the page table and invalidate any tlb for that entry
+11:07
+okay and if you think about why we need to do this originally the tlb for that entry said invalid why because we got a page
+11:14
+fault and so we're going to by invalidating or throwing that tlb entry out we know that when the
+11:19
+processor retries that original access it'll cause a uh it'll miss in the tlb
+11:25
+and we'll mule have to walk the page table okay and then we continue from the original
+11:30
+location and this is really what makes this thing act like a cache
+11:36
+and if you notice one of the key things in here is this very first item which is how do we choose the old page to replace
+11:42
+and that's called the replacement policy and we um it turns out that's a topic of extreme important importance
+11:49
+when we're dealing with demand paging and so that's going to be a topic uh that we need to cover today
+11:54
+okay and the tlb for the new page uh gets reloaded when the thread continues
+12:00
+because uh it doesn't have an entry for that address and it'll be pulled from the page table
+12:07
+and of course i said that processes are suspended when we're going off of disk so i wanted to pause here and just see
+12:13
+if there are any questions on this particular slide because there's a lot of content here and so i just want to
+12:19
+pause and everybody take a breath and and tell me if there are any questions so
+12:25
+good why invalidate the tlb for the new entry all right well can anybody tell me why
+12:41
+okay so we're talking about this line here the second to last one and the the reason is we want to go back
+12:49
+through the mmu again that's correct and the reason is that uh we've just
+12:54
+changed the page table entry originally when we uh went and tried to
+12:59
+do the reference we we looked into the page table and we pulled that page table entry into the t
+13:04
+the tlb and that said invalid which is why we trapped in the first place so we we have to basically invalidate
+13:11
+this purely so that it'll get reloaded from the page table uh and and then when it gets reloaded
+13:18
+then it'll be valid the second time around okay does that make sense good
+13:24
+any other questions
+13:32
+okay the third step in the the fifth step uh you mean load new page or one two three change page table entry
+13:38
+in any cache so the difference between these two is we're this is the page table entry we kicked
+13:44
+out when we replaced the page this is the page table entry that uh we're filling
+13:50
+and remember why um we're invalidating both of the tlb entries so remember there's one page in
+13:58
+the dram that we're changing from belonging to process the original
+14:03
+process to this new process of just page fault page faulted so that physical page is
+14:09
+transferring ownership and in the process we have two tlbs one from the old process that owned the page
+14:15
+which we have to invalidate so that's it and so it's invalid and one from the new page entry uh the
+14:21
+new process and in that case we have to invalidate the tlb so that when we go back to the page table we get
+14:27
+a valid entry so there's two tlbs involved here and we're invalidating both of them
+14:32
+because they're both wrong okay this is the point usually where
+14:39
+people say well why can't you just fix the tlb up and the answer is that most processors don't give you the
+14:45
+option of modifying the tlb directly um there are there's a few uh architectures like mips
+14:53
+that uh allow you to to mess with the tlb directly but most of them do not and so the best we can do
+14:59
+is just invalidate them so that then the mmu will pull it in off of the page
+15:04
+table which is the actual correct contents at that point okay
+15:09
+good so here are our steps that uh in handling of a page fault i
+15:16
+just wanted to show you this graphically so originally we tried to do say a load to address m that reference looks up in the page
+15:23
+table and we notice that the page table is invalid that's what this i means here
+15:28
+and we get a trap into the kernel which or which is a page fault okay and at that point we we realize
+15:34
+that the page that we wants on disk so we start that access coming in off of
+15:39
+disk and meanwhile we have also found a free page okay so on that previous slide i
+15:46
+said we emptied that page out by writing it back to to disk potentially
+15:52
+in a real system which we'll talk about later we typically have a free list full of pages that are available for use and
+15:58
+we're constantly cleaning pages by moving sending them back out to disk to make sure we have free frames so
+16:05
+let's assume we had a free one in that case we pull the page off the disk into the free frame
+16:10
+when that's done we reset the page table to be valid and we invalidate the tlb we
+16:17
+restart the instruction in this new time it'll work without a page fault all right
+16:24
+now some questions we're going to need to answer like during a page fault where's the os
+16:30
+get the free frame okay and on the two slides previous i kind of indicated well
+16:36
+we find one on the fly and maybe we have to send dirty pages back to disk on the
+16:41
+fly in reality like i said there's a free list but we'll get to the free list
+16:47
+after we investigate our replacement policies a little bit more okay how are we going to all organize
+16:54
+all these mechanisms they're going to be organized around the replacement policy and uh you know replacement policy being
+17:00
+something like lru or random et cetera another question we're going to want to address
+17:06
+is how many pages does each process get okay how many page frames so that means
+17:12
+if i take my dram and i divide it up do i give every process an equal amount of dram or do i only give
+17:19
+dram frames to the processes that need them most um perhaps that might be a a good policy
+17:26
+if there was only a good way to figure that out we'll talk about that a little bit later
+17:32
+another thing that we're kind of interested in here is allocating disk paging bandwidth
+17:37
+because if you have a malicious or badly written program that's walking all over memory you're basically causing continuous page
+17:44
+faults which is going to empty out the tlb it's going to slow everything down and
+17:51
+every process in the system is going to hurt as a result and so one thing we might want to do
+17:56
+even is figure out how to allocate uh paging bandwidth
+18:01
+fairly okay so that's the type of scheduling
+18:07
+so as we start here we need a working set model so what do i mean by that well
+18:12
+here is uh the addresses here's the whole address space and here's time and what we see here is we see um
+18:20
+at a given slice in time if we were to look in this red band here as it goes by at any given
+18:28
+slice in time we can look at all the addresses that are currently in use and that's the blue one so we slice
+18:34
+straight through here and those are all of the pages that have to be in dram and mapped and dram in order to
+18:41
+make progress and notice a couple of things one it's not always the same pages which makes
+18:47
+sense right as this uh let's go back and show you that amazing animation see that as that little red bar goes across what
+18:54
+we see is our slices in time represent different pages that are in use and so
+19:00
+part of uh there's a couple of things to learn about this and we're going to make this a little bit more formal in a
+19:06
+second one is we got to have a good way as the working set which is the set of pages
+19:12
+that are currently in use at any given time frame changes we need a way for that uh use of
+19:17
+the dram to evolve so that uh where you we have the pages we need in memory
+19:23
+and the ones we don't maybe are on disk so that somebody else can use the dram okay the second thing we're
+19:29
+going to need to do is figure out how can we make sure that everybody's got their working set
+19:36
+in memory because if we can't fit all of the working sets in memory then we're going to have thrashing and we're going to be in
+19:42
+trouble and things aren't going to work properly all right now
+19:49
+so we can look at how does cash size versus hit rate work in general so this
+19:56
+is what's uh the working set model is uh how big of a chunk of dram or cash are we going
+20:04
+to use and what you find is that as the cache size increases
+20:09
+what you find is that there are certain plateaus where all of a sudden you reach a new
+20:16
+stability point where now your hit rate is higher okay but before that you just didn't have
+20:22
+enough cash and so you're missing all the time you hit a stability point where even as
+20:27
+you vary the amount of pages number of pages available or the amount of cash available it's not changing things much and then
+20:34
+finally finally you'll hit a size again which will go to a new plateau and so on and so the working set model we're
+20:39
+showing you here kind of represents well i have enough cash for say this slice but not for this
+20:47
+slice here which is a lot more addresses that might be this first plateau and then the second plateau might be a
+20:53
+little bit more and so in general as you increase the cash size the hit rate is going to go up
+20:58
+or at least that's what we're hoping to do okay and as we try transition from one
+21:05
+working set to a next um we're hopefully going to kick out things we don't need anymore
+21:10
+bring in things we do so that we can optimize the cache size we've got
+21:16
+okay and of course just as with the regular hardware cache which we were reminding you about
+21:22
+we're going to run into capacity conflict and compulsory misses okay potentially although uh
+21:30
+in the case of the um the uh memory system and uh virtual
+21:36
+memory we're probably not going to run into conflict misses too often why is that does anybody remember
+21:48
+why are conflict misses unlikely to be an issue in virtual memory
+22:03
+yeah great because effectively the way our page table works is any page any any uh
+22:11
+address in the virtual address space can be mapped to any address in the physical address space
+22:17
+so we effectively have fully associative caching in this case and therefore there aren't going to be any conflicts very good
+22:24
+all right now um another model is this zip model which
+22:30
+basically uh sorts pages by their popularity rank
+22:35
+okay and what you see here is the uh the popularity uh is this blue curve that goes down as i
+22:42
+go up in rank and the hit rate goes up all right but it goes up a little more slowly than in
+22:48
+the working set model and so the issue with this is the likely of accessing an item of rank r is sort of one over r
+22:55
+to the a where a is a constant small constant and so that's a um it's rare to access items below the
+23:02
+top few because notice how the popularity drops off but there's a really long tail
+23:09
+and so what this means is that a small amount of cash does a lot of work help to you but a
+23:15
+large cash doesn't help you as much as you might think right in this particular
+23:20
+model of locality is very common in uh web accesses and other things like that
+23:26
+so it's going to be interesting to ask the question of do we have this kind of stair stepping working set model or do we have a zip
+23:33
+style working set model and that's going to tell us something about how much we need it's definitely diminishing returns here
+23:40
+okay this case by the way rank is is uh is
+23:46
+equal to the size of the cache in some sense but what it's really talking about is if
+23:51
+i take all of the pages in my virtual address space and i sort them by popularity
+23:56
+the the most popular page is number one the second most is number two and so on and so yes if i think of this as cash
+24:03
+size then um you know when i go out to 16 that means i can hold the 16 most popular pages okay so it's both you know
+24:11
+it's the rank which can correspond to the the cash size and when it does we can figure out what our hit rate is
+24:17
+all right so this particular distribution there's
+24:24
+a substantial value from a tiny cache but very rapidly diminishing returns
+24:29
+because of the long tail okay substantial misses from a large cache
+24:36
+so let's see if we can use our uh come up with a cost model to see how
+24:41
+important it is to make our replacement policy work well and keep our hit rate up
+24:47
+so demand paging is kind of like caching and it is caching right so you can compute an average access time which we're going
+24:53
+to call the effective access time here just so that we keep it distinct in our minds from average memory access
+24:59
+time but we're going to use the same equations so uh the effective access time here is
+25:04
+the hit rate uh in the dram times the hit time plus the miss rate
+25:09
+times the miss time and that miss time is going to be um this missed time is going to be
+25:17
+having something to do with going to disk okay now the question about why conflict so
+25:24
+i'm going to answer this question that's in the chat about why conflict misses aren't a thing
+25:29
+is because you only get conflicts when you have uh associativity that's not that's less
+25:36
+than fully associative and with our page table we have a fully associative cache and so there are
+25:41
+basically zero conflicts in that situation okay and that has that's not because of the tlb that's because of
+25:48
+uh the page table maps any address to any other address so if we're trying to figure out the
+25:54
+cost of of a situation where we have a limited amount of dram
+26:00
+lots of disk and we can compute a hit time and a miss uh or excuse me a hit rate and a miss
+26:06
+rate for accessing data in the k the cache then um what do we got here well
+26:14
+let's try some numbers so typical memory access time to dram might be 200 nanoseconds
+26:19
+um the time to to deal with a page fault might be eight milliseconds okay and suppose that uh p is the
+26:28
+probability of miss and one minus p is the probability of a hit so then we can do this computation here okay so p
+26:34
+is the probability of a miss so if it's in the dram it's 200 nanoseconds otherwise with some
+26:42
+probability we have to go all the way out to the disk to bring it into dram it'll be eight milliseconds okay now i
+26:47
+have to compute my units um convert them so that i have all the same units so that's nanoseconds
+26:53
+okay so milliseconds is one thousandth nanoseconds is one billionth okay so you
+27:00
+gotta make sure you know your units and so here's my effective access time is 200 nanoseconds plus p
+27:06
+times 8 million nanoseconds and here's uh where this pays off right if
+27:12
+one access out of a thousand causes a page fault then the effective access time is 8.2
+27:19
+microseconds so that's one out of a thousand axises causes a page fault
+27:25
+what we've just done is we've slowed down the dram speed by a factor of 40.
+27:31
+okay so that factor of 40 is uh potentially
+27:39
+um quite high right so that that's pretty bad and that's a one out of 1000 accesses causes a page fault
+27:45
+so you can see why it's incredibly important to um not have any page faults
+27:52
+all right so if we want to slow down by say less than 10 percent then we can do a computation here where
+27:58
+200 nanoseconds times 1.1 basically is our maximum speed that we want and we can
+28:05
+come up with the fact that our probability has to be less than 2.5 times 10 to the minus 6. so uh that's
+28:12
+basically saying that if i want this effective access time to be no worse than 10 percent
+28:17
+bigger than the dram time i can only have one page fault in 400 000 pages so it's extraordinarily important
+28:25
+to never page fault okay so i'm going to pause on that it's extraordinarily important
+28:32
+to to essentially never page fault because the moment you start page faulting that time to go to uh disk is so high
+28:39
+that you just bring your performance to a grinding halt
+28:44
+all right questions
+28:55
+okay we good
+29:00
+so do you have enough dram for that well that's a good question but it turns out it's the
+29:05
+not quite the right question okay because this doesn't just depend on the amount of dram we've got it also depends
+29:12
+on the access pattern so if you had a loop that only accessed one page over and over again
+29:17
+forever then you could get a 100 percent
+29:23
+hit rate no misses and you'd only need one page of dram
+29:28
+all right and yes we do have one page of dram so the answer the question about is there enough dram to hit this slow down
+29:34
+is going to be heavily application dependent it's going to depend on what the application's
+29:40
+memory access pattern is how much dram we can give to it okay and so this brings up the
+29:46
+interesting question of should we try to predict the access pattern maybe
+29:52
+or maybe we should try to do some observations and see if things that are missing too often if
+29:57
+we can give them slightly more dram and things that maybe are just
+30:02
+hitting all the time or really frequently maybe we can take some memory away from them without a problem and
+30:07
+maybe we can come up with a dynamic uh policy for redistributing pages okay so that's a
+30:14
+that's a good observation and uh one that we'll come to in a little bit but um so there they come the um the thing to
+30:21
+get out of this particular slide is the extreme importance of uh
+30:27
+not page faulting which really means we've got to be very careful that the pages we have
+30:33
+in memory are the right pages so that we don't miss and that uh if we
+30:39
+have the right pages in memory we've got to be very careful not to throw them out incorrectly so that's where the the
+30:45
+replacement policy comes in okay excuse me we got to make sure that uh no matter what
+30:53
+if we have to find a new dram page because somebody needs one we don't want to throw out a page that's
+30:59
+going to be useful for us okay because if we do that then we're going to start taking an extra 8
+31:04
+million instructions or a million instructions to do something eight milliseconds and that could be a problem
+31:10
+okay so what factors lead to misses in the page cache well
+31:16
+we are once again back to the the three c's with uh the fact that there aren't any
+31:22
+actual conflict misses but first and foremost we have compulsory misses and these are pages that have
+31:27
+never been paged into memory before so uh the best we can do with these of
+31:32
+course is pre-fetching predicting the future somehow okay so this is not quite what
+31:38
+uh the previous uh requester had said in the chat but if we can somehow find out that a
+31:44
+process is walking its way through memory maybe we can have a prefetcher that's already got the next page coming off of
+31:51
+disk so that by the time we get to it it's likely to already be in memory so that would be a way to get rid of compulsory
+31:57
+misses okay and there is some pre-fetching that goes on in modern operating systems capacity misses are cases where we just
+32:04
+don't have enough memory okay and so in those cases maybe if we start getting a lot of capacity
+32:10
+misses maybe we start adding a little more dram to a given process to see if that'll help okay
+32:17
+now um you know so one option is actually increasing the amount of dram
+32:22
+but the problem with that is you got to shut everything down put in some new sims with dram in it and start things up again
+32:29
+um we'll leave that option off the table for now because that's uh the drastic option requiring buying more
+32:35
+stuff right another option is basically if you have a bunch of processes maybe we can readjust
+32:40
+the uh who's using what dram to get a better overall page misbehavior okay
+32:48
+conflict misses as we already said don't exist in virtual memory since it's fully associative all right so that's good now if you
+32:56
+remember back a lecture or two ago what did i say i said the three c's
+33:02
+plus one because there was um you know there was an extra c that we tossed in there caused by the
+33:08
+cache coherence coherence misses in this case we're actually not going to have a fourth c
+33:14
+we're going to have something called p which is a policy miss and this is caused when a page was in
+33:20
+memory but it was kicked out because of a bad replacement policy and so what our next sort of i'm going
+33:27
+to say third to a half of the lecture is going to be about here is how do we avoid policy misses because those are
+33:34
+drastically bad in the case of paging because we have to go to disk and burn a
+33:39
+million instructions worth of execution time all right so how do we fix
+33:46
+better replacement policy all right so let's talk some administrivia as you know midterm two is
+33:53
+coming up uh they do seem to come rather frequently um i guess the upside is there's no final
+34:00
+so that's good but um timing is five to seven pm uh unless you talk to us about a
+34:07
+conflict uh the conflicts with uh 170 are the same as they were last time which is you're going to take the 170 exam after
+34:13
+61 uh 162 and uh you will have heard about that or asked us about that
+34:21
+if you're not sure um other conflicts need to have been resolved already so
+34:26
+we've talked to several of you um there may be a couple of outstanding ones that we know about that we're still
+34:31
+trying to work out um all right uh
+34:36
+topics are going to be up until lecture 17. so just keep that in mind so certainly
+34:41
+today's topics are going to be there as is potentially monday's topics
+34:47
+as i've mentioned before we're going to require you to have your zoom proctoring setup working so you must have screen sharing audio
+34:52
+and camera working and no headphones unless uh you have explicit dsp
+34:58
+uh allowances for headphones okay so try to get your setup all debugged and ready to go
+35:05
+uh review session is going to be next tuesday um timing is going to be seven to nine pm uh zoom details will uh be announced
+35:13
+on piazza if they haven't already i forget and uh questions about the midterm
+35:20
+um by the way i'm glad that we don't have to have a final on the birthday of the
+35:27
+person that's chatting there so happy not yet birthday nicky so
+35:33
+um do we have any questions about the midterm or are we good
+35:40
+no final no only three midterms
+35:45
+okay there's a last midterm which technically uh assumes that you remember um
+35:51
+concepts from uh first and second midterms all right so um don't forget i have
+35:59
+office hours two to three come shoot the breeze talk about whatever you like to talk about talk
+36:04
+about operating systems talk about uh life the universe and everything if you wish um these office hours are not
+36:11
+necessarily for helping you with um lab assignments and so on but definitely come talk to me about high
+36:18
+level ideas or lectures or whatever that'd be great um otherwise i'm just sitting here with my
+36:24
+zoom up and doing other things so come come talk uh let's see the other thing i wanted to mention is make sure
+36:30
+to do your peer evaluations we talked about this last time but uh the basic idea here is you get 20
+36:36
+points for each one of your partners that's not including you so for instance in a group of four
+36:41
+you'd get 60 points to give out to the other partners and um you're going to give them all out
+36:47
+i've had some people say well can i you know not give them all out or whatever no you got to give them all out and this is a
+36:53
+an evaluation of your your evaluation of the relative uh effectiveness of your partners if
+36:59
+you're completely happy with them everybody gets 20 points that sounds great if you're less happy you could
+37:04
+give 18 to 1 and 21 to the other two but notice the sum is still 60.
+37:10
+okay and everything is validated by the ta and the end of the class so your ta also knows the dynamics of your
+37:16
+of your group so make sure they know that and in principle the project grades are zero-sum game so if you're out there
+37:23
+and you're not contributing to the project at all it's quite possible that your points will get uh
+37:28
+redistributed to your other partners since you've given them extra stress as a result because this is a project
+37:34
+class so i'd much prefer to have 20 points across the board for everybody and so let's
+37:40
+have that as a as a goal all right
+37:45
+pierre the peer evaluations are not about giving yourself points any points all right your other partners give you
+37:50
+points every term somebody tries to give themselves you know they've got 60 points to
+37:56
+distribute they try to give 59 to themselves and one one of their partners and zeros everybody else it just doesn't work that
+38:02
+way and we're going to ignore the 59 points you give to yourself and rescale everybody else so just do
+38:08
+the right thing and hand out all the points to your partners okay
+38:14
+last elections coming up all right don't forget to vote if that's an option
+38:20
+for you i mean this is one of the most important things you can do in the united states don't miss the
+38:25
+opportunity i don't need to tell people that this is the probably the highest stress most
+38:32
+important election for lots of people um those of you that can't vote uh
+38:37
+i i apologize my condolences to you um but uh this is all the more reason
+38:43
+that those of us that can should should do that all right
+38:49
+and you know vote your vote your mind it's the important part is that you
+38:54
+participate that's the most important thing okay and don't put your ballots in the
+39:00
+fake ballot boxes in southern california use the post office or something okay
+39:07
+good now so let's talk about replacement okay so
+39:14
+page replacement policies uh why do we care well i think my uh
+39:19
+effective access time slide hopefully gave you a good why we care the replacement is always an issue with
+39:26
+the cash but it's particularly important for pages because the cost of being wrong is really high
+39:33
+okay the cost of going to disk is million plus instructions if you're wrong in a hardware cache that
+39:41
+that uh is uh going to dram the miss time to dram is not that high
+39:48
+relative to other things and so the the cost of being wrong there might be less
+39:54
+um the cost and that was we were talking about things like random replacement working out pretty well most of the time
+40:00
+when you're talking about going to disk random is really not great okay because you're gonna do
+40:05
+uh the wrong thing and there's so many better things you could do in terms of picking a page to throw out all right
+40:13
+so let's talk about some uh simple policies right you can imagine fifo comes into play
+40:18
+this sounds like what we did with scheduling right we started with fifo you throw out the oldest page and you're
+40:25
+gonna be fair because you're gonna let every page be in memory for the same amount of time okay so this sounds good
+40:33
+except that it's very bad for the following reason it may turn out that the page that was
+40:39
+admitted into the dram a long time ago is still used uh every other reference and so the fact
+40:46
+that it was loaded right away but then is referenced every other time
+40:51
+means that you're going to do very definitely the wrong thing if you throw out the oldest page because eventually you're going to throw it out
+40:57
+even though it's probably the most frequently used page okay so fifo
+41:02
+seems like it's probably a bad idea okay fifo's been a bad idea
+41:08
+with scheduling in the past and it certainly seems like a bad idea as a replacement policy here
+41:14
+random we brought up as a replacement policy in the hardware cache instance last time or the time before
+41:20
+that this one was better than you'd expect in the case of associative caches
+41:29
+in hardware okay and so the idea here you pick a random page for every replacement and
+41:35
+this is a good solution maybe for the tlb because it's ha it's fast okay but the
+41:42
+tlb when you miss you go to um through the mmu to do a page walk page
+41:50
+table walk and so maybe this is an okay policy there because the cost of a page table
+41:55
+walk may not be so bad okay but it's still pretty unpredictable and it's really not a great policy for
+42:02
+page replacement because you're you're likely to randomly pick uh something bad as likely you uh you
+42:08
+are as to pick something good there okay this is uh my favorite guaranteed not to
+42:16
+exceed policy okay this is called min and if you remember uh the
+42:21
+srtf policy which was uh you know if we knew the future we could
+42:26
+um you know pick the best task to schedule the shortest remaining time first to
+42:32
+schedule here min is the same idea we're going to replace the page that won't be used
+42:37
+for the longest time in the future okay and this is a great policy for paging for page replacement because it's
+42:43
+provably optimal but of course once again you can't really know the future okay so min
+42:49
+is going to be um our you know yardstick against which we're
+42:55
+going to measure other policies to see how close they get to mid and you know a little hint about what's
+43:00
+good there is going to be well the past is a good uh predictor of the future okay so this is not
+43:06
+lru right so lru may be a good policy that's sort of like min but min is replace the page that won't be used
+43:14
+the longest time in the future so it's not lru right is if i knew the future i'd pick
+43:20
+of all the pages i've got i'd pick the one that i'm going to use longest in the future and that's the one i'd throw out
+43:26
+lru is the least recently used page which is going into the past
+43:31
+and trying to make a prediction uh based on the past all right so these are these are little
+43:37
+different things and as you you know as you've already figured out here lru
+43:42
+is going to be an approximation to min okay it's going to be a way of trying to use the past to predict the future
+43:50
+all right good question so min is not lru so let's look at uh
+43:57
+the next one of course is lru and this is the replace the page that hasn't been used for the longest time
+44:04
+and programs have locality so if something's not used for a while it's unlikely to be used in the near future
+44:09
+and it seems like lru might be a good approximation for men and most of the time it is okay
+44:16
+now let's ask ourselves how we would actually implement lru so obviously we can't implement min right
+44:21
+min is a an ideal oracle that lets uh has us use the future we
+44:27
+don't know how to do that but how can we do lru well we just put all the pages in a list
+44:32
+and uh you know the tail is the least recently used one and every time we use a page we move it to the head
+44:38
+and so the thing at the head is the uh most recently used page and the thing at the tail is the least recently
+44:45
+and when we're looking for something to replace we grab the tail okay so this sounds great
+44:52
+except this is very much not great um and the reason is that
+44:58
+uh every reference requires us to move the page we're
+45:04
+referencing to the head of the list so that means that every load or store from dram potentially has to rearrange a
+45:10
+bunch of items in the linked list to put the page we just referenced back to the head
+45:16
+and so um this is basically not going to be an implementable policy in
+45:22
+any way that avoids making loads in stores really slow all right so
+45:28
+um i'm going to pause there for a second just to make sure that's clear to everybody because in order to do lru every loader
+45:35
+store has to take the id of the page and somehow rearrange it so it's at the head of the list
+45:40
+which means multiple loads and stores are required per loader store to come up with lru
+45:50
+okay now another thing you could imagine maybe is keeping a time stamp on every page so
+45:56
+that every time you reference it you stamp it the problem then is of course that you'd have to sort by stamp
+46:02
+to figure out which one is the oldest least recently used page in that time frame and that's hard to do as well
+46:10
+okay so it seems like we're being stymied here we want lru because it seems like a
+46:16
+good uh replacement for the oracle min but now we don't know how to do lru
+46:22
+and so um just to give you a uh a preview we're going to find a way to approximate
+46:29
+lru in a way that works mostly as well as lru would if we could implement it
+46:36
+okay and thereby give us a way to get closer to min than we might be able to get otherwise okay
+46:41
+so that's our that's our little bit of uh foreshadowing okay
+46:48
+um so in practice people approximate lru um and we'll tell you how okay but let's
+46:55
+let's look at some of these policies just to understand so i want to go through some simulations just to see
+47:02
+what happens on a request pattern so let's let's set this up i'm going to i'm going to have a really
+47:08
+limited uh processor architecture here which has three pages of dram and four virtual
+47:15
+pages in the address space so the virtual pages are called abcd
+47:20
+and uh the processor is going to do c a b d a d b c b see that's a that's got a
+47:27
+great beat to it right so let's see if we can figure out what fifo would do all right so here um we have the three
+47:35
+pages one two and three these are the physical dram okay that we've got and when we do
+47:42
+reference a that's in virtual memory and at that point we need to map a
+47:47
+to some page now that's really easy right now because i don't have any assignments of dram pages to address a so i'll just
+47:54
+pick the first one okay so now a is in dram page one
+48:00
+b is in dram page two so i'm just working my way through pages because i'm doing fifo replacement here
+48:06
+actually i'm doing fifo assignment i haven't replaced any yet right so c uh grabs the third one so now if
+48:13
+you look here uh we now have all of our pages are currently assigned in the page table
+48:20
+and we happen to know that address d in the page table is marked as invalid how do i know that address d
+48:26
+is marked as invalid in the page table anybody figure that out
+48:36
+why is page d marked as invalid it's never been accessed right what else um it's not in the dram how do
+48:43
+we know that
+48:51
+how do we know it's not in the dram okay how do we know it's invalid
+48:57
+i'm giving you yeah all of our page frames are assigned to other addresses right page frame one we
+49:04
+know the page table gives it to a page frame two gives it to b page frame three is given to c
+49:10
+we know that there is a slot in the page table for d but because a b and c are already uh taking up all the
+49:15
+physical pages we know that d has to be invalid okay or the operating system is broken but let's assume that
+49:22
+that's not true for the moment right so when we get to a what's great is
+49:27
+the mmu gets to find an entry to a and in fact we we can even guess that um
+49:34
+the page table or the tlb already has a in it we can imagine so not only did we
+49:40
+get the mapping for a back here at the first cycle but we also set the tlb up and so this works fine okay we get to b
+49:49
+that works fine we get to d all right now d is a miss
+49:56
+in the page cache why well d is going to be looked up in the page table we're going to see it's invalid and at that point we get a page fault
+50:03
+and we're going to have to do something here and what page are we going to pick to replace
+50:09
+for d a why
+50:16
+yep because we're doing fifo right so we were doing page one page two page three and now page one is the oldest page and
+50:23
+so voila we uh we pick we uh overwrite page a um and assign this page
+50:31
+frame one back to d okay okay now a comes along and look what
+50:38
+happened here a is going to be another page fault okay because we got rid of a
+50:45
+and if you notice that means we've got a sign a and we're doing a fifo assignment so a gets assigned
+50:50
+to page frame two d well that's good we don't have to do anything b well b is now gone and so we're gonna
+50:57
+assign b down here c well c is now gone so we have to assign c
+51:03
+and then b uh has no fault okay and so if you look here we've got one two three four five six seven
+51:09
+page faults when a b c a b d a d b c b uh is
+51:15
+encountering a fifo page replacement algorithm okay so there's seven faults one two
+51:21
+three four five six seven and uh notice when we're referencing d here
+51:27
+replacing a was the wrong thing to do right because we were going to immediately need a
+51:32
+again so if we had a better replacement policy maybe we could avoid
+51:38
+this page fault for a and maybe we could avoid this page fault for b
+51:43
+okay so fifo here is not doing well let's look at min okay which
+51:50
+by the way is going to do the same thing lru does in this case but let's just think about min for a moment so here we go a b
+51:56
+c a b d a d b c b says here we go ready so a is going to
+52:02
+do the same thing b is going to do the same thing c is going to do the same thing now you might say well aren't you doing fifo
+52:08
+replacement well the answer is i'm just grabbing things off a free list i haven't replaced anything yet i've just sort of
+52:14
+done the assignments so now a works right there's no page fault b no page
+52:20
+fault and now we come to d all right and min says pick a page to
+52:27
+replace that's going to be used farthest in the future okay so if you look in this reference
+52:34
+stream up here the thing that's going to be used farthest in the future is not a
+52:40
+it's not b it looks like it's c right so c is the page that's going to be used
+52:45
+farthest in the future which is why we choose to replace c uh with d okay so that's min
+52:54
+min is looking into the future looking into your crystal ball tell me
+53:00
+what's the page that's going to be used the farthest in the future okay and now we get to d
+53:05
+or we get to a again and a is in place right we get to to d d is in place we get to b b is in
+53:12
+place why did this work out so well because we can we know the future okay c well we get to c and now c is no
+53:19
+longer there what do we do well at this point we don't have much in the future to go on and so we're just going to
+53:25
+replace a great so as uh chris stated in the chat
+53:34
+um page frames return refer to physical memory we only have three pages in physical memory
+53:39
+and the virtual the fact that we have four virtual pages means we have more virtual
+53:45
+memory pages in use than physical pages available which is a typical reason for a cache
+53:50
+right we've got more virtual pages which are out on disk than physical pages which are like the
+53:56
+cache and therefore every page fault is pulling things off the disk and bringing it into the cache
+54:01
+okay so yes correct now the other thing i wanted to point out is uh when we got to d
+54:09
+here which one which of these pages was the least recently used okay let's look back
+54:19
+okay so if i back this up and we go to d notice that both a
+54:26
+and b were used recently so c is the the least recently used page
+54:32
+so if we had a way to do lru d would have picked number three also so this is
+54:39
+this is a good illustration of why lru is a often at least a good approximation for
+54:46
+men it's not always the same thing okay so this case we have five faults
+54:53
+instead of uh the seven in the previous example whereas d brought in is brought for the the page not referenced
+54:59
+farthest in the future so what does lru do same decision making all right are we
+55:05
+good now
+55:11
+is lru guaranteed to perform well consider the following a b c d a b c d a b c d
+55:19
+well you can imagine what's going to happen here i'm just going to walk you through
+55:27
+so here is a case where not only where lru performs exactly the same way
+55:34
+as fifo does and that's because we have three physical pages but four references and
+55:40
+we're always going a b c d a b c d a b c d and as a result we get this cascading page fault pattern
+55:47
+so um what's interesting about this is this it's a it's a lovely pattern i would agree the thing that's uh interesting about
+55:54
+this though is this is the kind of pattern you can get when for instance um if this is the uh
+56:01
+the page cache which we'll talk about later when we talk about file systems and you're walking through a file system
+56:07
+by doing a recursive grep or something you can also end up with this uh situation where you're always page
+56:14
+faulting and none of the none of your cache is helping you at all
+56:19
+okay what i want to show you here this is a fairly contrived example with a working set of n plus one
+56:25
+on end frames what's interesting here is that min though does better because at the point we get to d min
+56:32
+will actually make a different choice okay so we have one two three four five
+56:39
+six so men will actually only have six page faults rather than whatever we had up 12 up there okay so
+56:47
+um so min is still the uh you know the oracle guaranteed not to
+56:54
+exceed best case of which lru mostly behaves like men
+56:59
+okay just not always all right questions
+57:10
+now uh i'm going to state up front here that
+57:15
+lru mostly performs very well okay so i i gave a contrived example here the question that's going to be important
+57:20
+here is is you know how do we make lru if we can't do it okay and what i'm going to show you
+57:26
+first though and we'll talk about how to make an lru is this graph of page faults versus
+57:32
+number of frames if you look here we have three frames right um so if we if we vary so we're at the
+57:38
+three point in the previous slides but if we were to add some more frames presumably our number of page faults
+57:44
+would come down that's a desirable property that as you add some extra memory to that process the overall
+57:51
+hit rate goes down and the question is is it always the case that you add more frames and the hit rate goes down
+57:57
+and unfortunately the answer is no okay there's something called the ladies anomaly and certain replacement algorithms like
+58:04
+fifo don't have this obvious property you can actually add some more physical memory and the the
+58:10
+fault rate goes up all right and i'm going to show you this so does adding uh
+58:15
+memory reduce the number of page faults the answer is yes with lru and m and min but not with fifo okay
+58:23
+and so here we have a reference pattern a b c d a b e a b c d e
+58:29
+and notice that we've got three page uh physical page frames and five virtual ones now and what's
+58:35
+interesting about this is if we add a fourth page frame uh physical page frame
+58:42
+and we do the same fifo assignments you can work this through on your own what you'll find is there's
+58:47
+actually more page faults even though we've added more memory to that process
+58:53
+okay which is a little counter intuitive and it turns out that um fifo is just bad for many reasons
+59:00
+not the least of which is that fifo suffers from belated's anomaly okay and so contents can be completely
+59:07
+different with uh with uh adding more memory and that's kind of part of the reason this
+59:13
+has a problem in a co in contrast with both lru and min when you add some more physical pages
+59:19
+things always at least stay monotonically go down they may stay constant for a
+59:24
+little bit and then go down but um this is why we are going to abandon min as a desirable
+59:30
+uh policy from this point on okay
+59:36
+questions now did i say yeah i said i meant fifa
+59:43
+were abandoning fightful what did i say i'm sorry whatever i said there i mean we're abandoning fifo from this point on
+59:49
+we're not going to abandon min of course we couldn't implement min anyway all right thanks for catching that now
+59:57
+so how do we approximate lru well there's something called the clock algorithm which i'm sure you've all
+1:00:02
+heard about so the idea here is we take every page in the system and we link them all together okay and
+1:00:10
+so every physical page is in this loop and we're going to have a single clock hand that's going to point at a page
+1:00:17
+and what happens here is we're going to advance only on page faults
+1:00:23
+okay and we're going to check for pages that aren't used recently and we're going to mark them in a way to
+1:00:30
+keep track of that okay and so what we're really looking at
+1:00:36
+is not the least recently used page but a least recently used page
+1:00:42
+okay an old page and so um how do we do that well the details are
+1:00:48
+pretty simple here and i'm going to walk you through them but the idea is that every page is going to have something we're going to call
+1:00:53
+the use bit now intel calls is the accessed bit let's call it use for the moment here
+1:00:59
+and that use bit is something where the hardware sets the use bit
+1:01:04
+in the page table entry or the tlb when the hardware is uses that page so either
+1:01:10
+a read or a write to that page will set the use bit okay now the hardware never
+1:01:16
+set it clears it never puts it to zero and so um that's gonna be up to our software
+1:01:22
+it's gonna be up to the os to set the use bit clear the use bit to zero underneath the
+1:01:28
+clock hand and so what will happen just uh abstractly here is we're gonna put the use bit to zero and then when we
+1:01:35
+come all the way around we'll take a look and if the use bit is still zero then we know that that page
+1:01:41
+hasn't been used and all the time it took the clock hand to go all the way around and so at that point we're going to call
+1:01:46
+this an old page because it hasn't been touched in the time that we went all the way around
+1:01:52
+okay and again keep in mind that we only move the hand when there's a page fault so going all the way around meant that
+1:01:58
+we've had enough page faults to walk through um all of our memory okay
+1:02:03
+now if uh the clock hand looks at a page and its use bit is one
+1:02:10
+that means that that page has been touched since the last time that we were there and so we'll set it back to zero again
+1:02:17
+and then we advance on to the next one and we check in the next one and eventually we'll find one that is a zero
+1:02:23
+use bit at that point we know that um this is a good candidate for replacing because it's an old page
+1:02:29
+okay so that's the clock algorithm i'm gonna pause for a second here
+1:02:36
+all right so notice that the use bit gets set to one by the hardware but
+1:02:42
+cleared to zero by the operating system so it's a funny bit it's a set by hardware cleared by
+1:02:48
+operating system
+1:02:54
+all right now some more details
+1:02:59
+notice that what i said here is that you first check the abuse bit and if it's a one you set it to zero and you keep looking
+1:03:05
+for a page because you've found a page that's not an old one yet the question is will you ever find a
+1:03:12
+page or will you just loop forever okay
+1:03:18
+and the answer is you'll always find a page because notice that we don't let any uh processes run
+1:03:24
+so while we're trying to find a page it's only in the operating system all the other stuff is is suspended and therefore well we keep
+1:03:32
+setting everything to zero and in worst case we may work all the way around but now that page that we set
+1:03:38
+to zero is one we end up replacing uh right away okay and you can imagine that if we have to go all the way around
+1:03:44
+before we find something then maybe we have a lot of thrashing going on okay but this algorithm is guaranteed to find a page
+1:03:51
+as i've stated it here okay now what if the hand is moving very slowly well that's actually good
+1:03:57
+right why is it good because there are not many page faults because i only do this on a page fault um and it either means that the page
+1:04:05
+faults are not coming very frequently or i quickly found a page in either case it means that i'm not
+1:04:11
+walking my way through all of the pages just to find one to replace so that's a good sign if the hands
+1:04:18
+moving quickly that means we have lots of page faults or a lot or lots of reference bits set and that means there's a high
+1:04:26
+access of pages and a lot and or a lot of page faults either of those meaning i've got
+1:04:31
+some trouble i've got what i would call memory pressure okay um so one way to view this clock
+1:04:38
+algorithms is a accrued partitioning of the pages into two groups young and old okay and um we're gonna throw out
+1:04:45
+somebody a page from the old category okay now you might say well you know why not
+1:04:52
+partition into more groups well we can do that there's something called the nth chance version of the clock algorithm
+1:04:57
+all right and this is basically give a page n chances before we throw it out and the idea is the os is going to keep
+1:05:03
+a counter on each page and it's going to be the number of sweeps of this page
+1:05:09
+and so on a page fault you check the use bit and if it's a one you uh you clear it and you also clear
+1:05:16
+the counter because uh this page was used in the last sweep and so it's a young page we're going to totally uh
+1:05:23
+discount it on the other hand if it's still zero what that means is it's uh hasn't been touched in
+1:05:31
+a whole iteration around the loop but rather than the the vanilla clock algorithm what we're
+1:05:37
+going to do instead is we're going to say oh uh let's give it another chance and we'll increment our count
+1:05:42
+on that page and only if we hit n do we replace it okay so what this nth chance is doing is
+1:05:48
+it's it's saying that before we replace a page it has to be not used for end loops of the clock okay
+1:05:56
+so that basically means the clock hand has to sweep by input times without the page being used before it's replaced how do you pick n
+1:06:04
+well it's interesting is if you pick a really large n you're effectively getting a better approximation to lru
+1:06:10
+excuse me because now we're dividing pages into not just two groups young and old but groups that vary by what the vers the
+1:06:18
+value of n is and as n gets larger we're dividing it into more and more uh categories and if it's really large
+1:06:25
+you kind of get a better approximation to lru okay but it's really expensive because you have to go around many times
+1:06:32
+before you find something to throw out why pick a small n well it's it's much
+1:06:37
+more efficient okay so you might imagine a you know a small number like n is two or three uh not
+1:06:45
+n is a thousand okay and um here's a particularly useful way of
+1:06:51
+using n where we're gonna keep n to be very small and the the thing we haven't talked about at all up until now is when we
+1:06:57
+throw a page out we need to make sure that it doesn't have
+1:07:02
+data in it that we that we can't afford to lose and therefore we need to write back to disk that means that the modified or dirty
+1:07:10
+bit is going to be set okay and in that instance if we go around the clock and we pick a page that
+1:07:16
+we're interested in but it's dirty what we could do is start it on the process you know start it being written
+1:07:22
+back to disk and then wait to go around again and if it's cleared at that point then we know it's a clean page and we
+1:07:29
+can just throw it out okay and so one idea here is basically that
+1:07:35
+clean pages you use n equal one and you immediately replace them if the
+1:07:40
+value of use is zero when you look at them otherwise if it's a dirty page then what
+1:07:45
+i'm going to do is i'm going to start it being written out to disk and i'm going to wait for n equal 2 namely i'm going to go all the way
+1:07:51
+around again before i replace it and hopefully when i do that it's now a clean page by the time i've gotten all
+1:07:57
+the way around all right so that's called the nth chance
+1:08:05
+good now let me bring the intel pte in this and
+1:08:11
+also talk through the page table entries again i've shown you this before um we've really got
+1:08:16
+four bits of interest uh to clock type algorithms p or pr the present bit or the valid bit
+1:08:22
+those are called different things on different architectures the writable bit or w you see here
+1:08:28
+basically says uh that this page can be written when it's a one there's sometimes there's the opposite sense
+1:08:34
+uh in which you have a read-only bit so when it's a one the page can only be read but not written i mean the
+1:08:40
+intel architectures and a lot other ones there's a w bit which has to be equal to one before you can write
+1:08:45
+uh the access bit or the use bit we've already explained that it's zero if the page hasn't been
+1:08:51
+accessed since the last time the software set it to xero it's a one if it has been accessed and
+1:08:56
+it's been set to one by hardware if it's been uh accessed since the last time it was set to zero
+1:09:02
+and then there's the d bit or dirty bit it's also sometimes called modified uh and if d is zero then the page hasn't
+1:09:10
+been modified since the page table entry was loaded and you pulled it off of disk the page itself and if it's a one then
+1:09:16
+it's been written to since then and so these four bits pwa and d
+1:09:22
+make for a much more um complete set of bits required for page for paging
+1:09:28
+right so we clearly need the present bit to know whether a page is in memory or not the writable bit uh
+1:09:34
+is basically how we allow to have some pages read only and some written i'm going to show you another
+1:09:40
+interesting way to use that in a moment the access bit and the dirty bits we've already talked about to some extent
+1:09:47
+but let's see let's uh look at some variations so some variations might be do we really
+1:09:53
+need a hardware supported modified bit or dirty bit and if you think about it for a moment
+1:10:00
+once i've paged something in and i've marked the page table entry as valid
+1:10:05
+and uh writable for instance then i'm going to turn the processor loose and it's going to be allowed to do
+1:10:11
+reads and writes to that page all at once okay so hopefully you can see why that
+1:10:19
+question i asked on the following slide is a good one because you can imagine that um
+1:10:24
+if i uh if i didn't have this done in hardware then how would i know that the page has
+1:10:31
+been written to because i'm just letting reads and reads and writes loads and stores go against that page and the operating system isn't
+1:10:38
+uh involved okay so unless i have that modified or dirty bit in hardware
+1:10:44
+i won't know that information and so that's why this question comes up do i need it and it seems like the simple answer
+1:10:49
+would be yes but the real answer is is not it's no and it's because we can be clever in how
+1:10:56
+we use those four bits okay so we can emulate it using the read only idea
+1:11:02
+or the w bit right so what we're going to do is we're going to we need a software database
+1:11:07
+of which pages are allowed to be written we kind of needed that anyway so for every process we know which pages are
+1:11:13
+marked read only which ones are writable um and we need that as we page things in and
+1:11:18
+out from disk and so on so we assume we already know that and so we're going to let the mmu
+1:11:25
+help us so that the operating system gets to take over when we need to record information okay
+1:11:31
+now the question is does the cp on the on the chat here is does the cpu set the
+1:11:37
+dirty bit if we overwrite data with itself yes so uh this the cpu doesn't try to
+1:11:43
+distinguish the notion that you wrote the number three over the number three all it knows is that you wrote it
+1:11:48
+and by the way in most cases uh that's a particularly good simplification because it's very rare
+1:11:55
+that you completely overwrite uh everything in a page with exactly the
+1:12:00
+same value all right so so the dirty bit just means that i i executed a write instruction
+1:12:06
+against that page now what we're going to do is we're going to tell the mmu that pages are
+1:12:11
+have more restrictive permissions than they really need to and so what do we do well we're going to mark
+1:12:17
+pages that could be written as as okay and if we do that then we know the
+1:12:23
+moment they try to write we're getting a page fault and now the operating system can record the fact that we've written okay so this is a new algorithm i'm
+1:12:30
+going to call this the clock emulated modified bit or emulated m and initially we're going to mark every page
+1:12:35
+that's read only with w equals zero even the writable ones and we're going to clear all the software versions of
+1:12:42
+the modified bit that we're keeping in the in the operating system somewhere and notice uh
+1:12:48
+why do i say the software versions because we're assuming for a moment the hardware doesn't support modified bit
+1:12:53
+okay so the moment we cause a write what happens is we get a page fault
+1:12:58
+and if the writes allowed we check up in our database then the operating system is going to go ahead and set the
+1:13:03
+modified bid in software in the operating system and then mark the pages writable
+1:13:08
+and so from that point on we let the writes go at full speed without any page faults but we've already recorded
+1:13:14
+the fact that somebody has written okay um and so whenever the page then
+1:13:20
+gets written back to disk we'll clear that modified bit back in software and mark things as read only
+1:13:25
+again to catch future rights okay so this is hopefully pretty clever here as you see
+1:13:32
+what we've done is we've decided to play with the permission bits on the page table entry to give us page
+1:13:38
+faults that are events that we can then use to track whether the page is dirty or not
+1:13:45
+okay now could this cause twice as many page faults yes all right this could cause an issue
+1:13:52
+with uh you know you get a page fault when you pull the thing in and then you get another page fault when you write it
+1:13:58
+so that's twice as many page faults uh hopefully notice the page faults
+1:14:04
+the the second one the one that's on this page doesn't require going to disk it's a simple event into the kernel and back out again
+1:14:10
+so that's a fast page fault as opposed to the page fault that pages things in off of disk which is a million
+1:14:15
+instructions okay so um
+1:14:21
+so basically trapping into the kernel if you set it up properly can be
+1:14:26
+reasonably fast for things like this okay but as you as you have identified we are page faulting
+1:14:34
+twice as frequently as we would otherwise here's a here's another question do we really need the hardware supported use
+1:14:41
+bit okay so once again um so uh so does the first write happen
+1:14:48
+here well what happens and that's a good question i'm glad you you mentioned it so the first write caused the page fault
+1:14:53
+right um correctly um so we set the modified bit and market is writable and then we
+1:14:59
+return back to the pro the um the program of the process excuse me which is going to
+1:15:04
+retry the write okay because the page fault is a synchronous operation
+1:15:10
+which occurred on that right and therefore that right is not going to make any forward progress
+1:15:16
+at all and so when we return to retry it we're going to retry the right and it'll succeed on that second time through
+1:15:22
+all right and uh so you're gonna actually have two rights one of which
+1:15:27
+caused the page fault uh and the other of which actually causes the right to happen and then the process gets to go forward
+1:15:34
+so this the idea about do we need a use bit no we can emulate it in the same way above in fact what i'm going to show you
+1:15:40
+is how could we get by without a use or a modified bit so that effectively the only thing we've
+1:15:47
+got is the valid the valid bit and the uh writable bit
+1:15:53
+okay and how do we do that well here's the clock emulated use and m bit our m algorithm and we're going to
+1:15:59
+mark every page is invalid regardless of ones that are valid or not okay and notice that um
+1:16:08
+we're gonna mark all the pages is invalid even if they're in memory and we're gonna uh clear all the emulated use bits and
+1:16:14
+modified bits to zero uh nikki i'll answer your question just a second um and
+1:16:20
+so now what happens well it doesn't matter if we do a read or a write we're going to cause a page fault because we
+1:16:25
+mark things as invalid okay and so we'll we'll trap to the os on any access and at that point we're
+1:16:32
+going to definitely set the use bit equal to one because we we had some access it doesn't matter whether it was a reader or write the use
+1:16:38
+bit gets set to one and then we can take a look at what it was because we know the address that this was at and we can know
+1:16:45
+whether it was a reader or write that was attempted and if it's a read we're going to mark the page as read-only at this point
+1:16:52
+and uh meaning w to zero and that means we'll catch future writes
+1:16:57
+on the other hand if it was a write we're going to just set the modified bit to one and mark the pages writable so because
+1:17:03
+we set w to 0 meaning it's read only then if we happen to write we'll catch
+1:17:10
+it and be able to set the modified bit okay and then when the clock hand passes
+1:17:15
+by just as i mentioned the clock algorithm earlier we're going to reset the use bit to zero and mark the pages as invalid
+1:17:20
+again okay and the modified bit gets less left alone until the page gets written back
+1:17:26
+to disk so the question that was asked in the chat here which is a good one which is
+1:17:31
+well this doesn't seem useful i'm saving one or two bits so why are you going to all this trouble
+1:17:36
+so the answer is i'm talking about architectures like processors that don't have a use
+1:17:43
+bit or a modified bit that's implemented in hardware okay intel ones that you guys are dealing with have the
+1:17:50
+advantage that they have both a use and modified bit or an accessed and dirty bit
+1:17:55
+those are done by the hardware if you had an architecture which didn't have them like the vax which i'll mention in a second
+1:18:01
+then you got to do something else otherwise you're going to get incorrect behavior and this is showing you how you can get by with just the valid
+1:18:07
+bit and the read write bit to emulate
+1:18:13
+modified and used okay but we have a lot of page faults
+1:18:18
+going on here as was identified just to simulate use and modified and so remember that the clock algorithm
+1:18:25
+is just an approximation of lru so maybe we could do better if we don't have a use bit or we don't
+1:18:31
+have use in modified bit maybe we could do something better by doing something slightly different than
+1:18:37
+the clock algorithm and the answer is yes we can do something called a second chance list okay so the second chance list divides
+1:18:44
+the pages of a process into two categories i'm going to call them green and yellow
+1:18:49
+or directly map pages and second chance list pages and things that are green are pages that
+1:18:56
+are mapped writable and therefore whatever the processor does
+1:19:02
+it won't cost page fault the second chance list are ones that are in dram but they're still
+1:19:08
+marked invalid so that means uh if i get a page fault on them i'll be
+1:19:13
+able to mark them as valid in a moment without going to disk but for the moment
+1:19:18
+they're they're yellow here because they're marked invalid okay and let's look at this a little bit
+1:19:24
+so um the access pages and the access the active list are done at full speed
+1:19:31
+otherwise we page fault and we deal with stuff in the yellow page list and we're gonna manage the yellow page list
+1:19:38
+as an lru list for real and the uh green pages since they're
+1:19:43
+directly mapped we don't get any events on them and we'll get to just do them at full speed okay so let's look at something here so
+1:19:50
+suppose we get a page fault uh because we access some page that's either
+1:19:55
+in the yellow group or on disk let's assume for a moment that it's in the yellow group what's going to happen is these pages in
+1:20:02
+green are my current directly mapped pages i'm going to get rid of one of them
+1:20:08
+and put it at the end of the lru list and yellow i'm going to take the page that i was
+1:20:13
+looking for i'm going to put it in the green list at the new end and i'm going to mark it as valid so that
+1:20:19
+page fault uh basically was a page fault because i wanted to get one of the this page here that's in yellow i wanted
+1:20:26
+to access it but it's invalid mark it it's marked invalid in the page table and so instead i get a page fault
+1:20:33
+and what i'm going to do is i'm going to do a swap so i'm going to put this green thing that's at the the back end of the
+1:20:39
+the fifo green list i'm going to put it on the lru list on yellow and the um the page i
+1:20:44
+actually page faulted on is going to be in green and so what you notice here is that the green list is
+1:20:50
+is managed fifo but the yellow list is managed lru and if the yellow list is big enough
+1:20:56
+then i'm going to effectively get something very close to lru
+1:21:01
+without having to emulate the clock algorithm and have page faults all over the place okay
+1:21:08
+now the other interesting thing here is if the reason for this page fault was because of something on disk what i'm going to do instead is rather
+1:21:16
+than this yellow page going down to the green what i'm going to do
+1:21:22
+instead is i'm going to take the least recently used item off the end of the yellow list throw that out and bring the uh the page
+1:21:29
+off of disk and put it at the new end of the green okay so this particular algorithm called
+1:21:34
+the second chance list is basically keeping the pages that are really really uh
+1:21:39
+actively accessed in the green list and then when it throws something off the end it puts it in the yellow list where
+1:21:46
+they're sorted lru but then they're given a second chance to be brought back that's why it's called the second chance
+1:21:51
+list okay and you don't have to scan through the second chance list because i'm going to manage the second chance list
+1:21:58
+as an lru list so this will be just a a single pointer list that keeps track of the old
+1:22:04
+end and the new end okay and so you notice all i really have to do is whenever i take something out
+1:22:10
+um i have to be able to close up the list and whenever i put something in i have to be able to put it at the uh
+1:22:15
+the new end of the lru and the way you know that the items in the second chance
+1:22:20
+list is because a you got a page fault so it's not in the green list and b remember that database i mentioned
+1:22:27
+earlier where you keep track of everything well you know that it's in memory as opposed to on disk
+1:22:33
+okay so this has got some some data structures that are keeping track of where everything is
+1:22:38
+okay now so how many pages do i put in the
+1:22:45
+yellow list versus the green if uh if i put nothing in the yellow list then this goes back to fifo because
+1:22:51
+that green list is fifo if i put all of the pages in the yellow list i get lru but i get a page fault on every
+1:22:57
+reference okay so the expense of uh managing this is 100 lru is i get
+1:23:03
+a page fold everywhere and i can decide kind of how much of the green list to have to avoid those page
+1:23:09
+faults okay and i pick an intermediate value and the pros of this is that there's
+1:23:16
+fewer disk accesses than that emulated clock might be and the page only goes to disk if it's
+1:23:22
+unused for a very long time the cons are there is a little bit of an increased overhead with trapping to the os in this case
+1:23:30
+and with page translation i can basically adapt to any kind of pattern the program makes
+1:23:35
+and later we'll kind of show you how to use the page translation and protection uh to share memory between threads and
+1:23:41
+that's going to be something we'll have to talk about a little later the interesting i want thing i want to point out here is that
+1:23:47
+the second chance list was on used in the original vax operating system and there's some funny history there so
+1:23:53
+strechler who's the architect of vax which look it up on google you'll find it's a very famous uh
+1:23:59
+architecture from digital equipment corporation uh asked the os people do you need a use bit and they said no
+1:24:06
+and so then when they got around to trying to implement uh replacement policies i was like oops
+1:24:12
+yeah we really did need a use bit and at that point strechler uh got blamed
+1:24:17
+for uh screwing up the architecture by forgetting to put a use bit in but in fact he was told he didn't need it
+1:24:24
+the vax operating systems folks came up with a second chance list algorithm as a way of avoiding the use bit so you
+1:24:31
+don't have to you don't have to do the clock even though you can't do the clock algorithm
+1:24:36
+you can do the second chance list algorithm which is still pretty good all right now bear with me for just a
+1:24:44
+moment um this clock hand the clock algorithm as i've been telling you
+1:24:49
+which by the way we can use on an x86 processor because we have use in modified or accessed and dirty bits
+1:24:56
+the way i told you about it is i said well there's a single clock hand and you advance only on page faults
+1:25:04
+so that means that at the moment i have a page fault i got to go to the clock algorithm to find a page
+1:25:09
+maybe push it out to disk because it's dirty and i got to work my way through that
+1:25:15
+clock hand to find a free page so that i can start my access to the disk to pull it into
+1:25:23
+data or to pull it into dram so that sounds like a dumb idea in fact that's not the
+1:25:29
+way people do that what happens is there's a free list and that free list
+1:25:34
+is filled up by the clock algorithm and so there's a demon in the background
+1:25:39
+that looks for free pages to keep the free list uh full and things that are put at the
+1:25:45
+uh the the head end of the free list if they're dirty they get written out to disk and so in that instance as long as
+1:25:51
+they're um get written to disc by the time they work their way down to the front of the
+1:25:56
+free list then i anytime i get a page fault and need a new page i just pull it off the head of the free list because it's clean
+1:26:03
+okay so this idea of a background clock algorithm is what's really done in
+1:26:09
+modern operating systems they often call it the page out daemon and the dirty pages get paged out by the
+1:26:14
+time we get to the head and just like the second chance list if it turns out i
+1:26:20
+have a page fault that needs one of these pages then i just pull it back off the free list and
+1:26:26
+put it back into the clock and i don't you know as if nothing happened so all of these things in the
+1:26:33
+free list here are second chance pages okay so i could probably color these as yellow if i wanted to be consistent with
+1:26:40
+the second chance list algorithm okay the advantage here is it's much faster
+1:26:46
+on a page fault you can always use the page or pages immediately after okay so um
+1:26:52
+the last thing i wanted to say here and then we'll we'll uh finish for tonight and we'll pick up uh
+1:26:58
+on monday is when you evict um so the so the free list is separate from pages
+1:27:03
+in memory um that's the question in the chat these are still in memory so they're in
+1:27:10
+dram but they're marked as invalid so they're not in the clock they've been taken out of the clock
+1:27:15
+put into the to this free list marked as invalid and the reason it's a second chance list idea is because we can pull them back in
+1:27:22
+if we need them okay so um so when you evict a page
+1:27:28
+frame one of the things that you may not have thought about is that you actually have to figure out
+1:27:33
+all of the processes that point to that page frame and that gets hard in the presence of shared page pages because when we fork
+1:27:39
+processes we have shared memory there's multiple processes whose page tables all point to the same page and so
+1:27:47
+there's something called a reverse mapping mechanism which has to be very fast and basically lets us go from a physical page back to all
+1:27:54
+of the uh virtual addresses and page table entries that represent that
+1:27:59
+okay and there's many ways to do this you could have a linked list of page table entries for every page descriptor that can be
+1:28:05
+expensive linux has a way of grouping objects together to do a much faster way of going from
+1:28:11
+physical to um to virtual and finding all the processes that own a page
+1:28:17
+okay all right so i'm gonna uh we'll end us for now so we talked a lot
+1:28:22
+about different replacement policies we talked about fifo min and lru as kind of idealized
+1:28:28
+policies uh fifo being simple to think about but being just a bad policy all over
+1:28:34
+men being replaced the page farthest in the future and lru being kind of an ideal prediction based
+1:28:40
+on the past that we can't quite implement we talked about the clock algorithm which is an approximation to lru that we
+1:28:46
+arrange pages in a circle and we use it to find an old page not the oldest page
+1:28:52
+we talked about the nth chance algorithm which is a variation that lets us divide the pages into multiple chunks instead of
+1:28:59
+just two we talked about the second chance list algorithm which is another approximation of lru that was used on the vax when you
+1:29:06
+don't have a use bit and next time we'll start uh talking about the working set a little
+1:29:12
+bit more um to understand better uh how to figure out how much memory to give each process
+1:29:18
+all right i think that's good our time is expired here i hope you guys all have a great weekend
+1:29:24
+good luck studying and i guess we will see you on monday
+1:29:37
+ciao everybody

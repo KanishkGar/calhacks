@@ -1,0 +1,1678 @@
+0:02
+welcome everybody to uh 162. we've been um talking about
+0:08
+file systems and we were actually going through some case studies last time of some real file systems and
+0:14
+i would like to continue that but first i want to set a little context to make sure we're all on the same page
+0:20
+here so on the left side of this diagram we have
+0:26
+the user interface that's above the system call level where you open and close files and so on
+0:33
+and read and write them using a path name that path name is resolved
+0:38
+by a directory structure which ultimately finds an i number which is just an index into the
+0:45
+inode structure on the disk and there may be several of them i'll show you that in a moment but that i number then gives you enough
+0:52
+information to find a structure that then points out which of the data blocks are part of
+0:58
+that file and ultimately they're on the disk so this discussion that we've been having including the fat file system and the
+1:06
+berkeley unix file system etc is all about these structures that somehow map
+1:12
+from the byte oriented file paths uh that you're used to at the user level
+1:18
+down into individual blocks on disk and puts it all together so that it looks like a file system
+1:23
+okay and so you know we had this for instance we talked about the fat file system
+1:29
+this was the simplest example of that where we have a whole bunch of disk blocks which are linearly
+1:34
+addressed okay one two three four five six seven the uh the file access table
+1:40
+or fat basically has a one-to-one mapping with each block and all it does is it provides a way to link blocks
+1:47
+together into files so here's an example where the file i number in this case
+1:52
+of 31 represents a file whose first block is here and then that points to the next block
+1:58
+which points to the next block which points to the next block and so we have four blocks each of which might be say 4k or what
+2:05
+have you in size and that's a complete file okay and so that's uh one very simple index structure and
+2:12
+this is one that's lasted for um you know since the 70s basically
+2:18
+so that's pretty long time um and it's in all of your cameras and usb keys and so on that you pass data around
+2:24
+with and of course there are certain things that are important here that we talked about like where is this
+2:31
+data structure the fat which is essentially just an array of integers where is that stored it's stored at a well-defined place on the disk
+2:38
+which is the beginning of the disk um usually there's a couple of copies of
+2:44
+it to handle errors but there's a well-defined place on the disk that the file system defines and that the operating system
+2:50
+knows about all right so were there any questions on the fat file system before i move on
+3:00
+so that's a good question can you usually format a usb key to some other file
+3:06
+system yes you can often format them to other file systems uh the reason that most cameras and other devices use the
+3:13
+fat file system is it's so simple that it's easy to put into firmware so sometimes when you do that formatting
+3:19
+that you talk about there you might be only able to plug it into a bigger
+3:25
+machine like a linux box or something that is running a different file system rather than a
+3:31
+camera that's running the fat file system that's a good question all right any other questions
+3:38
+so um the other thing the next file system we talked about is
+3:44
+we started with the 4.1 bsd file system this is a slightly different picture than i showed you last
+3:50
+time but it's the same idea and here the inode or the index node
+3:56
+has some metadata at the top such as what are the mode bits is it read write execute what are the owners
+4:04
+time stamps for modifications how big things are and so on and then
+4:10
+the important part here is this multi-level tree where there's some number of direct blocks
+4:16
+okay and in the original bsd file system there were 10 direct blocks
+4:21
+that later got expanded to 12. but those direct blocks are really pointers from within this
+4:28
+inode structure to a block on disk and what does a pointer mean it means what a number
+4:34
+of that block on disk all right and then the singly indirect pointers is a
+4:40
+pointer to a block that has a bunch of pointers in it so the direct ones you can follow
+4:45
+directly to get to those data blocks that singly indirect you follow to a block which then gives
+4:50
+you pointers to a set of blocks and in the original bsd there were
+4:56
+1k blocks and 4 bytes a pointer and so in some sense there's
+5:01
+256 data blocks within this indirect block doubly indirect
+5:06
+basically you have a block which points at a block which points at data okay and so for instance you can very
+5:12
+easily see that um since there's 10 direct pointers if you wanted to go for block number 23
+5:19
+well the first 10 of them are direct blocks the next set of them the next
+5:24
+256 of them you'd actually have to read the indirect block first and then the
+5:30
+data block and so there's two block reads okay yes and so the question here was
+5:36
+was the design decision to go from 10 direct blocks to 12 um you know what was the story there
+5:44
+basically that was built on data they decided that was the right thing to do at the time
+5:49
+you know sometimes decisions are made uh for reasons that aren't always the
+5:55
+greatest but that one i believe was actually made because they figured they needed a couple of more direct pointers there
+6:00
+um you know so you should be able to do this kind of calculation uh on a test for instance like how about
+6:06
+block number five where is that when we know the direct blocks the first ten of them are here so block number five would be
+6:11
+you know zero one two three four five okay and then block 340 that's going to be into the doubly indirect ones and so
+6:17
+you're going to have to do to read the the double indirect block and then the direct block and then the
+6:23
+data okay good so the pros and cons of this scheme were
+6:29
+really that it's very relatively simple and as we talked about last time and the time before
+6:35
+um is that uh basically it's supports small files really well
+6:41
+but it also handles large files now the question about how do we know that 343 is in the doubly indirect block
+6:47
+range well because th these data blocks you see here are all linearly laid out
+6:53
+and so the first 10 blocks are in the direct blocks and then there's 256 now so that's taking up 266 blocks
+7:00
+so block number 340 is clearly larger than 266 and so that's why we're getting into
+7:05
+this range over here and it's not large enough to get into the tripoli indirect region
+7:11
+does that answer your question so there's no no metadata uh in any of
+7:18
+these pointers these pointers are just pointing to data okay all of the metadata is in the inode itself
+7:24
+and so um that's important you can kind of think the inode is the file or the file is the inode
+7:30
+because it has all of the metadata about who can read and write it etc and all of the data is pointed at
+7:35
+and these everything to the right of the inode is just raw data blocks with no nothing else
+7:42
+other than either data which is just binary or pointers to data blocks okay now the downside of this uh
+7:51
+well so when reading a file the question is how do you know what the next block to look at is well simply um if you remember the file
+8:00
+description that you get when you do and file open keeps track of what your offset in the file is and so once you know the offset
+8:07
+what byte are you on then you can divide by the the block size and that'll tell you what block you want
+8:12
+and then it's a direct it's an easy mapping just like we did here block 343 is always you know down in
+8:18
+here and so that piece about how do you know what the next bytes are our next block is that's because
+8:25
+the uh the next byte pointer is kept in the open file description that's part of
+8:30
+your uh file description you got when you did an open
+8:35
+okay so you can look back to lectures from about a month ago where we
+8:41
+talked about that in more detail all right so downside of this
+8:47
+is there's nothing in here and there's certainly nothing in the fat file system that says anything about
+8:52
+making this perform well so ideally what we'd like is successive data blocks are laid out on
+8:58
+the disk on the same track or close by tracks in order to make things really high speed
+9:05
+bsd 4.1 didn't do anything to help with that and so as a result you'd format the file system
+9:12
+from scratch and everything would be nice and fast and then over time as you wrote files and deleted
+9:18
+files and created files and so on things would get progressively slower and that's because things would be
+9:24
+scrambled in late in locality on the disk itself and so the bsd follow-on or the fast
+9:32
+file system which is what we were talking about when we ran out of time last time did a lot of work to try to make things perform fast
+9:39
+and well and essentially they kept this layout of the inode although they had a couple
+9:45
+more direct blocks and they made the data blocks larger okay and um so let's look at this a
+9:51
+little bit this is the fast file system there's a paper that i put up on the resources page that you can take a look
+9:56
+that talks about this fast file system it's got the same inode structure modulo a little bit
+10:03
+one thing i said last time that um i was incorrect on sorry about that i had a typo on my slides basically the block size
+10:09
+in the original system was 1024 and that went up to 4096 minimum
+10:15
+although there was also options to have slightly larger blocks okay the paper is up there you can take
+10:21
+a look at it and there's a number of performance and reliability optimizations
+10:27
+that were done in the fast file system so as i'm going to show you rather than
+10:32
+putting all the inodes on the outer tracks they're distributed throughout the disk uh there's bitmap allocation instead of
+10:39
+linking things in a free list and if you have a bitmap where a one means in use and a zero means free
+10:45
+you have a much better ability to take a look at the bitmask as a whole and say oh here's a big string
+10:50
+of zeros free blocks that i'm going to start a new file in so that there's ability to lay things out well
+10:56
+okay and so part of what was done in the fast file system was an attempt to
+11:01
+actually allocate files contiguously and address some other performance issues uh like skip sector positioning
+11:08
+which i'll tell you about a little bit and one of the interesting things that uh you might or might not
+11:15
+realize is that by forcing the fast file system to always keep ten percent of all of the data blocks in
+11:22
+reserve uh meaning that when the disk is 90 full it appears to be 100
+11:27
+full keeping 10 percent it turns out is a high enough number of free blocks that the
+11:33
+likelihood of finding a big string of empty blocks together on a track is much higher and so it turns turns out that 10 is uh
+11:41
+is a an important aspect to getting good performance out of the file system
+11:48
+okay so first thing that i said was they changed the inode placement and if you
+11:53
+look at the early unix file systems and windows fat file system etc
+11:59
+headers the or the i nodes were all stored in special array on the outermost cylinders
+12:04
+and it was a fixed size array and so the number of inodes was fixed at the time he formatted and
+12:12
+each is given the unique i number and so you can say for every i number there is an
+12:17
+inode which means there is a file associated with it that's okay except you can imagine it's
+12:23
+got some pretty big performance problems because uh the inode is stored far away from the
+12:28
+data potentially and it's also got some reliability problems because if the disk head were
+12:34
+to crash on the outer cylinders and trash all the inodes you've effectively lost all the files even though all the
+12:40
+data is still okay okay so there's a number of reasons why this particular layout wasn't good and
+12:45
+so here's the put them down here is problem one and two so i know it's all in the same place
+12:50
+can potentially uh lose a lot of or all of your data when you lose the
+12:55
+inodes and when you create a file you don't really know how big it is and so
+13:01
+there isn't any really good way to handle the layout of the blocks relative
+13:08
+to tracks when you sort of shove all the inodes in one place okay and so let's take a little bit of a
+13:15
+look at what they did instead so in the fast file system they divided each platter into a whole
+13:22
+bunch of groups okay so block group zero one two etc and so rather than for instance putting
+13:28
+all the inodes on the outer track for the whole platter what you do instead is you have some inodes and a free space bitmap for each
+13:36
+block group okay and so what's good about that is that now the inodes associated with
+13:41
+a given file can actually be in the same block group as that file okay and if you choose to have a
+13:48
+directory with files in it both the inode for the directory and the inodes of all the
+13:54
+files in that directory can all be in the same block group along with the data and so things like ls
+14:00
+that ls-l or whatever that give you the metadata of all of the files in a directory can run very fast
+14:06
+because of the locality that we've gotten out of this okay and so the file volume is divided into
+14:13
+block groups and it's a set of tracks so moving the head back and forth within a block group is not that ba
+14:18
+that bad um and so we've got data blocks metadata free space
+14:23
+all uh arranged within the single block group and so just by going to a block group
+14:30
+with some extra space you have the ability to lay out things very efficiently okay all right i
+14:35
+think i said all of that so um when reading let's see so uh
+14:42
+furthermore the the way that the layout algorithm works if you
+14:48
+remember one of the problems that we have with the unix interface is that when you open or create a brand new
+14:54
+file it's empty file system doesn't know how big you want it to be and it only figures it out on the fly as you're writing to it
+15:00
+so what the fast file system did was for small files when or files that have
+15:06
+just been created it fills holes in the local block group and then when it
+15:12
+crosses a certain threshold it goes to a whole nother block group and finds a big string of empty blocks to continue on
+15:19
+and so there are these thresholds that actually cause you to go to another block group okay and the
+15:24
+feeling there is that if you're running a big sequential read and every so often you have to switch to another
+15:30
+block group that's okay because you're still getting relatively high performance okay with these occasional hops rather
+15:37
+than having to go back and forth and back and forth for every block okay and again it's important to
+15:43
+keep about ten percent free in order to make this work okay so a block group is so good
+15:49
+question is a block group the same as a cylinder group well a block group is what you see on a surface and if you remember
+15:55
+there are a whole bunch of platters on top of each other and so if you take the block group and you go through the
+16:01
+whole stack that's a cylinder group okay so that makes sense so the cylinder
+16:06
+group is the set of rings of a block group going through all the platters
+16:14
+and you remember the reason that we talk about that that way is because the head all of the different heads in the head
+16:19
+assembly move together as a group and so in some sense we move into a cylinder and so then a cylinder group
+16:25
+would be a group of cylinders that are all uh small movements of the head okay
+16:30
+good question now
+16:35
+the uh so the summary of the layout uh pros are for small directories you can fit all of
+16:41
+the data the headers and and uh etc all in the same cylinder with no seek for small directories and small
+16:47
+files so that works out well the the file headers um the inodes are
+16:52
+actually much smaller than a block so you can get several of them at once and so that really optimizes for doing
+16:58
+uh directory optimize or operations that use all of the files in the directory so that works really
+17:03
+well and then last but not least this is certainly discussed in the paper
+17:09
+and it's an important side effect of this is that by putting the inodes close to the data what that means is if the head crashes
+17:16
+or that's where the head touches down on the spinning disc and uh takes out it
+17:21
+a uh track or set a whole block group even all the other files are fine because
+17:27
+their inodes are safely next to each other next to the data in other block groups
+17:33
+so this is a big reliability advantage as well okay
+17:39
+good yeah you could think of this so again think of a cylinder group as
+17:44
+all of the block groups on top of each other on the different platters which are double-sided
+17:51
+okay so just to say a little bit about the allocations so if you remember
+17:56
+there's a bitmap per block group and so um for instance this
+18:01
+uh it's just one big uh it's defined in a set of blocks um at the beginning of the block group
+18:07
+there's just a set of bits that are together that tell you which blocks in the block group are free so we have ones that are in use we have a couple of free
+18:14
+ones and so we do is if we write a couple of uh of blocks in a file it just finds them
+18:22
+very quickly because it can just look at the bitmap okay and then when it is writing a large
+18:27
+file it's easy to figure out which blocks are available again by looking at these
+18:32
+long strings of zeros and when you get past a certain threshold as i mentioned you go to a to another block group and
+18:39
+pick a um pick a big string of zeros to write on okay and this is
+18:45
+basically the heuristics their heuristics to keep this overall speed of the fast file system fast even over
+18:53
+time as you delete files create files and write files okay good
+19:00
+the last thing i wanted to give you and i an idea about is the rotational delay problem which is an interesting one for
+19:06
+old systems so the issue is that if you remember
+19:12
+as the disc rotates the head is picking up all of the various sectors that are in the track
+19:18
+that it's on and in some of the older systems back in the
+19:23
+beginning of the fast file system you'd read a block or you know series of sectors off the
+19:29
+disk into memory and you'd uh notice that
+19:34
+it's you have to work on a little bit before you went to read the next thing and by the time you got back to read the
+19:40
+next thing it had actually passed under the head and so you had to wait for a whole new revolution to get the next block
+19:47
+and so if you're not careful you everything slows down you do such a great placement on the track and because
+19:52
+the blocks are too close to each other on the track you actually miss them okay and so what the fast file system
+19:58
+did was it did what's called skip sectoring which is it calculated kind of how much time was needed
+20:04
+and so for instance all of these magenta blocks on a given track are all part of the same file and you
+20:10
+put that extra space in there so that uh as the blah as the disk is rotating you grab a sector you process it and
+20:17
+when you're ready for the next sector it's coming underneath your disk head okay and that was called skipped sectoring and they
+20:24
+they implemented that part of the fast file system paper today of course as i've implied a couple
+20:31
+of lectures ago we actually have a whole bunch of ram on the controller and so what happens on today's disks is
+20:38
+you just read the whole track into a ram track buffer and then subsequent reads it doesn't matter how
+20:44
+long it takes to get back to them you can pull it off at high speed without worrying about the physical rotation
+20:50
+okay and so this is a good example of something uh that was solved back in the original
+20:55
+fast file system day that has been obsoleted by smart disks
+21:01
+now there's a track there's a question in the chat there of does the fast file system get used anymore yes so its descendants are basically in
+21:10
+the linux ext two and three the um bsd versions of ufs
+21:17
+file system and so on so the descendants of that code are all still used okay so this is this is not a just a
+21:24
+historical artifact except for the rotational delay fix um so it's a it's a useful file system
+21:29
+to know about okay so modern disc plus controllers do all sorts of things and i mentioned not
+21:35
+only do they do full track buffering they also run the elevator algorithms and to some extent they figure well to a
+21:41
+to a large extent they figure out which blocks are bad and they hide that even from the operating system in some instances by
+21:47
+transparently mapping good blocks in over bad ones okay so the pros of this fast file
+21:54
+system which was in the sec the 4.2 version of bsd so it's a very efficient storage for both small and
+22:00
+large files that just comes from the structure of the inode it has good locality for small and large files that's because of the way that the
+22:08
+block groups were divided up and inodes were spread about and there's a good locality for metadata
+22:13
+and data and you don't need to do any defragmenting to get performance back unlike earlier versions of the
+22:18
+file system the cons are it's still pretty inefficient for tiny files
+22:23
+because for instance if you think about it a one byte file actually requires both an inode and a data block
+22:29
+okay so let's look at this for a second you know it's it's surprising but if you let me just go
+22:35
+back to this if you look at this layout it doesn't matter how big the file is you still have to have all
+22:41
+of the inode structure and then you have to have a complete block for the data and so if you have a few bytes
+22:48
+in your file it's extremely inefficient okay and that's just part of that's one
+22:53
+of the consequences of this layout now this does do quite well for small files in general
+22:59
+but for really really small files it's not so good and there's always this inode separate from the data
+23:05
+okay so we can do something about that um which is
+23:12
+what was done oh we'll get to that in a second uh that's which is what was done in the ntfs and i'll
+23:18
+tell you that in a second i did want to say do a little administrivia which is we're done with the grading i
+23:23
+know i said that uh we were going to be fairly soon i think that's come out over the week
+23:29
+weekend we had a higher mean this time 55 standard deviation of 15 so that's
+23:35
+about standard for this class and uh as we've talked about before there's a
+23:41
+historical offset here of 26 so you can take your grade uh whatever you got and add 26 to it and
+23:47
+take a look at the um at the various bins that we put up on
+23:53
+the website to sort of get an idea what grade you got on that exam all right
+24:01
+there's no class on wednesday uh so um you i guess you won't be hearing
+24:07
+me on wednesday and you can take that time to do a breather and get outside a little bit the other thing that i
+24:16
+wanted to mention is again i said this before but make sure if you've got any group issues or if you have a group member
+24:22
+that's mia make sure that you let us know when you do project evaluations and that your tas
+24:28
+are well aware what's going on okay that's to a maybe we can reach out to them and help
+24:34
+that situation where we couldn't otherwise or maybe we could get you all together to talk try to make sure that project
+24:40
+three is smooth and certainly important for us to know
+24:45
+that when it comes to awarding points for the project at the end so okay i don't think i had any other
+24:52
+administrivia anybody have any questions or i know
+24:59
+that the regrade requests and so on are still going on so
+25:06
+okay so i guess with that i'm going to move on
+25:14
+now and so this issue that we had with the standard kind of indexed file system is
+25:20
+this idea that the inodes are separate from the data which actually works pretty well for
+25:27
+most size files the question is could you do something different and
+25:32
+it's just uh this is an answer to the question from the chat earlier is this idea of is the fast file system
+25:38
+even used at all and the answer is yes so the descendants of the fast file system have found their
+25:44
+way into linux in the uh the axt3 file system is one that is pretty standard in linux these days
+25:51
+uh and there's also in the um bsd freebsd has a variant of the original
+25:58
+fast file system as well but here's an example of there's block groups laid out in ext2 or three
+26:05
+i'm going to keep them together for a moment because they're uh they're effectively the same thing in one instance and that's this layout
+26:12
+uh so here's our block groups we have a group descriptor table that's kind of along with the super
+26:18
+blocks at the beginning of the disk in a well-defined place superblock is describing information
+26:23
+about the file system as a whole if you look in that descriptor table you
+26:29
+can figure out where block group 0 is et cetera the other thing that linux has got is you can at the time that you
+26:36
+format a new file system you can pick the size of the blocks you can make it 1k 2k 4k 8k 4k is pretty standard
+26:45
+very similar to 4.2 bsd with 12 direct pointers if you look um here
+26:52
+the uh for instance you could say well what if we want to create a file in slash deer one slash ext3 what
+27:00
+happens there is you got to find the root directory so you go to um a special
+27:06
+spot on block group zero and that in that inode table you say well inode number two
+27:11
+is uh where the root directory is and so that's points to um say block
+27:19
+in the root directory points to block 258 for the actual data so the the inode there points to the
+27:25
+data for the root directory you look up dear one that says oh that's going to be inode 5033
+27:31
+you look down at inode 5033 which is in block group 2 for instance in there you start looking at the data
+27:38
+and it points to say block 18 431 which is the data for directory one
+27:44
+and you look in there and you can find um you can create file one as an entry in
+27:50
+that directory and you can allocate a block for uh for the data okay and so this is kind of the way to
+27:58
+follow these pointers is what you should think about is that every pointer here represents a block number
+28:05
+that's being pointed at by some other block and that's how we get all of these uh the structure of the file system
+28:11
+itself okay now yeah the difference between ext3 and 2 is that ext2 is like the original file
+28:18
+system ext3 adds journaling on top of that in order to give us a level of reliability
+28:25
+and if we get that far today i'll tell you more about journaling too okay okay questions
+28:35
+no all right so um if you remember the directory abstraction i do want to say
+28:41
+tiny bit more about that as well so you you have the root uh directory it's got the usr
+28:48
+directory inside of it and that points to say user lib 4.3 and user lib those are separate
+28:54
+directories inside this directory points at an actual file etc so directories themselves are basically
+29:00
+specialized files in a specialized format and they're lists of file name file number uh
+29:05
+mappings okay and there's a bunch of system calls that actually interact with directories uh directly
+29:13
+so for instance open or create of a file with a file name actually traverses this directory structure to figure out which
+29:20
+one of these subdirectories you're going to put the new file name in there's make durer and remove directory
+29:26
+system calls for making and removing directories in a given place there's also link and unlink which can
+29:32
+remove just this link so potentially if this particular file foo has two different
+29:39
+names in the directory structure you could unlink one of them or you could create a new one we'll talk a little bit more about link
+29:45
+and unlink in a second so the question of is the kernel itself
+29:53
+stored outside the uh file system it depends on what you mean so the kernel itself is
+29:59
+certainly on the file system okay so there's a special boot code
+30:05
+that just knows enough about the file system to pull the kernel in off of a special
+30:12
+slash boot directory for instance in the root directory uh it's not terribly intelligent but it knows enough to read that through to
+30:18
+pull it into ram and then once that's been bootstrapped then it starts booting and it can do the rest of the file system
+30:25
+so yes the kernel is actually in the file system which is uh an interesting catch-22 when you
+30:30
+think about it because you have to make sure that the boot code that you load from some well-defined place on disk has enough information
+30:38
+and knowledge on how to interpret the file system to just pull the kernel itself in
+30:43
+yeah that's a that's a great question so um the lib c provides a bunch of support
+30:49
+like opendir and reader you guys should take a look at these uh system calls they basically
+30:55
+allow you to actually open a directory and scan through it for a bunch of file
+31:00
+names to find out what are all the files that are that are in that directory or
+31:06
+are the directories instead of files you can do that there's a set of uh of um calls that are in libsy that are
+31:13
+there for you i don't know if any of you have actually used them yet but they i've used them many times in the
+31:19
+past so what's a hard link so i wanted to tell you a little bit about a hard link
+31:25
+this is a mapping from name to file number in the directory structure so uh a hard link is really just a
+31:32
+directory entry okay we but i'll show you why i call it a hard link in a second but so for instance in
+31:38
+this directory slash user has a lib 4.3
+31:43
+name in there and it matches up with an i number which is the inode for this next
+31:49
+directory and so a hard link is really a name i number mapping that's inside of a directory
+31:56
+okay and the first hard link is made when you do create and you can actually create extra hard links thereby giving sort of
+32:03
+this file multiple names in the name structure with the link system call
+32:09
+or the ln user call okay and you can only do that typically if you're a super user
+32:16
+unlink will remove this link and if as a result you've got a file that's sort of
+32:21
+floating in space and disconnected that will effectively delete the file because uh all of its resources will be freed up at
+32:27
+that point okay and so um that leads into an interesting question
+32:34
+of when can the file contents be deleted so the answer is so this lib 4.3
+32:40
+foo is a file with some stuff in it it can be deleted if there are no links
+32:46
+left to it and uh nobody has it open so once you open a file
+32:52
+you also have a link to a file okay and so but it's in memory and so if you have a process that has
+32:58
+opened a file and then you go delete it out of the file system that file is still going to stick around
+33:04
+long enough for that process to to read or write it and it's only when it's closed at that point if
+33:10
+it doesn't have a hard link in the directory structure then it goes away okay
+33:16
+so that's a little bit weird behavior i'll tell you uh last term when i was teaching 162 our
+33:22
+our first example of a midterm like you guys had
+33:27
+was some code that we wrote to produce google forms and uh
+33:33
+we had a de-scrambling thing so that when a student would ask a question about whatever their 1.4 was it would tell us
+33:41
+what 1.4 was really for us and then any time we put out a correction it went
+33:46
+back to everybody who had that scrambled thing okay that was great and it worked pretty well
+33:52
+except the server we were running it on it's logged filled up and so the server crashed and
+33:58
+then we couldn't reboot it because even after we had tried to just uh delete all of the data in the log it
+34:04
+was still being held on to by processes that had uh access to the hard links and
+34:09
+uh we it took too long for us to repair it in the midterm ended without corrections
+34:15
+for the last like third of the midterm so that was a bad scenario but all right
+34:21
+so in contrast to hard links are soft links so this is a soft link or a symbolic link
+34:27
+on some operating systems they call them shortcuts and this is going to just map a name one name to another name
+34:33
+without it being an actual name to i number mapping so instead it's
+34:38
+really a name to file name mapping okay so in our regular directory hard link is a
+34:46
+file name and a file number and that's a that's sort of supported directly in the file system
+34:53
+symbolic link has says well if you get to this point in the directory and you look something up by this file name what you get back is
+34:59
+just another file name and so rather than a direct pointer to one directory
+35:05
+down or whatever with a with a soft link you can basically point it pretty much anywhere because you're saying well replace this
+35:12
+name with this complete name which could be an absolute name so you can end up in another file system or
+35:18
+what have you and so that's typically with ln s is how you make symbolic links okay and the os looks up
+35:26
+the destination file name each time the program accesses through and so this lookup could fail
+35:34
+whereas this lookup there's always a file name to hard link that's will never fail because if there's
+35:41
+some file that's not pointed at by anything it'll go away and so you'll never get a file doesn't
+35:49
+exist problem here but in this symbolic link it's possible that you find a file name that maps to something that doesn't
+35:55
+exist so these symbolic links are much more uh convenient for predict producing um
+36:02
+trees of uh file names that are sort of part of build packages and stuff
+36:07
+but all right so that's the difference between a hard and a soft link so there's there are a number of kernel
+36:15
+there are a number of kernel facilities that actually will go ahead and use symbolic links as if they're real links
+36:21
+so for instance if you do open and you give a long string part of resolving that file name may
+36:27
+actually go through different sim links and that will work fine because that's been set up to interpret
+36:32
+the symbolic links properly all right now let's look at one last
+36:39
+thing about directories i just wanted to show you this one more time so what if we're opening slash home cs 162 stuff.text
+36:47
+so the first thing is we're going to have to find the i number for the root inode configured in the kernel we'll say it's 2 for instance
+36:54
+we're going to read that inode 2 from its position in the inode array so remember in the outer
+36:59
+block group there's going to be an array of inodes we pull that out we examine the inode we find
+37:07
+the first block and we start working our way through so we
+37:12
+take that inode we take the block we scan through it until we find home mapped to another i number say
+37:20
+8086 okay and then we look up 8086 for slash home okay and that's going to be um
+37:28
+another uh inode structure which is going to give us another block which we can look up
+37:33
+okay and then finally and yet a third one okay and then finally when we get to um
+37:41
+slash home cs 162 we've looked up slash stuff okay and
+37:48
+last but not least now stuff is actually pointing at the inode
+37:53
+which is actually the file and so what i've got in green here is reading the file so there's every directory is a file
+38:00
+just like files or files and what you're doing is you're traversing your way through the directory structure until you actually
+38:06
+get to the files of interest okay all right
+38:13
+and this little thing i have in the lower right here actually represents uh the block cache which i'll talk about
+38:19
+a little bit okay um and the last thing i wanted to mention is remember everything in an operating
+38:25
+system is a cache and so because everything in the operating system's a cache then uh we can cache all of this stuff
+38:33
+that's what you're seeing here but we can also cache the translations in a name cache and so
+38:39
+assuming nothing changes in this directory structure then we have a name cache which say says
+38:45
+that while slash home slash cs 162 stuff.txt and also the intermediate
+38:50
+pieces are actually stored in a hash table so we can very quickly look that up in memory
+38:56
+assuming that nothing in the underlying file system has changed and so that cache of names called the name cache
+39:02
+makes looking things up subsequently like for instance if we wanted slash home cs 162 slash other stuff.txt it would be
+39:10
+much faster because we wouldn't have to traverse our way through those directories okay
+39:17
+what happens when the array runs out of space you mean the name array i'm assuming so
+39:22
+the great thing about the name cache is since it's just a cache it
+39:28
+doesn't matter if you throw things out you can always get them later if on the other hand you're talking about the inode array
+39:34
+and there's several of them yeah okay so there's several inode arrays throughout all the different
+39:39
+block groups if you run out inodes you can't make any more files
+39:45
+and i've had some file systems in the past that i've made
+39:50
+where there were so many little files that we actually blew out the set of inodes and at that point you basically can't make anything new
+39:57
+so it doesn't matter how full the actual data portion your file system is that's it it came over
+40:05
+all right so um one thing that's unfortunate a little bit about uh and which i haven't really shown you
+40:12
+here in great detail is if you have a really long directory with a zillion files in it standard unix forces
+40:19
+you to go linearly through the directory to find the file you want
+40:24
+and it's not indexed in any way and it's just linear and happens to be there in the order in which it was put into that
+40:30
+directory so that's pretty inefficient there are things like freebsd and netbsd
+40:35
+openbsd actually have the ability to swap in a b tree-like
+40:40
+format for data inside the directory to give you a much faster lookup possibilities okay
+40:47
+but that's optional and a lot of and linux doesn't do that and a lot of uh early unix systems didn't do that as
+40:55
+well so let's now talk about windows nt or ntfs
+41:00
+um because uh this is a little different so this was the new technology file
+41:06
+system uh it's a default on modern windows systems this was kind of what came in
+41:11
+after the fat file system was uh you know developed and then rejected as
+41:18
+uh two um flaky and and really not reliable enough for a big heavy heavily
+41:23
+used file system so ntfs came along and what's interesting that's very different from
+41:29
+uh the bsd file system we just talked about is we have variable length extents rather
+41:35
+than fixed blocks so the file system we were just talking about all the blocks were the same size call them 4k inodes were smaller
+41:42
+typically in inode's like 128 bytes so there are several of them in a block
+41:47
+in the ntfs there's a possibility of most of the disk space uh being laid out in variable extents
+41:54
+where um you sort of have the first block and then um the length and and you'd follow
+42:00
+it along a track to get all of the data represented there and so you could really represent
+42:06
+a chunk of data that was many tracks worth of data that way um and what's the internal portion of
+42:13
+that file system well instead of the fat table like we looked at or the inode
+42:18
+array you actually have the master file table which is like a database okay and like a database it has
+42:24
+a maximum one kilobyte size entry and each entry
+42:30
+is essentially representing a sequence of attribute value pairs but one of the things you
+42:36
+can have is data and so you can have an attribute value pair which represents data and the value
+42:42
+is the actual data and so this is an interesting twist because it
+42:47
+allows you to have both the metadata describing who can read and write uh the file and the data itself all in
+42:53
+one chunk and one kilobyte size entry unlike what we've been talking about with the fast
+42:58
+file system okay and so every entry in the mft has metadata
+43:04
+and the files data directly or a list of extents or for really big uh files pointers to
+43:09
+other mft entries with more extents okay and rather than worrying about whether you got that all i'm going to
+43:16
+show you here in some pictures so here's an example of the master file table it's like a database like i said
+43:22
+and so there's a series of these records and these records represent pointers
+43:29
+or these records have within them both metadata and potentially pointers to longer
+43:34
+extents okay and block pointers basically cover
+43:39
+runs of blocks now instead of individual blocks okay and this is actually similar to
+43:44
+what linux did in the xt4 as well and the other uh interesting thing about ntfs is when you create a
+43:51
+file you can give it a hint as to how big the file is going to get so that it can pre-allocate a big chunk
+43:56
+of contiguous memory for you so this has the ability to be higher performing under some circumstances
+44:03
+i mean it also has journaling for reliability we'll discuss that a little later so here's an example master file table
+44:09
+here's one entry there's some standard info is one of the attributes you can have and
+44:15
+that's basically the stuff that we put in the inodes for bsd file system things like create time
+44:21
+modify time access time who's allowed to access the file et cetera there's the name of the file
+44:27
+which is included in this record so that file name is kind of like uh
+44:33
+you know this is kind of like in the directory right so this is a the actual file name and then there's a bunch of data which
+44:39
+could be resident and all of this could be together in a single one kilobyte file and so
+44:45
+one kilobyte master record excuse me and so as a result it's very much more efficient at small files
+44:52
+than the vsd file system is because everything's all together you don't have to have both the inode
+44:57
+and the data now if we get bigger files then what we can do is rather than just having the
+45:03
+data in this part of the mft record we can start having pointers and links to bigger extents that are spread
+45:09
+throughout the disk okay now hopefully those of you that remember when we discussed fragmentation
+45:16
+back in the memory days when we're talking about virtual memory this as you can imagine
+45:22
+since the we're not using blocks that are all the same size but rather extents that are variable size
+45:27
+now we all of a sudden have this problem with potential fragmentation when we start allocating freeing
+45:33
+allocating freeing and so um that can be a problem okay and so on on an ntfs file system you can actually
+45:40
+start getting some fragmentation over time here's an example of a very large file
+45:47
+where we have some of the master file records pointing at other master file records and then each
+45:53
+of those individually pointing at extents and so you can make really
+45:58
+really really big files if you want again at the potential expense
+46:04
+fragmentation problems uh here's an example of a huge fragmented file okay with lots of
+46:10
+extent spread all over the place one of the problems once the space becomes fragmented is you can no longer
+46:16
+have big extents you have to have lots of small ones and so when you finally get extremely fragmented
+46:24
+file system then things don't perform well at all and you have to go through and defragment
+46:29
+okay so other little things about ntfs is the directories are b trees by
+46:36
+default the file number for a file is really its entry in the master file table
+46:42
+master file table always has file names part of it so the human readable name file number
+46:47
+of the parent directory etc what's kind of interesting as well is if you have multiple names
+46:52
+hard links for the same file they can be in the master file record so looking at one record you can know
+46:59
+all of the individual names and what directories they're in as well as the data okay
+47:07
+okay now let's talk about memory mapping now for a moment um so
+47:13
+memory mapped files um are a different way to do i do i o so we've been talking about that
+47:20
+interface where you open a file and then you read and write it then you close it you can this involves
+47:27
+multiple copies into caches and memory and system calls etc what if instead of open read write
+47:34
+close we just map the file into memory just like we map other stuff into memory when we
+47:40
+were talking about virtual memory and then you can just read and write memory locations and you implicitly page
+47:45
+the file in and page it out and so on and so what file manipulation suddenly looks like
+47:52
+memory reads and writes okay and this is something that is a well-defined interface executable
+47:59
+files are treated this way when you exact a process what happens is you actually just point
+48:06
+the virtual memory to where that process is on disk and then it'll start faulting parts of
+48:12
+the code in as it's needed okay so here's how that works so if you remember by the way this is a slide
+48:18
+you've seen but let me remind you of how virtual memory works since i know we've passed midterm two and so
+48:24
+everything you learned in the first two thirds of the class is now fuzzy but if you remember we basically have
+48:32
+an instruction access tries to get looked up in the mmu if we're lucky we find an entry in the page table
+48:40
+and that uh goes ahead and lets us do the access on the other hand if there isn't a page
+48:46
+table entry and we get a page fault then what happens is we get an exception we go into the kernel
+48:52
+page fault handler takes over it starts scheduling a read from disk which can
+48:57
+take time and then eventually when that's finished it updates page table
+49:03
+and then we go back on the ready list we get rescheduled and we try it again and this time we succeed
+49:09
+okay so that's virtual memory so why not do the same thing with just regular files so here's the idea
+49:15
+so you use a call from the lib library called map which is a system
+49:20
+goes to a system call and what it does is it says well here's a file map it to a region of the virtual
+49:26
+address space which really means we create a set of virtual address space pointers that point at the file
+49:32
+and now we go ahead to read and if we try to read from the file
+49:38
+region here in blue and nothing's mapped we'll get a page fault just like we did for a virtual memory give it an
+49:44
+exception now what happens is we read a part of the file into dram and then we
+49:51
+get to retry and at that point we go forward and read the contents from memory the
+49:57
+mappings are set up and um you know we just read from memory and we get stuff out of the
+50:02
+file so what's neat about mmap is it actually lets us take a file put it in memory and now all of a sudden
+50:08
+we're accessing it as if it was just data in memory not on the disk okay
+50:15
+now if you were to look up map you could do man on it whatever here's a variant of it where what you do
+50:22
+with the map call is you give it an address in your virtual address space where you want to put the file
+50:28
+you give it a length of how much of that file you want and then some other flags and it let basically let you map a file
+50:35
+into a specific region now if you don't care where it is in the address space then you just put a zero in here and
+50:42
+it'll return as a void star it'll return an address where it decided to map it in your virtual address space
+50:48
+okay this is perhaps close to what you're supposed to
+50:54
+do for project three um this is used uh both for manipulating
+51:02
+files and for sharing between processes so i wanted to show you an example here so here's some code
+51:08
+that um is very simplistic but if you notice i've got a static
+51:13
+global here called something that's set to equal to 162. i've got some things on the stack and so what i'm doing with printing to
+51:20
+the console as i'm saying that the data is where well i'm just telling you where the
+51:25
+static part of the data is so that's uh the address of something the heap is that i give you what i get
+51:31
+back from malik if i mount like a byte and then the stack is at uh this address
+51:36
+of the m-file um variable and that kind of tells me where the stack is
+51:42
+and then what i do is i print that stuff out and then i open my file which is an argument
+51:48
+and assuming that everything is good i get down here and notice what i did for my map i said uh find me an address i don't care what
+51:54
+it is that's what will come back for m-file i say um length 1000 i say
+52:00
+allow reading and writing and then this these variables here or these um flags are
+52:06
+basically saying go ahead and map this as a file and here's the file descriptor i've already opened okay
+52:12
+and so if you look if i run this thing notice what happens it tells me where data heaps stack
+52:18
+and map is at so map is the thing that comes back from our our mapper and notice how map is low in memory it's
+52:26
+not high in memory like heap or stack and which is which is interesting there
+52:33
+right so um the thing that we get oh by the way so it prints those things out and then it
+52:38
+tells me what was in the file test let me back this up okay but notice once i've uh printed out
+52:46
+what was in that file notice how i did that i just said printf mmap is at and that gave me this
+52:53
+guy and then just by saying put the string m-file on the screen it just printed out all
+53:01
+the contents okay so that's this is line one this is line two this is line three all of those contents got printed out on
+53:07
+the screen just by printing uh the the string that was at that variable okay so this
+53:12
+line here is innocuous as it is this puts foots line is actually doing a read from
+53:18
+the file and printing it on the screen just by pretending that that string was already in memory okay
+53:25
+and then this is where this gets a little amusing we uh go 20 characters in
+53:31
+and we write over it with something by string copying this string over that spot and then we close the
+53:36
+file descriptor which is going to flush everything out and we return and what happens when we cat test and
+53:42
+see what's in there is notice if we were to count 20 we would see that starting at by 20 is the let's write
+53:49
+over its portion and so we've actually literally written over this part of the file
+53:55
+simply with a string copy okay good now we could also think of this as
+54:01
+a way to share so we could have a file in memory and we can map that file
+54:07
+into different places doesn't matter they could be the same or different places in the virtual address space
+54:13
+and once we've done that now we can share in shared memory with the file as kind of a backing store
+54:20
+for what we've got okay now you can kind of see that the file is a little bit
+54:25
+uh extraneous here in some sense because we maybe we don't care uh what's in the file we're just using
+54:30
+that as an excuse to set up this channel in shared memory and it turns out that there are ways of
+54:36
+setting up something called anonymous memory so we did map file in the earlier example i gave you
+54:42
+you can map anonymous which will mean do this kind of setup but without the file
+54:48
+okay all right
+54:53
+so different processes have different address spaces yes
+54:58
+so this part here isn't so take this part of the file it goes to a
+55:04
+different part of virtual address space 2 than virtual address space 1 given the way i've shown this
+55:12
+this is shareable the reason this is shareable is not because the virtual addresses are the same but because data
+55:18
+i write here that shows up there is data that this guy can read
+55:23
+yeah and and again notice the irony of what you said there about this being through the file
+55:28
+is it it is through the file but it doesn't even have to go to disk for this to happen okay now the um if you wanted to do this
+55:36
+for real uh a you might want to use anonymous memory if you really didn't care what the backing store was
+55:42
+but the other thing is you're going to want to find out what the address was you got allocated on one of
+55:48
+these and try to use that in the map on the other so that you can actually align the virtual address space portion of this as
+55:54
+well so that then you can actually have shared lists and other things in uh in that shared memory
+56:03
+all right good so the kernel
+56:09
+has to keep this interface going where the user portion thinks that
+56:15
+everything's bites and the uh and the the disc is in blocks and so we've got
+56:22
+that mismatch to start with and um basically the kernel has to pull
+56:28
+things off of the disk and put them into memory to do that matching so if i'm going to read four bytes at the
+56:35
+beginning of the file it's not going to read four bytes off disk that's not even possible it's going to read a whole block of 4k put it in memory and
+56:42
+then give you the first a few block a few bytes and the good thing is if i keep reading
+56:47
+i don't have to go to disk again until i run out of that block so that seems like uh maybe we ought to
+56:54
+start talking about caching here so that multiple processes for instance can share data that's come off of the disk
+57:01
+okay and again just because um you know operating systems as i said
+57:06
+everything's a cache so the buffer cache really is this generic cache of blocks
+57:13
+in memory okay that's separate from virtual memory so it's not this is not the blocks that we choose
+57:20
+to use to help map virtual addresses but rather this is a set of blocks purely as a cache and it can hold things
+57:26
+like data blocks and inodes and directory contents etc for future use
+57:33
+and it can also have dirty data so if you write a block in a file it can actually have that data sitting
+57:38
+in there uh before it goes back to the to the disk okay and so the key idea
+57:43
+here is we're gonna now set aside some dram to help exploit locality by caching disk data in memory
+57:50
+and really help us okay name translations so mapping from paths to inodes disk blocks mapping from block
+57:56
+address to disk content etc and as i mentioned this is called the buffer cache
+58:02
+and it's really memory used to cache kernel resources including disk blocks and name translations
+58:07
+and can have dirty data okay so let's look a little bit at this i just wanted to give you an idea so here's our
+58:14
+disk surface that we had earlier so the buffer cache really is a set of blocks in memory
+58:19
+there's some state bits associated with it and because it's a cache some of these blocks might be free or some of them
+58:25
+have been invalidated and really if i were to
+58:31
+abstractly think about what i've got in my cache i could say well i've got some data blocks i'm going to think of them
+58:38
+as here i've got some inodes i've got some directory data blocks i've got some the free bitmap which is actually uh the
+58:45
+set of all blocks that are free are kept in that bitmap and so um this is a cache on the disk
+58:53
+but specifically for access through the file system all right and for instance uh
+59:00
+when we have file descriptions of open files from that are associated with uh process
+59:05
+control blocks and file descriptors those are really pointing at inodes which are locked down in the cache
+59:10
+so that when i go to read from the file i can immediately find which blocks i need to read from okay and so this file
+59:18
+system is really support it's not a direct uh access to the disk what it is is it's supported on top of the buffer cache
+59:25
+and we pull things in and out of the buffer cache as we need them okay and that's really how we do that
+59:31
+mapping between byte level operations and and even operations in the inode to the block
+59:38
+level interface of the disk so for instance let's suppose i'm trying to do an open operation
+59:44
+so i'm going to assume i've got my uh inode for a directory that's my current working directory
+59:50
+that's already open here i'm pointing at uh this and so this current working
+59:55
+directory is uh is an inode i've pulled in previously and so what i'm going to do is i'm going
+1:00:01
+to try to look up some other file name relative to that so that i can do an open and so what i'm going to do is i'm
+1:00:07
+going to wash and repeat i'm going to try to load blocks of the directory i'm going to search through there to find the next directory
+1:00:14
+pointer then i'm going to load blocks from the next one and so on and uh and so this is sort of a
+1:00:19
+recursive process and this buffer cache we have to for instance mark a block as transiently in
+1:00:25
+use when we start using it then we can pull in data off of the directory and now that's cached here
+1:00:33
+and then i can search through it to find the named inumbre mapping okay and now i can look
+1:00:38
+up that i number to start reading the data so what i'm going to do is i'm going to put
+1:00:44
+aside a marker here saying this part of the cache is in use i'm going to read the
+1:00:50
+data in and now i've got an inode cached and i can map that to a file description and
+1:00:56
+so now i have my open file uh and its inode is locked down in memory okay and so then from that point on
+1:01:04
+now i can do reads for instance well i've got the inodes so i've got data blocks i can pull the data blocks into the cache
+1:01:11
+and then use them and um you know i'm going to traverse the inode so this thing in green is an inode like we
+1:01:17
+talked about on previous slides and so it's going to let us know which blocks i need to get next i pull
+1:01:22
+them into memory and now i can access them or maybe they're already in memory okay and so this is typically this
+1:01:29
+buffer cache is is got a hash table that lets me find blocks in it very quickly and so that's how i can figure out
+1:01:36
+whether i've already got the blocks in the buffer cache or if i have to pull them off of disk and of course for writing
+1:01:42
+what i've got here is i might actually have a dirty block that basically says this data has been
+1:01:48
+updated relative to the disk and i can't get rid of it until i've written it back to data and so this
+1:01:54
+buffer cache also has to keep track of what's dirty and what's not okay so it's this is uh implemented
+1:02:02
+entirely in the operating system in software it's not like uh memory cache is in the tlb it's it's a
+1:02:08
+little different because it is in software we always have to enter the kernel to do file operations as opposed to when we were
+1:02:15
+talking about virtual memory where we had to do reads and writes from the um you know in hardware and so
+1:02:22
+we needed to put a hardware interface to keep that fast blocks go through transitional states between free and in use
+1:02:28
+being read from disk being written to disk etc so that as multiple processes are all reading and writing
+1:02:34
+the same data they have to be careful uh to make sure that they don't stomp on
+1:02:40
+each other or take away a block that's there waiting for uh data to come back from disk okay many pr
+1:02:48
+different purposes for this as i've already mentioned um and uh when the process exits
+1:02:54
+things may stay in that cache uh indefinitely unless they've actually been flushed out okay
+1:03:02
+so what do we do when we fill it up well at that point we need to start finding free blocks and of course
+1:03:08
+we all know that if they're read only we can just throw them out if they're dirty we have to write them back first okay
+1:03:14
+so what's our replacement policy well we could do lru and in fact most uh folks do
+1:03:19
+you can afford the overhead of full lru here because we can link blocks together and know what the oldest one is and the
+1:03:26
+most recent one and so on because we always have to enter the kernel so the number of instructions to do full
+1:03:32
+lru is small relative to the overhead of having gotten into the kernel already this works very well for all sorts of
+1:03:38
+things name translation it fails if you ever have an application that scans through
+1:03:45
+all of the files on disk you should try this sometime just for the heck of it don't do it on your
+1:03:52
+friend's computer while they're trying to use it but if you say find dot that's the current directory and then
+1:03:57
+you say exec grepfu et cetera you can actually
+1:04:02
+and then slash colon this is this will go through all of the files in the sub directory and uh and grep them
+1:04:10
+okay and so there you're gonna blow out the cache if you have lru and so um some operating systems give
+1:04:16
+you the ability to say for these following file accesses uh do it just once
+1:04:21
+um don't don't even bother putting them in the cache because i want to keep the things that are in the cache there
+1:04:28
+so how much memory should we put in this cache remember this is separate from the backing store that we use for virtual
+1:04:34
+memory and too much memory and you won't be able to run many applications because you don't
+1:04:40
+have any virtual memory too little in the file system and applications run very slowly because there's not enough caching
+1:04:48
+at the disk level and so the real answer is you adjust this boundary dynamically between the buffer cache
+1:04:54
+and the virtual memory and that's pretty much the way modern operating systems work there was a time when i first started
+1:05:00
+building kernels where you actually had to set a constant at build time to figure out how much you put in the buffer cache
+1:05:07
+versus in the file cache unfortunately that's dynamically figured out now
+1:05:13
+so once we've got a cache like this now we can start thinking well maybe i should try to avoid
+1:05:19
+uh try to avoid avoid coldnesses all right and how do i do that i can do
+1:05:24
+this pre with pre-fetching okay and so the key idea here of course is exploit the fact that most common file access patterns are sequential
+1:05:31
+and prefetch subsequent disc blocks and so most variants of unix and windows
+1:05:38
+also basically say that if i read a disk block i'll read the next couple into the
+1:05:43
+disk cache into the buffer cache and as a result you know i
+1:05:49
+get far fewer times where i'm held up by having to wait for the disc
+1:05:55
+okay and the other good thing is even when you've got a bunch of prefetching from a bunch of different processes
+1:06:01
+if you have an operand a goodly could if you have a well operating elevator algorithm um
+1:06:07
+then all of those axises can be rearranged and the head movement can be managed to scan its way through the disk
+1:06:14
+all right and so prefetching uh isn't as bad as it seems because what what happens is all of those prefetches
+1:06:20
+from different processes all get reordered automatically how much to prefetch well if you do too
+1:06:26
+much then you're going to start kicking things out of the cache unnecessarily and so um too little you have a lot of
+1:06:33
+seeks and so usually it's a couple of blocks or the automatic pre-fetching
+1:06:39
+so delayed rights so the buffer cache is a write-back cache writes our term delayed rights here and
+1:06:45
+what does that mean it means i do a write to a file it sits in the buffer cache it's not necessarily pushed back immediately
+1:06:52
+to disk okay so write copies data from user space to the kernel buffer cache returns to the user quickly
+1:06:59
+seems good okay read fulfilled by the cache so read see the results of writes
+1:07:05
+so it doesn't matter that i haven't put the data on the disk yet the reads have to go through the buffer cache as well and so any data i've just
+1:07:12
+written i read back as if it was put on disk and so from the standpoint of an interface
+1:07:17
+i don't know the difference okay that's that transparent access of the cache is is a good thing
+1:07:25
+but start wondering i'm sure as you're sitting there when does the data from right actually reach the disk
+1:07:32
+and the answer is well clearly if the buffer cache is full and we need to evict something yeah that's fine
+1:07:37
+but when the buffer cache is flushed periodically maybe we want to um excuse me maybe we
+1:07:43
+want to be flushing periodically because the more dirty data we leave in the cache the more chance it
+1:07:49
+is that we'll lose some data so in fact even if uh the cache is
+1:07:55
+being used very well and we have lots of processes all writing the same
+1:08:00
+disk blocks and they're staying in the cache that may be fine to not want to push it
+1:08:05
+out to disk but uh if the system crashes we just lost a whole bunch of data
+1:08:11
+and so there's a periodic flushing that's going on in uh any system that has delayed writes
+1:08:17
+and so we don't have to wait to run out of space in the buffer cache
+1:08:22
+in fact we uh we typically periodically flush it out okay and that's actually about a 30 second
+1:08:28
+time frame is a default and a lot of operating systems that are unix style i'll mention that in a moment so the
+1:08:35
+advantage is of course is you return to the user very quickly without writing to disk the disk scheduler has enough
+1:08:41
+interesting writes for instance that it can reorder and do a really good job when it decides
+1:08:46
+to finally put them on disk of not moving the head too much so that's good we might able be able to allocate
+1:08:53
+multiple blocks at the same time so this is also good so if you think about what i told you earlier you open or you
+1:08:59
+create a brand new file and you start writing and the file system doesn't know how big your file is going to be
+1:09:05
+well with the file cache you can actually allocate as they're writing a bunch of things in the file cache and you can defer
+1:09:13
+even finding physical blocks for that data until it's time to flush it out and at
+1:09:18
+that point you can make sure you have a long enough run in um on some block
+1:09:23
+group somewhere to handle all of the data you've just written rather than sort of dribbling it in one at a time and trying to find a
+1:09:30
+big run and the amusing side effect of this is
+1:09:35
+you've been doing plenty of builds over the years over the last uh term i mean um where you've done make and what
+1:09:43
+happens here all of these files get created and deleted and created and deleted an amusing side effect of the buffer
+1:09:49
+cache and delayed writes is that some of these very temporary files may never even need to go to disk
+1:09:55
+because they're created and deleted before anything gets flushed out okay
+1:10:00
+so this is these are advantages of rights um so the replacement policy
+1:10:07
+uh in demand paging is really not it's not feasible to do lru as we
+1:10:13
+discussed because you'd have to readjust on every read or write in hardware and so we use an
+1:10:18
+approximation like not recently used or the clock algorithm the buffer cache lru is okay because we
+1:10:25
+only enter the buffer cache when we're actually trying to do disk reads or writes so that's a little different management
+1:10:30
+to those two parts of memory the eviction policy of course is that when we're doing demand paging
+1:10:36
+we evict a not recently used page when the memory is close to full the buffer cache we want to be writing
+1:10:42
+these dirty blocks back fast enough that we don't lose any data but not so
+1:10:48
+fast that we don't get some of these advantages i was just telling you about and so that's always a little bit of a trade-off
+1:10:54
+but you can imagine that uh if you're paranoid about your data which
+1:10:59
+a lot of people are maybe this is just not enough so this idea that we're going to flush every 30 seconds means that when you
+1:11:05
+crash you might have lost the last 30 seconds of your information
+1:11:11
+this is certainly not a foolproof way if you flush every 30 seconds therefore of keeping everything around
+1:11:17
+and so um even worse is if the dirty block was for a directory
+1:11:22
+you could lose all of the files you've just created in the directory in the last 30 seconds
+1:11:28
+just because you didn't flush the directory out so that seems pretty bad so metadata like directory data
+1:11:34
+is uh even more sensitive to being lost than the data itself
+1:11:40
+okay so the file system can get in inconsistent states all sorts of bad things happen
+1:11:46
+so take away from this discussion here is really that file systems need recovery mechanisms and ways to protect
+1:11:53
+the information even as we're trying to use a cache to give us good performance
+1:11:59
+and a lot of other benefits we need some way of preventing our loss of data and this idea of flushing 30 seconds you
+1:12:07
+can say i'll flush every 15 or i'll flush every 10. it's still not quite enough under a lot of circumstances okay and it depends on
+1:12:14
+how sensitive you are to data loss but maybe we need something additional to what we've got
+1:12:19
+so far so that leads me to talk a little bit about illites um
+1:12:25
+so there are three leds that i like so one is the availability which is the one you probably heard a
+1:12:30
+lot of and this is the um the probability the system can accept
+1:12:36
+and process requests so it's often measured in nines of probabilities so like for instance 99.9
+1:12:43
+of the time means three nines of availability okay the key idea here is independence
+1:12:50
+of failures and that um the pro the system can accept and process requests
+1:12:57
+however one thing you probably didn't know is that availability doesn't mean the
+1:13:02
+thing works properly it just means it responds okay and so availability is something
+1:13:07
+that you often hear quoted oh this is great i've got five nines of availability okay but is it actually still working
+1:13:15
+okay and so that leads to two other things that i think are very important to point out in this space so durability
+1:13:21
+is different from availability durability says that um one certain data
+1:13:27
+will never be lost okay and so i'm gonna the durability of data is the ability of the system to recover
+1:13:34
+it under a wide variety of circumstances and it doesn't necessarily imply
+1:13:39
+availability so it's different okay and you know i like to think of the
+1:13:44
+pyramids in egypt from for uh centuries there were all these interesting hieroglyphs on there
+1:13:51
+and nobody knew how to read that data but boy that data was secure because it was uh carved in stone
+1:13:56
+literally and didn't go away so it was highly durable but it wasn't available to anybody
+1:14:02
+and then of course the rosetta stone was found which let people read it and so now the data was available again so if
+1:14:08
+you're ever trying to explain the difference between durability and availability i think the pyramids are a good example
+1:14:13
+there um the third thing is really what people mean i think
+1:14:19
+when they want to brag about availability they really want to brag about reliability
+1:14:24
+which is the ability of a system or component to perform its required functions properly okay and
+1:14:31
+this is actually there's an ieee definition it's certainly stronger than availability it means the system's not
+1:14:36
+just up but it's working correctly correctly and so it also includes like availability security
+1:14:43
+fault tolerance durability et cetera and so really the interesting question for me in file systems is a durability
+1:14:51
+because you know once data is lost it's never recoverable so that's really important and then also reliability is the system
+1:14:57
+reliable or not okay and that that 30 second flush we
+1:15:02
+were talking about is uh is a mechanism for performance you
+1:15:08
+could almost say it's a mechanism uh maybe that improves availability because there's less work being going
+1:15:13
+going on there i'm not really sure i would say that that way it's really not a good mechanism for durability and it
+1:15:19
+certainly isn't a good mechanism for reliability and so it's it's like a very simple
+1:15:24
+heuristic and so what i'd like to do we're not going to get through all these slides today but what we're going to do this time and and the next monday
+1:15:32
+is we're going to talk about how to get durability and reliability out of a file system
+1:15:38
+so let's talk about durability for now so how do you make files system more
+1:15:44
+durable well one thing is uh you got to make sure that the bits once they're on the disk don't get lost
+1:15:50
+and so disk blocks disk sectors essentially have reed solomon coding on them which means
+1:15:57
+that if i'm going to write a four kilobyte block of data i'm actually writing more
+1:16:03
+data on the disk and that extra data or redundancy together with the original 4k data makes
+1:16:09
+that makes it possible for me to recover bit errors that happen in the middle of that block okay and it
+1:16:15
+basically allows us to recover data from small defects in the media and if you think about when we talked
+1:16:20
+about shingle uh recordings and we talked about how close the tracks are and one terabit
+1:16:26
+per square inch i don't know if you remember all these numbers we talked about a couple weeks ago the
+1:16:33
+it's really easy for noise and local heat and whatever to cause
+1:16:39
+read errors and so you absolutely have to have really good error correction codes on the disk in
+1:16:45
+order to recover your data that's operating all the time okay and the second thing and so that's
+1:16:51
+that's just part of the disk design um the second thing is you want to make sure that writes survive in the short
+1:16:57
+term so when we write stuff to the buffer cache and we leave it there that doesn't necessarily make sure it's
+1:17:03
+durable in the short term because a crash will immediately remove it so if we start getting really paranoid
+1:17:09
+we could either abandon delayed rights entirely which is going to have a huge performance hit or we could do something like battery
+1:17:16
+backed up ram that's called non-volatile ram or flash etc that's actually associated
+1:17:23
+with the file system where we put things until they get pushed out to disk
+1:17:28
+okay and a lot of hybrid disks these days actually have flash on the disk and as a result you can do a really
+1:17:34
+quick write to the flash memory on the disk and it will worry about getting it eventually on the spinning storage and
+1:17:40
+so that's another approach to making sure things are short-term durable okay so once we've got read
+1:17:47
+solomon codes and then we make sure the data that's written but not yet on disk
+1:17:52
+is stable that's a good start but now we have to start worrying about
+1:17:58
+for instance what if the disk fails okay so how do we make sure things survive in the long term well we need to
+1:18:05
+replicate more than one copy so and the importance of this is
+1:18:10
+independence of failure so we could put copies on one disk so that we have different copies on the
+1:18:15
+same disk the problem is if the disk fails that didn't help us much right so we could put copies on different
+1:18:21
+disks but if the server fails maybe the disks fail too we could put copies on
+1:18:27
+different servers okay but if the building's struck by lightning that doesn't help us we could put copies on servers in
+1:18:33
+different continents or we could have a copy uh you know in our archival store on the moon that we
+1:18:39
+beam up there with a laser or something there are many ways to deal with this but what we want to do when we
+1:18:45
+when we're really trying to be paranoid is we want to put our copies out in a in places that have independent
+1:18:52
+failure modes so the problem with uh different servers in the same building is that if that got struck by lightning
+1:18:58
+and fried all the servers in that building that's not independent failure mode okay
+1:19:04
+so um to now back us down from worrying about lightning here for a second so i'm sure
+1:19:10
+you've heard about raid i just wanted to remind you so one type of redundancy that's very
+1:19:16
+easy to use these days is what's called raid 1 that's from the original patterson naming scheme which is disk mirroring
+1:19:23
+and so the idea is that every disk that we have in the system actually has a
+1:19:28
+partner that uh we put the same data on okay and what's good about this is to
+1:19:35
+call it the shadow disk and so every time you write you actually write two copies of the file system and they go to both disks
+1:19:42
+and what's great is from a high i o standpoint i can read back at twice the
+1:19:48
+bandwidth i did before because i've got two copies okay this is the most expensive way to
+1:19:53
+get redundancy at the disk level because we're we need 100 extra uh data storage so the bandwidth
+1:20:00
+is sacrificed a little bit on the rights because we have to synchronize our two pieces of the file system and so on
+1:20:06
+um reads can be optimized and recovery is fairly simple because if a disk fails
+1:20:13
+you just replace say the pink one here failed i just put a new pink one in and i copy from the green over to the
+1:20:19
+pink and as soon as that copy's done then i'm back up to go and one of the ideas that people use
+1:20:25
+sometimes is what's called a hot spare which is a disc that's just sitting there in a power down mode ready to go
+1:20:31
+as soon as a disk fails okay and you can buy um if you buy
+1:20:36
+anything bigger than a laptop these days you buy a desktop or a small server or whatever raid one
+1:20:42
+is something that you can easily order from dell or from whoever you buy your computers from
+1:20:48
+and they just put in two disks and they set that up and it just works and i i've gotten saved by that
+1:20:55
+many times over the years where i have all this configuration and a disk failed on a brand new machine
+1:21:00
+i just called them up and they sent a new disk out and i plugged it in and it was as if nothing bad ever
+1:21:06
+happened so that's kind of cool the downside of course of this uh just
+1:21:11
+give me a couple more moments here and we'll be done the downside of this of course is this has got a hundred percent overhead
+1:21:17
+so another option is so raid five and so raid five again this doesn't have
+1:21:22
+anything to do with number of disks this is just in uh patterson's naming scheme but in this
+1:21:28
+instance here we take a set of disks and um i'm showing you five disks here
+1:21:33
+uh which doesn't have anything to do with raid5 but what you notice is that at any given
+1:21:38
+time we have four of the disks blocks say this is the block zero on disk one block zero
+1:21:46
+and just two block zero and disc three block zero and disk four they're all xored together to produce a
+1:21:52
+parity that's on disk five and we do that for every block and so now this is much more efficient
+1:21:58
+from a storage overhead standpoint because really my overhead is only one out of five disks as opposed to here
+1:22:05
+where my my overhead is one out of two disks okay and so um basically all of these groups
+1:22:13
+together is called a stripe unit they're all written potentially at the same time um we get
+1:22:18
+increased bandwidth in writes and in reads potentially if we do this right this green block is
+1:22:24
+gotten by taking all of these data blocks and xoring them together to produce the parity and we notice that
+1:22:31
+i rotate the parity through and the reason is that the parity block is
+1:22:36
+uh kind of a high contention point if i'm trying to overwrite a small amount of disc block 2
+1:22:42
+i actually have to read the parity read the disc block write back just block 2 right back to parity and so that
+1:22:49
+parody gets highly used uh over the other disc blocks and so we just rotate the parity
+1:22:54
+through okay and we can destroy all of the data in one complete disk and get it back
+1:23:00
+how does that work well we just say oh i lost everything here so now if i put a new disk in there how do i
+1:23:06
+get back all that data well it turns out i can just xor d0 d1 d3
+1:23:12
+and p0 together and i can get back d2 okay and the way i've described this is
+1:23:19
+like in the same box but we could actually spread this across the internet uh and have each one of these disks in a
+1:23:25
+different cloud storage area and we could make for very stable data all right
+1:23:32
+questions
+1:23:39
+okay has everybody seen the raid technology before i think they talk about that in 61c maybe
+1:23:50
+i'm not sure good so um what i want to close with is i
+1:23:56
+want to tell you that raid 5 just isn't enough okay so and in general all of these raids are
+1:24:04
+called erasure codes which means that i know for a fact that uh this disc is dead
+1:24:11
+how do i know that well i know that disc is dead because either the motor doesn't spin up or all of the error correction codes of
+1:24:17
+all the data on the disks on the disk is uh they're failing and so we just know the data is gone and we
+1:24:23
+can't recover it that's called an erasure and these codes are erasure codes so what what does that mean here that
+1:24:30
+means in this instance i erase this whole disk and so when i reconstruct that data i
+1:24:35
+don't try to get anything off the disk instead i xor the other four disks together to get
+1:24:40
+it back because this is effectively erased and so these are all erasure codes and today raid 5 which can replace one
+1:24:47
+disk is not enough because new disks are so big that if i was doing that recovery
+1:24:53
+process by the time the recovery was done i might have had another failure in the meanwhile and so you
+1:24:59
+actually need something like raid six or higher in today's disk which allow two to fail
+1:25:05
+okay and i'll talk more about this uh next time but notice that what we've got is we're talking about durability how to make
+1:25:11
+sure the bits once we've got them are stable we haven't talked about reliability which is going to be more interesting
+1:25:17
+and get us into transactions as well so in conclusion we talked a lot about file systems
+1:25:22
+how to transform blocks into files and directories we optimize for size access usage patterns we're trying to
+1:25:29
+maximize sequential access by finding big runs of empty blocks
+1:25:34
+and the os protection and security regime all of those that metadata is in inodes
+1:25:41
+typically and so it's associated with the file not with the directory okay so the file is defined by the inode
+1:25:48
+we talked about tran naming is actually working our way through the directories to find the i number of the file we're
+1:25:54
+interested in and that naming could either be in each directory could either be linear linear or it could be a b tree of some
+1:26:01
+sort we talked about 4.2 bsd's multi-level index scheme which is currently used in
+1:26:06
+linux and several others we also talked about ntfs as an alternative
+1:26:12
+we talked about file layout and how to do free space management in block groups we talked about memory
+1:26:20
+mapping with map we talked about the buffer cache which can contain dirty blocks that have to be written back properly
+1:26:26
+uh and we talked about multiple distinct updates well actually let's leave it at that for now so um i think
+1:26:33
+i will wish everybody have a great uh holiday on wednesday and we'll see y'all back on monday
+1:26:50
+you

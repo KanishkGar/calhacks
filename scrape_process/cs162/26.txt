@@ -1,0 +1,1830 @@
+0:02
+well welcome back everybody to uh the last lecture 162. this is kind of a a special lecture um i did get some
+0:09
+requests for more information about distributed storage and quantum computing and so i think we're
+0:16
+going to do that and i want to make sure that we talk through the chord algorithm since that's a
+0:21
+i think relatively simple thing to understand and is uh very cool and applied pretty much everywhere so if you remember one of the things we
+0:29
+talked about uh last week was basically this cap theorem which was really a
+0:36
+conjecture that eric brewer put forth back in the early 2000s
+0:41
+and basically said that you could get consistency availability or partition tolerance you couldn't get them all three at once
+0:47
+you might be able to get two of them at once and so that's the so-called theorem and
+0:52
+we've talked through a number of reasons why that might be true but certainly you can imagine that if you have to be
+0:58
+tolerant to cutting the network in half then it's going to be very hard to be
+1:03
+both consistent and available all the time all right so oftentimes the
+1:08
+cap theorem is a good way to understand global storage systems as a result now um at the very end of uh
+1:16
+last lecture we were talking about key value stores and uh the cool thing about key value
+1:21
+stores is they're very simple in interface excuse me so basically uh
+1:28
+you can have an arbitrary key although that's usually a hash over some value um and you can have a value associated
+1:36
+with it and if you do put a key comma value that goes somewhere into the ether
+1:41
+and then when you do get of the key you get back the value that you started with and so this
+1:46
+interface is extremely simple it's certainly an interface uh many of you have used in
+1:52
+languages on a single machine what's interesting is if you use this in a global storage system
+2:00
+it turns out that the interface is simple enough that you can have some pretty interesting um implementations okay and
+2:08
+if you remember we started talking about key value stores with this notion of a distributed hash
+2:13
+table where what i've got in yellow here is really the key value um table
+2:20
+that we might think about on one node except that in reality what happens is this gets distributed over a whole bunch
+2:25
+of nodes and so the question is really many parts to this question one is how do we
+2:32
+actually do that distributing another is when some client
+2:37
+does a get how does it figure out which node to go through clearly we don't want to have a single routing table in the middle of the
+2:43
+network that's going to be really expensive and then you know what happens if one of
+2:49
+these storage nodes fails okay and so there's many failure modes you can imagine there's performance problems and uh scalability
+2:56
+issues where we would like to increase the size of the system by just sort of adding more nodes down at the bottom here
+3:01
+and um so far we haven't really talked about how to even make that work okay and so today i want to tell you
+3:07
+about the cord uh algorithm which uh has been turned
+3:12
+into storage systems of many sorts including those used by amazon et cetera okay facebook so
+3:20
+um before we get there i wanted to remind you of this notion of recursive versus iterative lookups
+3:26
+so um here's an example of a recursive lookup which is like routing so what we're doing so
+3:32
+our recursive our routing so basically if i say i want to get uh whatever key
+3:38
+14 has got it goes to the master directory and then that directory forwards it on
+3:43
+it routes it to the particular node that's got the results and then the the node returns to the
+3:48
+directory which returns back to the original client that's recursively routing its way through an
+3:54
+iterative uh approach is one in which the client basically talks to the directory then they talk to
+4:00
+the individual nodes and um we're not routing queries through anywhere every individual
+4:06
+client is um doing that particular lookup okay and you can imagine that
+4:12
+this second example here might be more scalable because we can have many clients all driving
+4:17
+the lookups it gets a little tricky to maintain consistency though and so that's one of
+4:24
+the reasons we might want to have recursive another is that this is just faster
+4:30
+because we're basically just routing the shortest path to the results and back whereas this
+4:35
+iterative one potentially um is twice uh the twice the latency okay if you
+4:42
+think about this randomly so let's see keep those two implementation technologies in mind they're really
+4:48
+interchangeable um and are more about what you do with the control plane portion of this than
+4:55
+anything else so um the challenge of that central
+5:00
+directory is really that it's got many entries that are sort of key value pairs or at least
+5:07
+uh key node mappings and you could have billions of entries in the system and so
+5:13
+um i would say that anything that thinks of a directory here like a single
+5:18
+server is bound to be a bad idea okay because it's just not going to scale the billions of entries very
+5:24
+well all right and back in the early 2000s myself and a bunch of other researchers
+5:31
+started looking at how do you deal with peer-to-peer technologies as a way to solve this problem and the
+5:37
+solution uh one solution here is consistent hashing which i'm going to tell you about um
+5:42
+we did tell you about it last time but i want to uh reemphasize what it is and the idea behind consistent hashing
+5:49
+is it's a way to take your keys and figure out a clean way to distribute them
+5:54
+throughout the system without having to know pretty much all of the nodes that are
+6:00
+participating so this seems like a strong ask when you think about it if you look back at this
+6:05
+diagram for a moment if there's hundreds or thousands or millions of servers down here
+6:10
+and we have to somehow um consistent with consistent hashing figure out
+6:16
+uh which node to go to without going through a master directory and such that all these nodes don't know
+6:21
+about each other that seems like it's pretty difficult and that's one of the reasons the chord algorithm is so interesting
+6:28
+all right and so this is basically going to be a mechanism to divide our space up
+6:33
+and we'll talk you through that in the next slide and then i'm going to show you how the chord algorithm
+6:38
+lets you get by with only knowing essentially a logarithmic number of
+6:43
+nodes in the total system and you can still do this well so we're going to associate each one of
+6:50
+those storage nodes is going to get a unique id okay and that unique id is going to be in the hash space so
+6:57
+imagine you take their i don't know their ip address and their owner and whatever you concatenate all those things
+7:03
+together and you hash them and you get a single 256-bit id out of that now we're going
+7:08
+to talk more about secure hashes a little bit later in the lecture but so every node has an id
+7:14
+and it's going to be in this ring space this unit dimensional space from 0 to 2 to the m minus 1 where m is
+7:22
+going to be big okay and so let me just show you the picture here
+7:28
+so here's an example of the ring uh the ring to rule them all and for the sake of
+7:35
+class i'm only going to talk about m equals six okay so really there's only 64 possible spots on
+7:41
+this ring two to the 64 to the six i mean it gives you 64. in reality m is probably uh 256
+7:50
+okay because we're using sha 256 to do our hashing and so uh let's just say there's a lot
+7:55
+more slots on here than 64. but let's use that for our illustration here and first of all
+8:01
+notice on this ring are a set of servers that are they have their id that's been
+8:08
+acquired by hashing their ip address and their name or whatever so this node here
+8:13
+has an id of four and that means that we think of it as in position four on the ring this one
+8:19
+has an id of eight we think about as position eight this one has an id of 32 we think of it as position 32.
+8:26
+now hopefully what you can see here is these are not evenly distributed in fact probabilistically they're evenly
+8:33
+distributed but they're really a random hash over um over some data that's associated with
+8:41
+the node and so they're they're distributed through the ring but they're not equally distributed
+8:46
+okay and it's going to be important um in fact that we have a good security hash here
+8:52
+a secure hash that can basically pick these positions in a way that's uh hard for
+8:58
+anybody to fake okay um and then once we've put these on the ring now
+9:04
+what we're gonna say is uh take for instance node eight we're gonna say that node eight
+9:09
+stores all hashes uh with keys from five which is just after four to eight
+9:15
+and fifteen is gonna store everything from nine to fifteen and twenty is gonna store everything from sixteen to 20.
+9:22
+so the way to think about this is we put a bunch of storage nodes on this ring
+9:28
+and then we're going to decide where to store our key value pairs based on where the key is on this ring
+9:36
+okay now there's a lot of stuff i haven't told you yet like for instance what does this mean physically well i
+9:42
+haven't told you physically because since these are randomly hashed um these nodes are going to be spread
+9:47
+physically all over the planet potentially the other thing i haven't told you about is how much do each of these nodes need
+9:54
+to know about each other okay now so just to emphasize here so
+10:00
+key 14 value 14 is going to be stored on this server and why is that because
+10:05
+server 15 is the uh closest one that uh whose own hash or own id is
+10:13
+is bigger or equal to the thing we're storing okay now i want to pause uh here
+10:20
+and see if there are any questions and like i said in practice m is really something more like 256 and so uh this ring is really big and um
+10:28
+these nodes are much more sparsely distributed around the ring okay questions we only have a very small
+10:35
+class today so you guys are likely to get your questions answered
+10:44
+anybody okay no questions all right
+10:51
+should we move on
+10:58
+now is a system that was developed uh
+11:04
+with a group of researchers at mit and at berkeley um and you can think of it as a distributed
+11:09
+lookup service uh and it's in my view i like to teach about it because it's the simplest and
+11:15
+cleanest algorithm for distributed storage that i have seen and it's a comparison point for all
+11:21
+sorts of other uh algorithms okay and the important aspect of the design space
+11:28
+for cord is we wanted to decouple correctness from efficiency so we want to figure out
+11:34
+what do we need about that ring and the storage servers on that ring so that this the
+11:39
+algorithm i'm going to describe to you is correct and then we'll talk about how do we make it efficient okay and the thing that's interesting
+11:47
+about chord is we're going to combine that central directory and the storage nodes together and
+11:52
+spread them all amongst all the nodes and so we no longer have a single lookup directory and a set of storage
+11:58
+servers instead we're going to have a set of storage servers that are just going to talk to each other to make this work
+12:04
+and the properties uh are as follows so correctness we'll make sure that each node knows
+12:10
+about neighbors on the ring so it needs to know how to go forward and how to go backwards a predecessor and a successor on the ring
+12:16
+and as long as the ring is connected the ring is going to perform its tasks correctly and then
+12:22
+from a performance standpoint then we're going to start adding some more neighbors and so we're going to start learning about
+12:28
+a logarithmic number of neighbors uh across the ring and that's going to help us get a much
+12:34
+more efficient lookup okay now there are many other structured peer-to-peer look-up services like this
+12:42
+um tapestry is one that i worked on here at berkeley bamboo is another one i worked on
+12:48
+there's pastry that was a microsoft uh product there's cademlia there's a lot of interesting ones
+12:54
+several designs here at berkeley and so this problem of how to look up a key
+12:59
+value pair got a lot of study in the early 2000s okay and let's look about the way to
+13:06
+think about chords lookup mechanism is once again routing so it's going to be we're going to describe this in a
+13:11
+recursive fashion to start with and then of course you can do this uh in an iterative way as well
+13:18
+i think the recursive version is a lot easier to think about so every node in the system is going to know who its
+13:24
+successor node is and so here we have an example where some client talks to node 4 and says
+13:30
+here look up key 37 for me okay and so what's going to happen well we're going to start routing
+13:36
+packets from the point at which we enter until we find the right until we find information about what the right node is
+13:42
+that's going to store 37. and we can figure that out if you look ahead which we can't do if we're a
+13:48
+distributed algorithm because we don't know about all these nodes but we're looking down from above and you
+13:53
+can clearly see that no lookup for a t37 is going to want to get back node 44 because that's what's going
+14:00
+to store key 37. why is that well 37 is going to get stored on the node
+14:05
+that is the closest one clockwise uh on the ring okay and so 37 the
+14:11
+closest one clockwise is 44. so how does this happen well 4 says well i don't know what it is so it routes to
+14:17
+8. it says i don't know what it is that's 15 rounds to 20 32 35 this point 35 knows that it's
+14:25
+uh successor is 44 and so it just responds back and says hey i happen to know that
+14:30
+node 44 is responsible for key 37. and at that point uh node4 can talk back
+14:37
+to the client and the client now knows just to talk to 44. okay now if we wanted to be fully
+14:42
+recursive we could have 35 pass a query on to 44 and have 44 send
+14:48
+the key back that would be another option okay so if you notice here in order to
+14:54
+make this correct so how did we find the first one again that's a great question so the answer is
+14:59
+that any clients that talk to the storage server need to know at least one node in the system
+15:05
+okay so that one node they need to know doesn't matter which one it is in this case
+15:10
+the client which i haven't shown separately out here happened to know about node four and node four serves as a gateway into
+15:16
+the ring all right did that answer that question
+15:22
+now you can see that this doesn't seem very ideal because if i've got a thousand nodes
+15:29
+that are storage nodes i may have to take many hops to find out uh what i want here um it
+15:35
+turns out that the worst case lookup here is order n so that's probably bad but we're going to show you
+15:41
+how to get login in a little bit it's going to be a dynamic performance optimization and so on
+15:48
+that's going to be pretty interesting now what i want you to see though is from a correctness standpoint as long as
+15:54
+every node knows who its predecessor is and successor and in this case just its successor
+15:59
+then we can always find the server we're looking for okay now what does this really mean
+16:07
+okay so here's this ring and here's you know key 14 stored on node 15 let's say what
+16:14
+it really means is something more like this right so these nodes since we
+16:19
+we're doing hashes over their ip addresses and some metadata it means that um they could be anywhere
+16:26
+in the world and then we're connecting them together based on their hash name so fort talks to eight eight talks to 15 and so
+16:33
+on so that um for instance key 14 happens to be stored
+16:39
+here on the east coast node 4 is up in alaska so um based on what you see here that uh what
+16:46
+i just showed you on the previous slide if somebody were to ask node 4
+16:52
+for key 14 we would go from alaska over to the east coast
+16:57
+over to the west coast then we'd get the result okay so really because of the hash being a
+17:04
+randomizing function uh we've scrambled the geography of this ring okay now
+17:12
+that's actually good okay and the reason it's good is because it means that no particular part in the in the world here
+17:19
+might be a hot spot it means unfortunately though that we don't have the most uh local of
+17:26
+look up because if we start at node four it'd be nice if we could just go down to 15 and back okay now this is a really good question
+17:35
+here about redundancy how do we get redundancy out of this for the moment uh suspend that question for
+17:40
+just a second certainly we could put raid servers or
+17:46
+what you know raid storage on each of these nodes and that would be great if the disks fail but uh
+17:52
+we would like something even more powerful because i don't know if there's a big earthquake and california falls off into the ocean it'd
+17:59
+be nice to know that key 14 survived somehow so in addition to the raid redundancy that we've been
+18:05
+talking about in class there's some other sort of redundancy that we want here okay yeah by the way if you've ever seen
+18:12
+the original one of the original um superman movies
+18:18
+basically the the plot is the bad guy buys up a bunch of soon to be beachfront property in nevada
+18:25
+and then has a plan to basically cause uh california to fall into the ocean and therefore have
+18:30
+really expensive properties fortunately superman uh saves the day and it doesn't happen so um okay so if we move um
+18:40
+forward with this by the way i'm showing you these clients now to make this a little more clear the clients need to know one gateway
+18:46
+into the system in order to talk to the system okay so that's going to be part of the
+18:51
+initial lookup and by the way that's pretty similar to what happens with dns you need to know how to talk to local at least one dns
+18:58
+server somewhere before you can start resolving names okay so the first thing i want to talk
+19:05
+about is how can we make sure this this ring stays connected even though nodes are failing and coming back
+19:12
+okay and so how we can make sure it's connected is we're going to have this dynamic stabilization procedure
+19:18
+so every node can run stabilize okay in which it asks its successor its
+19:24
+current successor node who the predecessor was and figures out you know is there something wrong with who's connected to
+19:31
+whom and then if it finds a problem it can run notify to help reconnect the ring okay so let's
+19:39
+uh these are the kind of things that are a lot easier to see with um animations and so let's suppose that we
+19:45
+have this ring and what i want to show you here for instance is here's a new a new node or it's a node that crashes
+19:52
+coming back then suppose that what i want to do is i want to join the ring so what do i do well just
+20:00
+like we've been talking with clients presumably what i know is i know one of the nodes in the system
+20:07
+and if you remember this ring has nothing to do with locality that node could be i don't know 8 or 15
+20:12
+or something okay and so what i need is i need this new node needs to know one gateway node i'm
+20:18
+going to say 15 just for the sake of argument and what are we going to do to join well
+20:24
+we're going to send a join message to the node we happen to know about okay and what's
+20:29
+interesting about this algorithm is all that the ring is going to do is it's going to figure out who is responsible
+20:36
+for storing key 50 as if this was just a regular key value lookup
+20:42
+okay and so we're going to work our way through and eventually 44 is going to say well i know about 58 here you go
+20:48
+58 is where key 50 would be okay and notice what we've done now all
+20:54
+of a sudden uh no the new node 50 knows that it needs 58 to be
+20:59
+its successor and 44 to be its predecessor so just by asking the ring where
+21:06
+key 50 belongs it now has some information about nodes that it can talk to okay and so 50
+21:13
+starts by updating its successor 58 so now it's technically connected somewhat
+21:19
+to node 58 but you know 44 is also connected to 58 so we now have a kind of
+21:24
+a weird partially connected ring okay and let's look through what happened so node 50
+21:30
+is going to run stabilize and so it's going to talk to the successor that it knows
+21:35
+about and ask it well what's who's its predecessor so when it does that what does it get back node 58 says oh your predece
+21:42
+my predecessor is 44. okay and at that point now things are getting
+21:47
+interesting because at that point um we can notify node 58 and say hey you
+21:53
+know what i'm actually a person you should know about for your predecessor and
+22:00
+um we can also uh take this connection at some point 44 is
+22:07
+going to be running its own stabilize stabilize is running continuously 44 is going to ask 58 who it thinks
+22:14
+its predecessor is and it's going to say well i think it's 50. okay and at that point what you know is
+22:20
+oh 44 says something's wrong here so it's going to change its successor to 50
+22:26
+and then finally it's going to notify 50 about itself at which point 50 knows its
+22:32
+predecessor and when all said and done we have the the node 50 has joined now what i want to
+22:39
+point out about this joining operation i went through it pretty quickly but you're welcome to go back to slides and animate it through
+22:45
+is really what happens is we have this continuous stabilized procedure that everybody's running all the time it's at
+22:51
+they're asking their successor who the successor thinks the predecessor is and they just run this over and over
+22:58
+again and what happens is the ring keeps converging into something connected and what i'm that will happen even if
+23:05
+nodes fail and come back up and so on it'll converge to a connected scenario here
+23:11
+okay and um but what you can think about pretty
+23:17
+easily i think is if you lose two nodes in a row then what i've just described to you is no longer going
+23:23
+to work so there is a way to completely break the ring such that the stabilized procedure won't reconnect it
+23:30
+can anybody think about what the right thing to do there is in that scenario
+23:40
+how do we how do we make sure that two failed nodes in a row can't prevent the ring from re
+23:45
+reattaching itself
+23:51
+anybody
+24:02
+thoughts yeah perfect we need to know more than just one successor and one predecessor okay and
+24:09
+so what that's called typically is the leaf set okay so the leaf set is multiple nodes
+24:16
+if you look at any given node multiple nodes forward and backward called the leaf set as long as we maintain that leaf set
+24:23
+then we can reconnect in a way that's going to be stable against all sorts of uh failures okay and one thing i posted
+24:30
+last time i could move it to today i guess if you want for reading but there one of the original chord papers
+24:36
+talks you through about how many of these leaf set nodes you need to make the probability of a
+24:42
+permanently disconnected ring so small that you wouldn't care about it okay
+24:47
+all right good now questions are we good
+24:55
+now one of the things that i will point out is so far we still have this pretty um
+25:03
+expensive lookup process which is order n now we have figured out how to make this stable
+25:08
+so first of all as long as we have a fully connected ring we can always find the storage
+25:14
+uh for this for the data and therefore we have a correct algorithm now
+25:22
+um the question that's uh in the chat there is is a good one which is suppose that we had some key stored on
+25:30
+node 50 and node 50 disconnects then all sudden key you know a key stored on that node or the set of keys
+25:36
+stored on there are suddenly unavailable i'm assuming that's what you're thinking about and uh that's correct so we'll
+25:42
+have to we'll have to fix that problem right now we're just interested in the lookup process of figuring out which
+25:48
+node should hold our data we'll worry about making sure the data doesn't go away in a moment
+25:53
+okay so oh okay um not exactly let's see
+26:02
+oh i see if you have two if you have um somebody you mean to like disconnect
+26:08
+every other one it turns out that that will uh converge pretty well
+26:13
+especially if you have multiple links but try going through the the process and disconnect
+26:21
+one and another one uh and skip one in the middle you'll see that uh pretty much what's going to happen is
+26:28
+uh you can you can eventually send um let me think about that yeah so you you
+26:34
+can you can eventually get this to stabilize and reconnect okay now the multiple the really strong part
+26:40
+about keeping things connected is to have a leaf set with more than one node by the way though okay
+26:49
+now um and what you should do is you should take a look uh take a look at
+26:54
+that paper because they describe this in more detail but um basically what you want is a stabilization procedure
+27:00
+that can work even when nodes uh several nodes in a row are failing and
+27:06
+what you'll see is that that there's a way to do that as long as you have multiple links and what we're going to do right now for performance is going
+27:12
+to make that even harder to destroy the connectivity okay so if you look here the question is
+27:18
+sort of how do we make sure that we have better than order n okay and better than order
+27:23
+n is uh the following what we're going to do is rather than just keeping track of
+27:29
+nodes forward and backward what we're going to do is we're going to keep track of
+27:35
+uh our current position plus uh 1 our current position plus 2 plus 4
+27:41
+plus 8 plus 16 and so on and what i mean by keep track of it is
+27:46
+here at node 80 the question would be what node would store 81 well that would be 96
+27:52
+what node would store 82 well that would also be 96 what node would store 84
+27:57
+that'd be 96 at some point we get to what node would store you know 80 plus 32 so 112 well that would be
+28:05
+112. okay and we're going to keep track of a logarithmic number of these pointers
+28:12
+and of course the way we find out about them is we just query the ring and ask it oh i want to store each of
+28:19
+these keys and what will come back from the ring is which node is responsible the power the powerful thing about this
+28:25
+is once i've got all these nodes now i can do a really fast routing
+28:30
+process to figure out how to find which node is going to store the key i'm interested in
+28:36
+okay and one thing that's very helpful here i think in this context for everybody is to think about this as bit
+28:42
+correction so i am at a certain position and i'm interested in a certain key
+28:47
+and what i'm going to do is i'm going to correct the bits one at a time using this finger table so my first
+28:55
+my first routing hop is going to say well if i'm at 80 and i want to get somewhere over on the ring i'm going to connect i'm going to
+29:01
+correct the bit i've got in this case it would be a 1 in the high point i'm going to turn it to 0
+29:06
+by taking a long hop and then i'll take a less long hop and so on and i end up with a logarithmic number of hops to get
+29:12
+me to my destination and you can view that like i'm correcting the bits from my starting point to my ending point i'm
+29:20
+correcting them one at a time by taking these various hops okay and that's how we end up with
+29:25
+logarithmic routing time and furthermore this forest
+29:30
+of additional pointers plus the extra pointers from the leaf set together
+29:36
+make it really hard to be uh unable to reconnect the ring okay and so if you read that chord paper
+29:43
+it talks about how you make use of all the information you've got to keep the ring connected okay
+29:52
+questions okay we're good now
+30:00
+let's think a little bit more about data okay so um so basically first of all we're
+30:07
+going to have um more than one forward and backward link called the leaf set um and uh in the predecessor reply
+30:15
+message node a can send its k minus one successors and so on and so you can see what's going to
+30:20
+happen is during these heartbeat process of looking things up
+30:27
+you know asking well hey my successor who's your predecessor during that process
+30:32
+the stabilized process we're going to get back multiple nodes which is going to help us get a forest of connection
+30:37
+connectivity forward and backwards and that's going to allow us to keep our leaf set
+30:43
+uh as as correct as possible and i will point out by the way that these
+30:50
+these links are really uh just an approximation of what we need so
+30:56
+if it turns out i try to take a hop that's long and that node is down the one that this happens to connect to
+31:02
+then that's okay it's going to connect to 20. i'll just take the next one okay and so i can always revert to taking the order n uh routing path
+31:10
+until i've got some of these long hops available to me okay and so that that it's a very um
+31:17
+it converges very nicely on a performance version of things but it can always fall back on the
+31:22
+circular routing process if some of these fingers aren't correct and we just keep refreshing them over
+31:28
+and over again and so there is a finger table look uh lookup process that just keeps renewing these pointers over and over
+31:35
+again and the good thing about that is as new nodes come in the finger table adjusts as new nodes
+31:40
+leave or as old nodes leave the finger table adjusts so that we keep ourselves with our log n lookup
+31:46
+all right now um and you end up with really high
+31:53
+probability even if half of the nodes fail so you can if you have log m where m is the
+31:59
+number of nodes of the system you can end up with a situation where you can find data even if half of your nodes
+32:06
+fail you can find data with the right number of leaf nodes and that's kind of what's proved in that chord paper
+32:12
+and that's not that many because it's a logarithmic number okay so uh
+32:19
+before i go on to uh storage fault tolerance for the data does anybody have any questions on this we good
+32:33
+okay so um now let's look back at what we had a
+32:38
+slide before right so we had key 14s stored on node 15.
+32:44
+and the downside of this is of course that um the way i've described this first of all
+32:49
+the only place for node 14 is uh for key 14 to be stored as on node
+32:54
+15. now if you look at the uh consistent hashing what it says is if node 15 weren't there
+33:03
+key 14 would be stored on 20 right that's just the next node up from 14
+33:09
+since the only copy of key 14 it's currently stored on node 15 if 15 dies or goes away
+33:16
+we don't have the data and so so uh it's fine that the consistent hashing tells us where it should be stored but we
+33:22
+can't store it there because we've lost our data so we got to do something else here okay and the way we're going to do that is
+33:29
+we're going to take the forward leaf set or you can do both forward and backwards up
+33:34
+depends on the algorithm and what we're going to do is we're going to store 14 on the successive nodes
+33:43
+that we know about because of the leaf set so we'll store it on 20 and 32 and now what's good about this is if
+33:49
+node 15 fails which is the point that's supposed to store it we've already got a copy on node 20
+33:55
+and node 20 can notice oh 15 went down therefore node 20 can start the process
+34:01
+of making sure that 35 gets a replica and we always have three copies in our leaf set okay so
+34:08
+if we think of the leaf set as not only for keeping the ring connected but also for how we replicate
+34:14
+then we can now come up with a dynamic process that automatically adapts as nodes fail
+34:21
+by replicating on successive nodes and making sure that we always have a given number of copies
+34:29
+in the system in addition to the ring being connected okay so if node 15 fails
+34:36
+now what we'll do is we'll uh we'll add an extra copy to node 35. okay questions
+34:44
+and the ring is going to stay connected because of our connectivity algorithm and so what's good about this is
+34:51
+like i said you store the data in the cord ring and it it's very hard to destroy
+34:58
+okay why are they called leaf sets that's a good question the reason they're called leaf sets is
+35:04
+because uh in some sense you can view the uh if you take any given um starting
+35:09
+node like 58 and you view the set of fingers that's a tree and so eventually you get
+35:16
+to the leaf set and uh and so it's like a tree with leaves so that's where the leaf is coming from
+35:24
+um and here's an example of that uh so if you look at what happens um in with leaf sets so i'm going to
+35:31
+show you here is here for instance is a starting node i've got its leaf set is in green
+35:36
+the the finger tables are in red and suppose that i'm trying to get from here over to here
+35:43
+okay and so what i'm going to do is i'm going to start bit correcting
+35:49
+so i might take a long hop first and now i can check all of the all of the fingers okay or i
+35:58
+guess you could call them branches if we don't want to mix metaphors too much and the leaves and none of those quite have what i want so i'll follow
+36:04
+one of these branches it's a little shorter and then eventually i'll get to a node that's this one
+36:09
+where that node knows because of the leaf set which node is the one i'm looking for
+36:16
+which is going to be the one that's just bigger counterclockwise or excuse me clockwise from the id i'm looking at
+36:22
+okay and so this leaf set not only serves to help us with our replication but it also serves
+36:28
+as uh as part of the last couple of hops we can use the leaf set to basically
+36:34
+find who's supposed to have our data all right um
+36:43
+now so let's look at replication from a physical standpoint right so if you look
+36:49
+again at this ring i showed you a little while ago that ring is mapped physically to things that are spread
+36:57
+widely and now we can see another big advantage of the randomness introduced in chord and that
+37:03
+advantage is that these copies are actually stored in geographically separate places and so when the big one
+37:10
+happens in california it's not likely to take out you know uh
+37:15
+things over here in minnesota okay and so we um the randomness is helping us to avoid
+37:22
+correlated failures where yeah we have a bunch of copies but they're all in the same machine room and the building got
+37:27
+struck by lightning so that doesn't happen in a chord algorithm it's sort of geographically distributed by
+37:32
+nature okay the downside of course is performance uh
+37:39
+might hurt if you happen to be too far away from a copy um and so i will tell you that there are
+37:46
+subsequent versions of cord which uh when you're doing this routing and you have a lot of options here see
+37:52
+how we have many places we could go we can actually uh take places that
+37:58
+advance us the furthest along the ring while keeping locality as short as possible and so we
+38:03
+can actually take locality into effect to some extent in chord and um and make our routing
+38:09
+less like bouncing back and forth across the planet randomly and more like working our way uh
+38:15
+physically toward the thing that we're interested in all right good last but not least
+38:23
+um and and i didn't have slides for this but i want to point this out one of the things we can do with chord
+38:28
+is we can use chord to store locations of data
+38:33
+rather than the data and so think of this like a dns built out of cord and so what the client does is the
+38:38
+client doesn't know where the data they're interested in is they ask the cord ring the cord ring tells them who to talk to
+38:44
+and then they can talk directly to them and exchange data over the shortest path
+38:50
+possible using tcpip or whatever and so you can now get the best
+38:55
+uh of both worlds and that you have very hard to destroy lookup process and then you can choose
+39:01
+here's the client and it's using some data you can choose to replicate uh that data on close to the client and
+39:09
+maybe a couple other places close to the client even though the initial lookup might be geographically separate once you start
+39:15
+using the data and know where it is you can have good locality out of it and that's pretty much what we did with the the tapestry
+39:22
+lookup process back for ocean store okay so i did want to point out that
+39:28
+what i've just described to you this chord ring is actually used in lots of uh
+39:34
+cloud services these days the idea at least so for instance dynamodb and i have a paper for that up on the reading
+39:40
+from last time uses the chord rings and you can look down here but it uses them rather than spreading
+39:47
+them around the planet it uses them within their machine rooms as a way to distribute load
+39:52
+uh and so when you're ordering things from amazon and you're ordering you know you're
+39:58
+putting things in your cart all of that data is actually stored in something like cord that's in a machine room
+40:04
+okay and the applications uh because they're worried about people and uh not um pissing them off
+40:11
+when they want them to buy things uh what the cord ring is really about is
+40:16
+making sure that they can get their performance uh for retrieving something within a small number of nines
+40:22
+okay and so the availability is an important aspect here and so um basically you have a service
+40:29
+guarantee that says we'll get a response within 300 milliseconds uh for say 99.9
+40:35
+percent of the requests okay and so that's part of the way that the chord algorithms are adapted
+40:41
+in uh in a read real cloud service okay all right and um notice that this is
+40:48
+very uh in contrast essentially to what we've been talking about a lot of the rest of the term
+40:54
+uh which is focusing on mean response time instead we want to have guaranteed performance okay and
+41:00
+this is again thinking i want you to think back to when we were talking about
+41:05
+we were talking about real time scheduling and what was important there was keeping the uh predictability of the
+41:12
+scheduling time uh low or keeping the predictability
+41:18
+high and keeping the timing tight rather than worrying about making it as fast as possible
+41:23
+so s3 is actually using something slightly different but there's lots of different schemes out
+41:30
+there what's good about the various things that are using chord like uh chord like algorithms is this is
+41:37
+scalable as you can imagine if you don't have enough performance you can just start adding more nodes and it adapts
+41:43
+automatically which is pretty good okay
+41:49
+so what i wanted to do next uh i'm going to leave that there a little bit i want to talk a little bit about security
+41:55
+and then um talk through a couple of things and then i want to uh try to get to quantum computing as well
+42:01
+so we can i know there was some of you asked some questions about that so i'm going to leave this topic unless there's more questions
+42:09
+okay so i'm going to talk through a couple of things that i'm pretty sure i'm assuming everybody kind of knows but
+42:14
+i want to make sure we all have the same terminology so um you know security is an
+42:20
+interesting thing it's basically computing in the presence of an adversary so i'm assuming several of you have all
+42:26
+taken 161. um i don't know if that's true or not we have a very small class tonight
+42:31
+but um you can start worrying about things like um can that adversary uh
+42:38
+prevent me from making forward progress or can failure prevent me from reliability
+42:44
+robustness fault tolerance etc security is kind of dealing with actions
+42:51
+of a knowledgeable attacker who's really trying to cause harm and we
+42:56
+want to make sure that uh they can't really screw us up okay and we talked about byzantine agreement
+43:02
+uh a couple of weeks ago that's one example of trying to prevent a decision-making process from working
+43:08
+but in general security is kind of dealing with situations where there's an
+43:13
+adversary uh there's a security problem okay and there's been many problems okay where people have broken
+43:20
+in to systems and um you know it's a it's a constant arms race uh preventing
+43:27
+people from breaking into things you care about by using new techniques and the distinction between protection
+43:34
+and security i think is an important one because protection is the set of mechanisms that we talk
+43:40
+about in this class security is basically using those mechanisms to prevent misuse of resources
+43:46
+so for instance virtual memory is a mechanism that can be used for
+43:51
+protection security policy would be making sure that when we use virtual memory we don't let
+43:57
+malicious processes or different processes owned by different people uh use the same memory and have a
+44:03
+potential for screwing each other up so that would be a security policy built with our protection mechanisms okay
+44:11
+so i wanted to point out something interesting i don't know if you've ever seen this before but here is a car in the ditch and what's
+44:18
+interesting about this particular car in the ditch is that back in july of 2015 there's a team of researchers that took
+44:24
+complete control of a cheap suv remotely exploited a firmware attack
+44:30
+over the sprint cellular network and they basically caused the car to speed
+44:35
+up and slow down and and veer off the road and uh totally wirelessly so this is a little scary
+44:42
+uh to think about now fortunately no humans were harmed and the people that whose car was driven off the road were
+44:48
+researchers as well but um you know this is something that one might hope
+44:54
+our security policies could prevent and the thing that is getting in the way of preventing things like this
+44:59
+is that there's an increasing amount of machine to machine communication where it's really machines are talking
+45:05
+to other machines controlling each other and making sure that a malicious person
+45:10
+can't get in the middle of that and cause unexpected behavior is very tricky and there's this term
+45:17
+cyber physical systems which i don't know if how many of you have heard of that but the idea is
+45:23
+computers controlling physical things using policies and algorithms and
+45:31
+the problem is that if somebody manages to get in and mess with those cyber physical systems uh they can cause physical harm okay and
+45:38
+that's a problem so part of this question is the following so let's talk
+45:45
+about the data so there was firmware in this car so one might argue that one of the problems was that firmware was accepted
+45:51
+as uh authentic even though it came from a malicious third party and so one of
+45:58
+the questions that's important is do you know where your data came from that's a provenance question another is do you know whether it's been
+46:04
+ordered or changed or altered in any way that's an integrity question
+46:10
+and really this is a question of the rise of fake data which is kind of much worse than fake news which is about
+46:16
+corrupting the data and making the system behave very badly so
+46:21
+you know we have several security requirements that people talk about so authentication
+46:27
+is making sure that a user who's making changes to the system is really who they claim to be
+46:33
+data integrity is making sure that the data hasn't changed okay so that's important confidentiality
+46:40
+is making sure that the data is read only by authorized users so that often
+46:46
+involves encryption of some sort and then non-repudiation is a surprisingly important thing that people
+46:51
+don't often talk about which is that if one sender
+46:56
+makes a statement and they uh send a message or whatever they can't later claim that well i didn't really send out
+47:03
+somebody malicious did and so that's basically making sure that you can't repudiate things that you've previously said
+47:09
+and so i'm hoping that if you haven't taken 161 it's on your list because there's a very interesting set of things
+47:14
+that people can talk about but cryptography is one of the central points of many of these mechanisms you
+47:21
+just have to use it correctly and this is communication that's in the presence of adversaries
+47:27
+uh it's been studied for thousands of years there's actually uh something called the code book which you
+47:32
+should look up which talks about you know thousands of years of cryptography and the central goal
+47:38
+has always been confidentiality about encoding information so an adversary can't extract it
+47:44
+the general premise is that there you know there's a key and if you have the key you can decode
+47:49
+things if you don't have the key it's impossible what's gotten more interesting over the years of course is public key
+47:55
+cryptography where there's really two associated keys and you encode with one and decode with
+48:00
+the other and that really leads to all sorts of really interesting authentication problems
+48:06
+okay so basic uh cryptography which you've probably heard about is you
+48:11
+have a secret key and you take the plain text and you encrypt it with the secret key and you
+48:16
+send over the internet something called ciphertext which is encrypted and you can decrypt it the other side
+48:21
+and um assuming that uh the key hasn't been leaked
+48:27
+then it's not possible for an adversary and and you have a good algorithm like aes it's not possible for an adversary to
+48:33
+send a message that the receiver will treat as real
+48:38
+because you have to have the secret key now one thing you do need to do in order to make this single
+48:44
+symmetric key encryption work which symmetric because the same secrets used at both sides is to prevent a adversary from holding
+48:51
+on to an old message and sending it later is you have to start adding what are called nonces which are things
+48:57
+like timestamps and so on so that every time you send this it's unique and if somebody sends an old version you can detect it
+49:03
+but i'm assuming everybody understands the idea of encryption with uh with a symmetric key
+49:11
+and the other thing is i mentioned hashes earlier and so the idea of a secure hash function
+49:17
+is one where you take data and you run it through a hash function and you get a bunch of bits out of it
+49:22
+and if you change the data even slightly you end up with a good hash function with something
+49:28
+that essentially roughly half of the bits change so um this you know the change from fox to the
+49:34
+red fox runs across the ice will give you something very different if you take fox and you add a few
+49:41
+uh things after it it'll also change it uh drastically okay and so the hash we often talk about
+49:48
+is the hash of a message is a set of bits say 256 bits
+49:53
+and this is a good example of what we used on the chord ring where that ring was two to the m possibilities well that
+50:00
+might be a uh the result of a hash function like sha-256 okay and what makes this secure
+50:08
+is that it's not possible for somebody to come up with another source that matches the hash function okay
+50:14
+that's one uh example of something that's not possible in fact it's not even easy
+50:20
+with a good secure hash function to come up with two different items that you come up with
+50:26
+yourself that have the same hash function okay and so that's why we can kind of use hashes as a proxy for the data
+50:32
+itself and a lot of the things you hear about in in secure security literature using
+50:39
+cryptography assume that the hash function is a is a reasonable proxy for the data itself
+50:46
+okay so sha 256 is a good example so here we can for instance if we
+50:52
+share a key okay what we can do is we can and that key is secret
+50:57
+we can take a plain text something like a contract and we can run it through a hash function where we take that key and
+51:04
+an append m and that's called a digest now we can send that across and the data and at the other side we
+51:11
+can verify by re uh computing that hmac okay and if they match the one that was
+51:19
+sent across versus the one that you computed yourself then you can know that the message is not corrupted
+51:25
+otherwise it's corrupted and so we can use hashes to prove later that you know after the
+51:32
+transmission has happened that the data is authentic okay so hashing is pretty powerful and i'm not going to have a lot of time
+51:38
+to go through this with you that's a 161 topic but just you know keep that in your lexicon about
+51:44
+hashing being a good way to ensure the integrity of data at the other side
+51:49
+and so for instance in that firmware problem with the car we could have a key that only came from
+51:56
+the manufacturer in a secret way and we could check the integrity of that firmware against the
+52:03
+manufacturer and if it wasn't uh you know if the integrity wasn't high
+52:09
+you know it was basically didn't match then we could know that that firmware is probably bogus and we shouldn't be using
+52:14
+it okay now the downside of course of everything we've talked about is
+52:19
+both sides share the same key and so if you leak the key then you got problems okay and
+52:24
+furthermore you have to somehow share the key and so that requires you to go in a dark alley and you know
+52:30
+hand the key over and so this seems like only part of the solution and um the interesting thing about that
+52:38
+is this idea of public private key pairs and public key encryption which
+52:44
+again the cool thing about that is that now you can distribute the public key
+52:51
+let's suppose that somebody over here wants to have anybody send them a secure message
+52:56
+they generate a public private key pair they give the public key to somebody else they pro they can broadcast it uh you
+53:03
+know to the world and uh then anybody who wants to send a message just encrypts it with the public
+53:09
+key and the only way to decrypt it's private key and that private key is something that i hold uh secret but the public key i
+53:16
+broadcast and so this is basically uh this is the the basis for all sorts of
+53:23
+modern algorithms okay among other things if i were to encrypt
+53:28
+uh the hash over data and then uh encrypt it with a public key then i can
+53:34
+know for a fact that that data has made it through um and only could have come from
+53:40
+somebody okay so that's part of uh how we actually sign things all right so for instance here's
+53:48
+alice and bob let me show you a fun algorithm here bob sends his public key out in to the wild to alice
+53:55
+um now alice can encrypt messages and send to bob and only bob can decrypt him alice can
+54:01
+send her public key and now bob can send things to her and what we're done with is now we've got a secure channel between the two of
+54:08
+them given public information all right and now this is another mechanism we can build
+54:14
+all sorts of stuff about okay now the uh the question about
+54:20
+how to know whether this is a valid public key requires public key infrastructure but that's another story so now i'm i'm
+54:27
+going i went through this very quickly how many people have never seen anybody uh never seen this
+54:32
+kind of thing before or is this all pretty familiar
+54:39
+okay good oh great this is in cs70 great so let's talk about
+54:45
+a project that i've been working on so again you could view security as trying to
+54:52
+protect things with a firewall or you could view security as it's all about
+54:57
+the data and if you can protect the data then you can protect everything okay and so
+55:03
+if you think about the internet of things really uh one way to look at the internet of things is
+55:08
+that we have a whole bunch of devices and compute elements all over the world and it's really a graph of services that
+55:15
+we want to connect and so distributed storage is everywhere every arrow represents communication
+55:22
+we've got storage everywhere and really what we want to do is we want to make sure that the data can only be
+55:28
+written by authorized parties and only read by authorized parties okay and these secure enclaves um are a
+55:34
+topic for another day as well but this is a special um virtual machine that's in
+55:40
+modern hardware that basically allows you to set up a secure channel and do some
+55:46
+secure encryption in a way that um not even a um
+55:52
+not even the local operating system can see the data okay and so if we have these secure enclaves stored
+55:58
+everywhere and secure encrypted data then perhaps we can do some interesting things okay and we can do them securely and so
+56:05
+um let me see i'm running low on time here i wanted to say something a little bit
+56:12
+interesting here about why data breaches which we've heard a lot about in the last four years
+56:17
+are so prevalent okay and if you look the problem is that people who are
+56:23
+trying to build secure systems kind of think of it this way they say well i've got a secure network on the left
+56:30
+i've got a secure cloud in the middle i got a secure network on the right and they're so secure that the only thing i
+56:36
+have to worry about is securing the communication between these uh parties and if i do
+56:42
+that then the system's secure okay and so this is what i like to call as border
+56:47
+security rather than data security and so if you think well i'm going to put some firewalls and now i can say
+56:53
+look this is a trusted computing base that's secure this is one as well there's one around the cloud and then
+57:00
+you know the only thing left is cell phones which i make secure tunnels with and this just is fine um the problem with this point
+57:08
+of view which you've probably heard about everywhere is the moment that we have any breaches
+57:14
+inside the trusted computing base then all of a sudden not only is the data breached but
+57:22
+somebody who is inside that firewall can produce data that looks authentic uh even though it's
+57:29
+not because people are trusting well if it came through the firewall properly then it must be authentic and
+57:35
+if you think back to cyber security you know um if you think back to what we've been talking about with that car suddenly
+57:41
+that might be that you could have firmware that looks like it's from the manufacturer even though it's
+57:46
+from an adversary and now we suddenly have this issue that physical devices
+57:51
+that are trusting on this security suddenly start performing things they're not supposed to
+57:56
+okay so the real reason we get these data breaches everywhere is because people think that they can put these
+58:02
+boundaries up in a way that don't um can't be breached and of course we
+58:07
+know that's not true and basically uh the problem really is not only are things breached
+58:12
+but the integrity and the provenance of that data is not known
+58:18
+so what do we do the data centric vision which is one that um i've adopted
+58:23
+in uh my research group is one in which we think about shipping containers full of data so if
+58:29
+you think about uh down the port of oakland you've probably all seen these shipping containers um this was a a great invention back in
+58:37
+1956 so before 1956 what happened was we had uh
+58:43
+longshoremen who would take a bunch of things and they would go to a ship and they'd play tetris with it to try to fit
+58:48
+all of these things onto the ship and then the ship would go to its destination and then there'd be
+58:54
+people there that would unpack them and then you'd have to figure out how to put them on trucks and so on and it was a mess and basically one
+59:02
+person that said well why don't we just make things that are all the same size and shape
+59:07
+and then all of a sudden we've got ships trains cranes all of the the uh infrastructure for
+59:15
+handling these things are the same across the planet and now i can ship something from my house in lafayette
+59:21
+to beijing the outskirts of beijing just by calling the right trucks to come
+59:28
+pick up a shipping container which gets taken to the port of oakland put on a ship and then it goes across the ocean and it's unloaded
+59:34
+and and so on and why is that that standardization of the container
+59:40
+so the idea that we've done in our group is to say can we use
+59:45
+this idea to help in some way and the idea is very simply that we think of shipping containers
+59:52
+full of data which we call data capsules and the reason i've got this little green bound around here is because it's a it's
+59:58
+a data capsule and inside the data capsule is a bunch of transactions
+1:00:04
+that are hashed so remember those hashes we talked about and signed where we uh we use a private key to sign
+1:00:11
+a hash over something and as a result we trust that this really came from the person who said it did because only they
+1:00:17
+could have the private key and as a result of these data capsules this gives us
+1:00:22
+a cryptographically secure way of moving data around to the edge to the cloud and
+1:00:29
+back again in a way that nobody can fake out okay another way to look at this is this is
+1:00:35
+like almost a blockchain in a box okay and so what we're doing in our
+1:00:40
+group is we're looking at how to take these data capsules make
+1:00:45
+them a standard in a way that everybody uses them and on top of them you can build file systems
+1:00:51
+and databases and everything you're used to but underneath the network knows how to ship these things around
+1:00:57
+and route queries to them and so think of this again the underlying network is like the ships
+1:01:04
+and trains and cranes and planes that handle this standardized metadata and what is the standardized metadata
+1:01:10
+well it's a hash over an owner key and some other
+1:01:15
+metadata about who created this and that forms a unique address that you can route to in our system unlike
+1:01:22
+um not unlike an ip address but it's a unique hash over the data
+1:01:29
+and you can imagine these things being small so they could be on phones or really large so they could be you know terabyte size databases
+1:01:36
+but that standardized metadata is really what allows them to uh be shared uh securely across
+1:01:43
+the planet pretty much okay so why is this idea help the networking effect okay i'm actually pun
+1:01:50
+intended here so standardization makes it possible for the infrastructure to be put everywhere and it benefits
+1:01:56
+everyone federation you can actually build a market of service providers
+1:02:02
+the data becomes a first-class entity so your data basically can float pretty much anywhere so you could put a
+1:02:08
+data a data capsule server in your house and all of a sudden your local data capsules could be stored there
+1:02:14
+or if you're doing some communication with somebody else you could get a copy
+1:02:19
+of their data capsules and again because it's like a blockchain in a box it's not possible for somebody to fake
+1:02:25
+data that doesn't belong in there okay and so think back to that firmware issue with the car in the ditch
+1:02:31
+okay and the other thing is that metadata we're looking at actually has details about what the network should
+1:02:37
+and should not enforce and so you can even start talking about privacy where if you had a bunch of cameras in a
+1:02:43
+local edge domain and they were taking a bunch of data and putting them in data capsules you could make sure that the network
+1:02:49
+would refuse to route those say outside of the house or outside of your building if that was disallowed
+1:02:57
+all right so the vision here is really the following it's you have a
+1:03:04
+bunch of resources underneath these are spread in the cloud and through endpoint places all over the network
+1:03:10
+you've got data capsules that have the ability to float anywhere they're allowed
+1:03:15
+and that's what we call the global data plane okay so the global data plane is something that
+1:03:21
+is uh spans the globe just like if you remember just like the cord ring spanned the globe
+1:03:28
+okay it's again it's a peer-to-peer system uh just like ip as well that does
+1:03:34
+routing and multicast it has things we call trust domains and accounting below you can have many utility
+1:03:40
+providers kind of like comcast or at t that all provide service and above there's an api that
+1:03:47
+allows all of these apps to access their data in the data capsules okay and so this is like me and
+1:03:53
+my house calling a truck to pick up a shipping container okay and so this vision
+1:03:59
+if this uh is ultimately complete is one where you instead of paying for
+1:04:04
+ip service you'd pay for data capsule service and um you'd be able to store your data
+1:04:10
+in a way that was secure okay and could be used anywhere you want
+1:04:16
+and you'd own your data okay so physical view just one last little
+1:04:21
+slide here and then i'll move on to to the uh quantum computing so i want to make sure we cover that
+1:04:27
+but if you think about ip the way we talked about it briefly in a
+1:04:34
+couple of weeks prior if you look at the physical view of ip there's a bunch
+1:04:40
+of routing clouds and there's also transit providers okay and so this is exactly how we get
+1:04:46
+ip working and so in the global data plane we do the same thing where we have global
+1:04:51
+data plane domains we have routers that route global data plane
+1:04:56
+traffic and they're tied together just like we get with tcp ip
+1:05:03
+okay there are peering arrangements just like with ip and as a result and we have name resolvers that help us find
+1:05:09
+our data capsules and as a result we could actually have uh forgive me building all this up but
+1:05:16
+we can actually have clients which might be compute they might be little robots they might be
+1:05:22
+smart cars or teslas can all tie into the global data plane and access data
+1:05:27
+that they're authorized to do uh anywhere it happens to be and if they need high performance or privacy they
+1:05:33
+can pull it to their local domain and so the physical view of the gdp is really um
+1:05:38
+instead of thinking about packets you're now thinking about data and its integrity and its provenance
+1:05:44
+okay so it's a it's a switch in viewpoint on how we want to be dealing with data all right
+1:05:50
+sorry if that's a lot of information but i wanted to see if there's any questions there before i switch over to
+1:05:56
+some quantum computing
+1:06:09
+all righty give me a second i'll be right back and then we'll see if there are any questions that came up one moment
+1:06:16
+okay so
+1:06:22
+good so we have some good questions here so first question is how do we know the data is secured so um
+1:06:28
+just like with a blockchain let me just back up to the picture here which i think is a is a good one to be talking
+1:06:33
+about um what we know is the following the metadata
+1:06:38
+is uh among other things the public key of an owner hashed okay and so all of these
+1:06:45
+signatures have to be signed by the owner and anybody can verify that um
+1:06:52
+the data that's in here was put in there by the right owner okay so that gives us integrity and providence
+1:06:58
+it means that we can know that none of the data that's in here could have been put there by an adversary
+1:07:04
+so that's the first um thing that we know and the second thing is of course we can
+1:07:09
+put arbitrary encryption on top of this as well to make it uh private so really the
+1:07:15
+signatures are about integrity and who put the data there and uh the encryption would be about
+1:07:22
+privacy and there are many ways of uh deciding kind of which keys to use for that encryption and how to share them with
+1:07:28
+people you want to decrypt okay and so that's the that's the um the
+1:07:33
+security of this and uh what you know is when you get some data
+1:07:39
+from the network you can immediately verify that that data is uh what it's supposed to be so you can
+1:07:45
+you can check that the signatures are correct and if you have a signature
+1:07:50
+only at the end of a chain of data you can essentially check the rest of the chain by checking the hash pointers
+1:07:55
+so these are all of the things you get out of a blockchain by the way for those of you that are familiar with bitcoin or whatever
+1:08:00
+you get it here with the data capsules and so i like to call these cryptographically uh hardened bundles of data and if
+1:08:07
+somebody tries to put garbage in there a legitimate person who's trying to look
+1:08:12
+at this can just throw the garbage out because there's no way that that garbage could have been put in there uh in a way that meets the integrity
+1:08:19
+constraints of the data okay and so it's not forgeable um it's
+1:08:24
+uh it maintains its integrity the the transactions can't be swapped or whatever and so it's a
+1:08:30
+it's a unique umly uh high integrity kind of bundle of data
+1:08:37
+and if you build file systems and what have you on top of this really what you're doing is you're appending data to that and
+1:08:44
+it becomes a secure log on which you can build pretty much databases you can build file systems all sorts of stuff
+1:08:50
+okay so this linked structure within the data capsule is really um is just think of this like
+1:08:57
+git you guys are all familiar with git now so this is like a get tree uh with signatures and uh integrity
+1:09:04
+through hashes okay and the signatures can't be faked again because only the proper owner knows the private key
+1:09:11
+to produce the signatures okay and so if you breach the private key of course that's a problem but potentially every data capsule could
+1:09:18
+have a unique private key which leads to an interesting key management issue but
+1:09:23
+that could be another topic okay did i answer those questions
+1:09:32
+so the vision here really is of pretty much everybody using data capsules everywhere okay and um
+1:09:39
+if you can get that to happen then uh you know basically you potentially have
+1:09:47
+um a very interesting scenario here now i just wanted to share uh another uh point here really quickly
+1:09:55
+so for instance the way we're looking at our routing plane is really um the data plane itself is a
+1:10:01
+is a series of routers that all know kind of where the data capsules are and have some very interesting properties where
+1:10:07
+if any of you want to come work on this project come talk to me uh separately we have plenty of
+1:10:12
+uh places we can talk to you okay now i'm gonna i wanna i promised you some um
+1:10:19
+i promised you some quantum computing i did wanna show you one other interesting slide here potentially
+1:10:25
+uh which shows you kind of an idea of how we can build things up um
+1:10:32
+here so uh the data capsule infrastructure is it spans the globe kind of just like
+1:10:39
+tcpip does and so in that scenario what you get is you get
+1:10:45
+potentially these gdp switches which are just overlay network on top of ip
+1:10:51
+you can have location services and storage services for storing data capsules
+1:10:56
+you can have secure enclaves which lets you do secure computation and then you can have lots of uh
+1:11:03
+interesting clients and part of what we're doing is we're working with roboticists and machine learning folks
+1:11:09
+to put their data and their models for grasping and so on inside of data capsules and as a result
+1:11:15
+they can reside securely in uh in the edge in say your robots or whatever
+1:11:20
+in a way that can't be uh breached okay and so this is uh really targeted
+1:11:26
+at uh secure edge infrastructure in addition to the cloud so these data
+1:11:31
+capsules can move back and forth but certainly you need something like this on the edge because these pieces of hardware are
+1:11:37
+easily breached and you want to make sure your data is is uh secured and unforgeable
+1:11:43
+all right good so let me say a little bit about using
+1:11:50
+quantum mechanics to compute and since there's only a few of you tonight if you're uh
+1:11:55
+willing to hear me out i can talk for a little bit longer just to get through a couple of other things on
+1:12:00
+quantum computing um but uh you know what does it mean to use
+1:12:05
+quantum mechanics to compute so it's basically using weird but kind of useful properties of quantum
+1:12:12
+mechanics two of them quantization and superposition i don't know how many of you have taken
+1:12:17
+a quantum mechanics class but uh what you find out is for instance
+1:12:23
+back in chemistry if you remember from chemistry you had the orbitals right and so only electrons were only allowed
+1:12:30
+in certain rings or spheres actually around atoms and that was because of quantum
+1:12:35
+mechanics that's quantization that says that the uh the electron could either be you know
+1:12:41
+at one point the s equals zero or the s equal one or s equal two but nowhere in between
+1:12:46
+and that quantization really gives us the ability to talk about something like a one or a zero so
+1:12:52
+we've got the idea of digital data varied in that quantization but
+1:12:57
+because it's quantum mechanics we can do the second thing which is superposition and this is having uh a bit which is
+1:13:05
+both a zero and a one in certain fraction of uh between the two
+1:13:10
+and that's where things get interesting okay it's like it's fifty percent zero fifty percent one or
+1:13:16
+something in between that's called superposition and um what's interesting to me so i've you
+1:13:23
+know designed computers in various times in my life is that most digital abstractions that you might
+1:13:29
+learn about in 151 or pick your 141 some of those uh
+1:13:34
+various vlsi classes is you're spend a lot of time trying to get
+1:13:39
+rid of the quantum effects you want a zero to be a zero and you want a one to be a one and you want them to stay that way
+1:13:45
+and it's when they don't stay that way that you got problems so then you put error correction codes and all that stuff that we talked about
+1:13:51
+uh last week and the week before quantum mechanics however if you're willing to allow
+1:13:58
+things to not be always a one or always a zero what you can do is you can just start doing quantum computing and that's
+1:14:04
+basically using quantization and superposition to compute okay and so some interesting results just to tell
+1:14:10
+you uh quickly here is for instance shore's factoring algorithm factors uh large numbers in polynomial
+1:14:18
+time even though the best uh known classical ones are sub-exponential um in the number of bits and so you know
+1:14:26
+if you could get a shores algorithm running on a quantum computer pretty much all rsa
+1:14:32
+cryptography would be broken because you could factor okay so other
+1:14:39
+interesting results here are for instance grover's algorithm um is is not as spectacular but it's
+1:14:47
+still pretty interesting so imagine you've got an unsorted database of millions of elements okay so what is
+1:14:54
+unsorted means if it's not sorted right so if you wanted to find a value uh
+1:15:00
+what you know on average how many elements would you have to look through in a million items before you found the
+1:15:06
+one you want well on average you'd have to look at half of them and however grover's algorithm using a
+1:15:12
+quantum computer lets you find items in an unsorted database in a time that's a square root in n rather than half of n
+1:15:20
+okay that's pretty interesting right um the other uh
+1:15:26
+so uh 191 is mentioned in the chat that's a good class to take if you're interested in quantum computing
+1:15:32
+um another one that's my favorite i think best application of quantum computing is what i like to call
+1:15:37
+material simulation this was kind of the original uh
+1:15:42
+the original application of quantum computing that was uh thought of and basically the idea there
+1:15:48
+is if i want to design a brand new element or brand new material to build things out of
+1:15:55
+and i want to take into effect all the quantum mechanic effects then exponentially i or classically i'd
+1:16:02
+have to build something that was exponentially hard but it'd be linear time in uh in a
+1:16:07
+quantum computer and so if i'm really interested in designing exotic new materials to build interesting things i probably want
+1:16:14
+a quantum computer so there are many other algorithms out there now these days they've been
+1:16:20
+slowly working on them but these are some pretty good ones that give you an idea why this might be interesting
+1:16:26
+okay and furthermore we've got google we've got ibm it's very popular these days with big
+1:16:33
+companies uh microsoft is in here as well looking at building these quantum machines both of these two both
+1:16:41
+google and ibm are super conducting bits so these parts of the machine you see here are normally
+1:16:46
+put into a doer and they're running you know at four degrees kelvin or something really
+1:16:51
+cold this particular type of quantum computing technology is not going to be
+1:16:57
+in your laptop at least not in any laptop i'd want to put on my lap but there are other types of
+1:17:04
+technologies including ion traps that potentially are pretty interesting
+1:17:09
+that there have been some thoughts over the years might be able to run at something closer to
+1:17:15
+room temperature not there yet the current goal of google and ibm and and there's been
+1:17:21
+some notion that maybe they've shown this is to do something which they call quantum supremacy
+1:17:27
+which is basically to prove that there really is uh a possibility that quantum computers
+1:17:33
+could be faster than classical ones and so the the issue here is that um
+1:17:39
+these computers by being built by google and ibm have you know maybe have order 100 bits
+1:17:45
+maximum it's very hard to do anything interesting with 100 bits but they're focusing on demonstrations
+1:17:53
+that show that with those 100 bits they could potentially do something a lot better than a classical machine
+1:17:59
+so that's called quantum supremacy so what i wanted to do just to give you
+1:18:06
+a little flavor for quantum computing that you can go away with here is
+1:18:11
+here's a here's a version of quantization that's particularly simple to get once you got it
+1:18:16
+and that is there are certain particles so protons and electrons and neutrons those are good examples
+1:18:22
+that are what are called spin one-half particles and physicists treat these things like
+1:18:28
+they're spinning like a top okay except um what's interesting about that
+1:18:33
+is that they can only spin with the axis pointing up or down nowhere in between okay that's the
+1:18:39
+quantization thing and what i'm showing is this is the spin relative to a magnetic
+1:18:45
+uh pole north and south and what's interesting about that spin upper
+1:18:50
+has been done down is that now i've got zero and one okay so suddenly i've got binary that's
+1:18:56
+interesting right and so these are particles like protons or electrons have this intrinsic spin
+1:19:04
+and so now i got one and zero or up and down okay and a representation called the
+1:19:11
+heisenberg representation looks at this uh messy physical
+1:19:16
+situation like this which is either a zero or a one in these brackets
+1:19:22
+and that represents spin up and spin down okay or vice versa depending on how you
+1:19:28
+want to whether what it's looking like if you're with the field then that's a lower
+1:19:33
+energy so that's probably spin zero it's probably zero now one proposal for building quantum
+1:19:39
+computers from way back when was called the cane proposal and those spins were actually what you
+1:19:45
+got when you um embedded phosphorus impurity atoms into silicon
+1:19:50
+and then those phosphorus impurities would have a spin up or spin down that could be treated as one and zero
+1:19:56
+and then you could actually use these electrons to manipulate okay and that was
+1:20:03
+one of several sort of uh what i like to think of as scalable solutions built on top of
+1:20:10
+silicon which are you know exciting because maybe you could get moore's law out of them and this is an example of
+1:20:16
+something people were looking at okay but the temperature here was less than one kelvin which is really cool
+1:20:22
+okay but let's suppose now here's where the quantum computiness gets
+1:20:27
+pretty tricky okay and and uh bear with me just a little bit i know i'm going a tiny bit over here but
+1:20:33
+um if you think of the zero and the one thing okay this is actually
+1:20:38
+a wave function if you take quantum mechanics representing spin up and spin down
+1:20:44
+and what's interesting is the wave function in quantum mechanics is actually a complex
+1:20:50
+uh function um that i can add together c zero plus c one as a complex
+1:20:56
+coefficient and all i need to make sure is that the um c zero uh squared plus c one squared is
+1:21:04
+equal to one so what happens is these actually end up being probabilities that if i actually tried to look i would see
+1:21:11
+a zero or if i actually tried to look i'd see a one and so what you see here okay with this
+1:21:16
+psi function is actually a superposition of zeroness and oneness together okay
+1:21:22
+now you know i realize this looks a little weird we don't normally get a wave function notation in 162.
+1:21:30
+but um the thing that's uh like i said is very interesting about
+1:21:36
+this is that this is a description of a combination
+1:21:42
+of zeroness and oneness where the probabilities can be adjusted anywhere any way you want such that they
+1:21:48
+their squares their norm squared adds up to one okay and if you measure the bits you
+1:21:53
+actually said well do i have a zero or i have a one what's funny is you find out you don't
+1:21:58
+have this thing because when you look at it you either find up or down with a given probability
+1:22:05
+okay all right now bear with me so those of you that are skeptics out
+1:22:12
+there would say oh really i don't know whether it's a zero or one so these
+1:22:19
+these c zero and c ones really represent uh my lack of knowledge but once i finally
+1:22:25
+looked i found out what it was okay i'm sure that there are several of you that think that that's the case
+1:22:31
+um but that's one option the other is that this is a real effect in the proton
+1:22:37
+or whatever we're looking at here is actually sort of in one state and sort of in another
+1:22:43
+okay and those are those are two options and it turned out that there was there's a set of famous bell
+1:22:49
+uh inequality experiments that were done that showed that reality is actually the second choice so in fact as weird as it
+1:22:55
+is uh that proton is is a combination of zero and one at the
+1:23:02
+beginning and it's only when we look carefully and force it to be one or the other when we
+1:23:07
+actually try to measure it then it gets forced into a state okay
+1:23:13
+and so if you think about this in terms of building a quantum computer there's a couple of interesting things
+1:23:18
+here so one we got to make sure that the environment never measures before we're ready
+1:23:24
+because otherwise we'll destroy this interesting superposition and maybe we need that to compute
+1:23:29
+okay and just to get a better notion of how weird this really is okay so if i have a bunch of bits and
+1:23:37
+bits together there's two to the n possible values of n bits you know that right
+1:23:43
+but here's an example of a three bit example of a superposition in which there are
+1:23:49
+eight options and i can simultaneously have one of those eight or many of those eight values in
+1:23:55
+different proportions as long as the probability um sums up to one
+1:24:00
+okay so as long as c zero zero uh norm squared plus zero zero one norm
+1:24:05
+squared plus this plus this positive this sum up to one that's a real physical situation
+1:24:11
+which represents a single register in my computer that has a superposition of all
+1:24:17
+of those values and the moment i take a look then i force it to be one value
+1:24:24
+okay and so if you only measure one bit for instance
+1:24:29
+you can say that the first bit will be a zero with probability what well which ones have a zero in the first bit
+1:24:35
+this one this one this one this one so the probability of finding a zero in the first bit is this sum probability of finding a one
+1:24:41
+in the first bit is this sum and you can go from there okay
+1:24:47
+so we really don't want the environment to measure this before it's ready so in fact we can have quantum era
+1:24:53
+correction codes believe it or not which can protect this quantum information
+1:24:58
+from being measured by accident by the environment and as a result
+1:25:05
+really we can we can hold these quantum states for a long enough period of time to actually do something interesting
+1:25:11
+with them so let me show you this uh simple two-bit
+1:25:18
+state okay this is called an epr pair for einstein pradonsky rosen it was produced by einstein and pedonsky
+1:25:26
+and rosen as a thought experiment and the idea is i've got two bits but i don't have all four options i only have
+1:25:32
+a zero zero or a one one okay those are my two options and i
+1:25:38
+separate the two bits so this is the two spins and in fact what i do is i maybe send one on a rocket ship to go
+1:25:44
+light years away and so now these two bits represented by this state
+1:25:49
+are light years away and if we measure one of them like let's suppose we measure and find
+1:25:56
+that there's a zero back on earth we know instantaneously that we got a zero on the other side
+1:26:02
+okay and so that looks like we had faster than light travel in fact instantaneous travel of
+1:26:08
+information from the earth out to that redu that far planet
+1:26:13
+einstein really didn't like this he called it spooky action at a distance okay but in fact uh
+1:26:21
+what's interesting about this is you can prove that there's no actual information transferred okay so however we can
+1:26:29
+use this to do what's called teleportation um which is take information uh at one side
+1:26:36
+do some measurements send some data to the remote side and recreate the data
+1:26:41
+recreate the quantum state at the other side that's called teleportation okay all right so i'm about to lose a
+1:26:49
+bunch of you but let me just show you how you factor with this because i think this is interesting so the way we build a computer is we
+1:26:56
+take a complex state like i just showed you and then we put it through
+1:27:01
+a bunch of adders whatever you want to call it which are really all unitary transformations they're things
+1:27:07
+that make sure that that probability always adds up to one and then we measure result
+1:27:12
+and the output is our answer okay so basic computing paradigm you input
+1:27:18
+register with superposed values you do a bunch of computing on it such that the probabilities are kept and you
+1:27:24
+measure okay and the way it looks is that you take uh let's say you put an input with all
+1:27:32
+possible combinations of the input input of the inputs being equal values all
+1:27:38
+possible probabilities it looks like you're doing computation on all possible values at once
+1:27:44
+but then when you measure you pick up exactly one and that's the answer you get okay and uh if you don't do anything
+1:27:53
+very interesting here this is going to look like you randomly
+1:27:58
+picked some input and computed on it so basically what we're talking about here looks like a random computation like you get in
+1:28:05
+cs70 or 170 where you randomly pick an input you compute on it you look at the result
+1:28:11
+so that's not very interesting right because we already know how to do that what we would like is we'd like it to be
+1:28:16
+such that if you take this input state and you put an input that's a complex
+1:28:22
+combination of possible inputs you run it through a quantum state a quantum computer and you measure the output is
+1:28:30
+with high probability some answer that was hard to find that's what we would like okay and so if
+1:28:35
+you look here um you know if the two n inputs are equally probable there could be two to
+1:28:40
+the n outputs that are equally probable and what we'd like is the probability of the
+1:28:46
+outputs to be piled up high on the answer we want and it turns out that something like fourier transform
+1:28:53
+does the trick okay so if we can do a fourier transform on some input we can actually get an
+1:28:58
+interesting output so if you bear with me i'm going to show you shores factoring in one slide so this is something that would
+1:29:04
+break rsa okay we can basically say the difficulty
+1:29:10
+of factoring rsa this is the type of cryptography that you might use with your bank across
+1:29:15
+the internet is figuring out how to take a large number which is publicly known and factor it into two
+1:29:21
+large factors that are primes and if you can do that you break the cryptography
+1:29:26
+so classically this is an exponential time algorithm and so as long as these are big enough
+1:29:33
+nobody's going to break it quantum computer can do it polynomial time and let me show you how
+1:29:39
+here's how it is in a nutshell you pick a random x between 0 and n that's easy
+1:29:45
+you say if the gcd the greatest common divisor between x and n is not 1 you just found
+1:29:51
+a factor you win let's assume you didn't do that we find the smallest integer r such that x raised to the
+1:29:59
+r is is congruent to one mod n okay so that uh you know basically is doing modulo
+1:30:06
+multiply that's really hard to do well and easy if r is odd we got to
+1:30:11
+repeat if r is even then we can say well i know because x to
+1:30:16
+the r is equivalent to one mod n i know that x to the r over 2 mod
+1:30:21
+n is equal to a and so then i can find this a minus 1 times a plus 1 is a factor of
+1:30:28
+n and we have another failure mode here where a is equal to n minus 1 but if it isn't
+1:30:36
+gcd of a plus or minus 1 n is a non-trivial factor so if we could somehow
+1:30:41
+figure this out what r makes this equiv equation satisfied and we could do that
+1:30:47
+quickly then um we win and that's something that
+1:30:52
+uh you can't do easily classically but with a quantum computer what we can do and unfortunately i guess
+1:30:58
+i don't have time to do this because we're running out of time but i can set up a situation where my
+1:31:05
+input to my algorithm is all the possible k's uh if i take a bunch of values
+1:31:11
+and i compute uh the the value x to that value and i add them
+1:31:17
+all together as a superposition and i do a fourier transform what i'll find is that x to the r congruent to one
+1:31:24
+as i have r go through all its possible values is going to be a periodic function why
+1:31:31
+because if x to the r is equivalent to one then x to the two r is equivalent to the one
+1:31:36
+x to the three r's equivalent to one and so i can do um i can essentially do a fourier
+1:31:42
+transform in uh in a quantum computer i can get these peaks and that fourier transform
+1:31:50
+will tell me what the frequencies are and that will give me that value that i need which i can do this i have to repeat
+1:31:56
+this a polynomial number of times and then voila i've just factored that number okay so that's the essence of the
+1:32:02
+shortest factoring algorithm and it all hinges on the fact that i can come up with this superposition state
+1:32:08
+where it's all possible values of x to the k where k varies from 0 to n
+1:32:15
+okay and i put them all together in a superposition state i do a fourier transform i get the result now
+1:32:21
+the interesting question is is this something to worry about the answer is well so far
+1:32:26
+no but it's looking like um it's getting closer and closer okay and
+1:32:32
+so i would say there's been a lot of very interest interesting effort
+1:32:37
+in quantum computing in the last five years enough that i did a lot of research on
+1:32:43
+quantum computers um in in the early 2000s and and also the 20 up to 2010
+1:32:52
+2011. i think it's looking more promising now one of
+1:32:57
+the things that we did do and we don't have time to talk about this but we actually investigated if you were
+1:33:03
+to build uh that factoring algorithm and you could do it as quantum circuits
+1:33:08
+that could run on a quantum computer what would that look like and we actually investigated ways of optimizing that
+1:33:13
+and we could actually look at performance of different options for the shortest factoring algorithm as quantum circuits and so we built a
+1:33:20
+cad tool to do that so um i i don't know i think it's a pretty interesting
+1:33:26
+area right now and there's a lot of interest in it all right so um sorry i kept you guys
+1:33:32
+way over but this is the last lecture i figured if anybody was interested we talked about key value stores we
+1:33:37
+talked about chord um hopefully i gave you an idea about chord because chord is the root from
+1:33:43
+which pretty much all the interesting peer-to-peer algorithms come and it's used in a lot of areas right
+1:33:49
+now we talked about uh briefly went through some cryptography and then i talked about how
+1:33:54
+data capsules are all about the data and that's a new model where the data can flow to the edge and
+1:34:00
+in the cloud and back and um i think it's it's pretty exciting project we got working on it if
+1:34:07
+anybody's interested in that and then we told you a little bit about quantum computing and uh feel free to come ask me or also
+1:34:14
+look at 151 or 191 excuse me um which is an interesting class on quantum
+1:34:19
+computing all right well thank you everybody sorry for going way over today thank you for those of
+1:34:25
+you that stuck around and uh i hope you have a good uh
+1:34:30
+finalizing of project three and those of you listening in cyberspace later as well
+1:34:38
+you are all great and so i'm gonna miss you guys and i hope you have a wonderful holiday
+1:34:44
+have a good rest of your semester and i hope you don't have too many finals in a week bye now

@@ -1,0 +1,1692 @@
+0:02
+okay welcome back everybody to uh cs 162 we're going to pick up where we
+0:09
+left off um basically just before the midterm and we're going to talk about scheduling
+0:15
+and so today we're going to talk about a couple of things here
+0:21
+um continuing in our vein of scheduling case studies we're going to actually talk about some real schedulers we'll
+0:26
+talk a bit about real time and forward progress um so uh if you look uh if you remember
+0:33
+from last time we basically talked about the the uh what the descriptions look like
+0:39
+inside the kernel when you open a file um and uh we had pointed at this
+0:44
+file structure before and uh what i wanted to point out last time
+0:49
+was basically this f-op pointer which points to a set of operations and
+0:55
+what's interesting about these operations is the set of operations uh includes things like how to read how
+1:01
+to write how to open etc and as a result what it does is
+1:06
+allows you to have that uniform info face of open close read and write for
+1:11
+everything from files to uh pipes to et cetera okay and so that f op structure we talked
+1:19
+about basically is why you're allowed to do that the second thing we talked about was
+1:24
+device drivers and um we looked at a typical life cycle here for an i o request
+1:30
+and what you see here is a request such as a reader write coming in from a user program
+1:38
+executing a system call and uh and then invoking potentially the operations that are in
+1:43
+that f op structure i mentioned previously and so that request basically the first
+1:49
+thing that happens uh for instance for a file reader right is we ask whether it can be satisfied
+1:55
+and as we talked about is the reason it might be satisfied already is because the data is in the cache
+2:00
+and when we get into file systems a little bit later in the term we will talk about that in great depth
+2:06
+but assuming that it can't be satisfied then it goes on uh to get
+2:12
+ready to talk to device driver okay and we talked about device drivers as that piece of code that uh
+2:19
+talks to the actual device and knows how to do things that are unique to the device the reason i have it circ this sending
+2:25
+request to the device driver highlighted in red here is because if it turns out that the device is going to
+2:32
+take a long time this is the point which you put the process to sleep or the thread depending on how things
+2:37
+are set up and then you're going to trigger something else and you have to schedule at that point okay
+2:42
+so then we talked about how the top half of the device driver is that part that runs kind of on behalf of the
+2:49
+process sets up the commands etc and things are put to sleep
+2:54
+at that point it sends a command to the hardware and then the hardware takes over but the thread the original thread
+3:01
+that called the device driver is sleeping now okay and so the hardware um comes along
+3:07
+and uh eventually does the access causes an interrupt to happen and we end up in the
+3:13
+bottom half of the device driver which is interrupt driven so that top half we talked about a moment ago was the
+3:19
+part that um basically is running on behalf of processes coming from above
+3:24
+the bottom half is invoked by an interrupt at which point it figures out kind of which process is waiting
+3:29
+potentially wakes it up transfers the data and the i o is completed okay so again um one of the reasons that
+3:37
+we particularly uh that i particularly talked about this again this time was
+3:42
+somewhere between the i o subsystem in the top half of the device driver the process actually gets put to sleep and will
+3:48
+invoke scheduling again so that's basically the topic that we've been working on
+3:53
+this is a figure from uh either the first or second lecture where we kind of show the idea of the
+3:58
+cpu executing some thread and eventually something happens like it's an i o request
+4:04
+or a time slice expires okay so we talked a lot about that last time when we talked about round robin
+4:09
+or perhaps we execute fork or we wait have to wait for an interrupt because uh
+4:14
+you know maybe we um do a signal operation we're waiting for somebody to respond to us
+4:20
+and then that's the point at which we have to ask this question how is the os going to pick the next thing to run
+4:26
+okay so we've got this ready queue and uh that's got a bunch of threads that are ready to go
+4:31
+which one and that's the topic of scheduling and so last time we talked a lot about uh classic
+4:37
+scheduling algorithms and the basic idea there is deciding which threads are given access to resources
+4:43
+from moment to moment and uh the last lecture and this one and the
+4:48
+next one we're really talking about cpu resources but i'll let you know that scheduling
+4:53
+can be applied to things like disk drive to you know who gets the most bandwidth et cetera and when we start talking
+4:59
+about scheduling disks uh et cetera then we'll move into io at that point but for now
+5:05
+we're talking about cpu and how does the scheduling get triggered well it can get triggered by
+5:10
+timer interrupts by other i o interrupts it can be uh triggered whenever a thread voluntarily
+5:18
+goes to sleep uh like it's you know it's trying to do io gets stuck in the top half of the device driver and at that point
+5:25
+is going to read the disk well it triggers scheduling to figure figure out what runs next so this scheduler can get run
+5:31
+on all those circumstances in which it's time to take the current thread put it to sleep and pick another one all
+5:38
+right so um and then we talked last time about policies for scheduling uh and we talked
+5:45
+about three of them minimizing response time maximizing throughput and fairness
+5:50
+so the thing about minimizing response time is that's can be very important if you're talking about
+5:55
+the response to user input like keyboards etc so things like time to echo or
+6:01
+keystroke in the editor we also talked about maximizing throughput so maybe in the cloud where
+6:06
+you have these really big compute jobs what's important there is to make sure that the uh hardware is used as
+6:12
+maximally efficiently as possible and so that's a case where you don't want a
+6:18
+contact switch very often you want to run the machine at full speed maximum cash utilization etc
+6:24
+and there's two parts to maximizing throughput sort of one of them is over as minimizing the overhead for example
+6:31
+not contact switching too much and the other is using resources efficiently uh cpu disk memory and as you can
+6:38
+imagine as we talked the minimizing of response time for users and the maximizing of throughput for
+6:43
+compute are sometimes at odds with each other and today we're going to talk a bit about how to uh deal with the the contrast there
+6:51
+the other thing that's always in the background here is fairness and that's the question of how do you share cpu among users in some equitable way
+6:59
+and fairness here is not about minimizing average response time necessarily because better average response time
+7:07
+actually makes the system less fair can anybody uh tell me why that is do you remember why
+7:13
+getting better average response time makes the system less fair
+7:18
+or anybody want to take a stab at that
+7:25
+okay priorities has something to do with it
+7:31
+yeah so the to minimize response time we're basically looking for those tasks that run very quickly and have a
+7:39
+short burst time and so if we're maximizing response time then we're doing a lot of
+7:45
+context switching which means we're we're taking a little bit to the detriment of throughput
+7:52
+so here was an example um that we showed here of round robin so that's
+7:58
+the simplest thing we can do where we have a timer that goes off every so often that's called the quantum
+8:03
+and i showed you an example here of process one two three four on the ready queue
+8:09
+the burst time is the time uh from when it starts running to when it
+8:14
+does some io and so p1 has a burst time of 53 p2 of 8 p3 of 68 p4 of 24. and we talked a lot
+8:22
+about the fact that if we put this in a fifo queue and ran it p1 to complete it to the
+8:28
+next io operation p2 to the np3 p4 this is going to be very bad for response time because you could by
+8:35
+accident and end up with the longest tasks first and then the short ones which are what the users are waiting for don't get
+8:41
+to run and so what round robin does is shown by the scant chart where if we have p1234 on the ready
+8:48
+queue and we have a quantum of 20 units of time then p1 runs for 20 units
+8:54
+and then we uh stop and put it at the end of the queue and then p2 runs well it can only run for eight
+8:59
+because it's only eight long and then p3 runs for 20 and p4 runs for 20 et cetera
+9:05
+and so you can just sort of simulate this on your own given the quanta 20 and the burst times
+9:12
+53 8 68 24 and you see what the results are and then we can talk about the various
+9:18
+waiting times the the threads had to experience okay so p1 are processes
+9:23
+so p1 here had a total wait time of 72. so those are all the times where it's
+9:28
+not running before it's done that it has to wait p2 p3 p4 etc we can compute those
+9:36
+we talked about the average waiting time here being 66 and a quarter and the average completion time being
+9:42
+104 and a half and so this round robin has a simple
+9:47
+it's simple right uh we we cut the tasks off so they don't run for too long and uh the pros
+9:54
+of that is it's it's much better for short jobs than if we just run every job to completion
+9:59
+but the contact switching can start adding up and so we did talk last time i encourage you to see that
+10:04
+lecture if you were perhaps studying for the midterm but one of the things we have to do is we have to balance
+10:11
+this rapid switching with the overhead okay and what we would like is in a
+10:16
+typical system we talked about how the switching overhead is somewhere between 10 and 100 milliseconds
+10:22
+uh excuse me the the quanta is between 10 and 100 milliseconds and the switching time is like 0.1 millisecond
+10:28
+and so we're trying to keep things at under one percent overhead in that instance okay so uh
+10:37
+that was round robin we also talked about an idealized uh thing about what if we knew the future
+10:43
+so the problem with round robin that we noticed here is it still isn't the most responsive
+10:48
+because for instance p2 which is the shortest job ideally would run first because perhaps
+10:54
+that's a user that only needs a few cycles every keystroke okay but of course the problem with that is
+11:02
+that what what's the biggest issue with putting the shortest run
+11:07
+first
+11:13
+okay so you guys are thinking too hard here so
+11:19
+the biggest problem is we don't know what's the short job right so so the biggest issue here is we don't
+11:26
+know the future okay but if we did and you're right it does cause start starvation if uh if we always manage to
+11:33
+get the first job the shortest job first over and over again we could starve out the long ones but this biggest issue is the future and
+11:39
+so we talked about something where we mirror the best first come first serve or best fifo by always
+11:45
+putting the short job first okay and that's called shortest job first okay which is run
+11:51
+whatever job has the least amount of computation to do or the shortest time to completion first
+11:56
+stcf um there's a there's an interrupting version of this called the shortest remaining time first
+12:02
+which is a preemptive version where if a job arrives and has a shorter time to completion then it gets to run
+12:08
+and we talked about this and uh basically you can apply this idea to the whole
+12:14
+program or to the cpu bursts and the big effect is on short jobs so that um
+12:20
+the short jobs really get to run quickly and the long jobs mostly don't
+12:26
+notice unless there's so many short jobs you get starvation and so this is a great idealized
+12:32
+scheduler if we could only do it and the biggest problem was of course how do you know the future so the pros
+12:38
+and cons of srtf are one it's optimal from a response time standpoint so if you're going to measure
+12:44
+any real scheduler against an optimal srtf's good one it's very hard to predict the future we
+12:50
+talked about some options last time about things like moving averages and coleman filters somebody brought up
+12:56
+the idea of some sort of machine learning to try to figure out predict how fast the jobs were
+13:02
+and the obvious other thing is it's unfair because the short jobs get to run in preference to the long ones and if
+13:08
+you do that too much you starve okay good were there any questions on this before we now move into some new
+13:15
+material i thought i'd make sure that i got everybody up to speed on what we did last time
+13:26
+okay so now how do we handle a simultaneous mix
+13:31
+of different applications so today's systems have a mix of user
+13:37
+interaction and long-running things so your cell phone is busy uh dealing with your swipes and taps
+13:45
+while at the same time it might be actually computing uh the data in the background from
+13:51
+your latest uh exercise session figuring out kind of uh what sort of machines you're
+13:57
+on okay that's sort of machine learning kind of stuff so that might be trying to run with full cpu while the other
+14:03
+quick things need to have your um you know respond to you quickly and so
+14:08
+uh this is an interesting thing right because the different app the different schedulers we talked about
+14:15
+last time some of them are ideal for throughput so fifo where you just run everything to completion or until the next time it
+14:21
+does io is great for throughput not so good for responsiveness
+14:26
+so if we want a mix of interactive and high throughput apps we have to figure out how to best schedule them we have to figure out how to recognize
+14:33
+one from the other and you know in this you start asking the question do you trust an application
+14:39
+that always says it's interactive and use that to give it priority okay that seems
+14:45
+uh like it's going to get abused right you're going to end up with these apps coming off from the app store that
+14:50
+always tell the cell phone that they're the the most important app in the world and of course nobody's ever going to get any other
+14:55
+work done right and buried in this of course is the question of should you
+15:01
+schedule the set of apps identically on servers workstations ipads cell
+15:06
+phones is every platform the same and you can imagine probably not
+15:12
+so here's this burst time graph which i showed you last time and if you remember what this measures
+15:18
+is this measures uh burst frequency of tasks with a given burst time where
+15:24
+burst time is the time from when the thing starts running to when it does its next io and the reason we typically have a burst
+15:31
+a peak toward the low end is because there's a lot of user interaction interactivity
+15:37
+and so as a result you tend to have a lot of really short tasks and then you have a long tail full of
+15:43
+long tasks and so maybe we might imagine that short bursts
+15:48
+reflect interactivity which reflects high priority somehow
+15:54
+and this in fact is the assumption encoded into many schedulers many of them decide that apps that sleep
+16:00
+a lot and have short bursts must be interactive okay and so they give them high priority
+16:06
+things that uh compute a lot and don't have a short burst should get lower priority
+16:13
+with the notion that somehow they're going to notice it less because the short bursts are going to get out of the way quickly
+16:19
+okay and that simple heuristic has been has been used a lot uh it
+16:27
+turns out it works pretty well but it's really hard to characterize apps for sure because you know you have these uh the
+16:34
+exception proves the rule you know what about apps that sleep for a long time and then compute for a long time or what about apps that have to run
+16:40
+under all circumstances like real time uh apps we'll talk about that later in the lecture
+16:47
+okay so um but let's look at a common structure that was used a lot
+16:53
+in uh schedulers it still is used in a number of them this is called the multi-level feedback
+16:58
+scheduler and what we do is rather than having a single ready queue we have many
+17:04
+okay this particular diagram shows you three and the uh the top queue is the highest
+17:11
+priority and the low the bottom queue is the lowest and things go in between and we also vary things like the quantum
+17:19
+okay and so the quantum here is uh
+17:24
+you know this is how how often we do round robin so we do run robin quickly at the top
+17:29
+more uh you know we don't break it up quite as quickly as we go in the middle and then we have fifo or first come
+17:34
+first serve at the bottom now there was a question in the chat here about uh you know is there a scheduler based on
+17:41
+inference from machine learning models sure people have tried all sorts of things
+17:46
+the trick with machine learning is you have to make sure that the time it takes to classify an
+17:52
+application uh doesn't become overhead that completely swamps the advantages of your scheduler
+18:00
+okay so you have to make sure that whatever you do is fast and machine learning isn't always fast
+18:05
+machine learning is something that's done over time and so now you start talking about some interesting
+18:12
+trade-offs between how accurate you are versus how much time it takes so this is uh this multi-level feedback
+18:19
+scheduler is another method for exploiting past behavior okay it was first used in the ctss
+18:25
+system so this is a long time and so i said multiple queues each with a different priority
+18:31
+higher priority queues are often considered the foreground tasks the lower priority at the bottom here are
+18:36
+background and every queue has its own scheduling algorithm
+18:41
+and here's the trick we start everybody out at the top and uh you know they're running with a
+18:46
+round-robin uh quantum eight and if they run so long that that
+18:52
+they get interrupted before they do i o then we decide that maybe they have more computation
+18:57
+and we move them to the next q and then they down in the next q get run with quantum 16 at slightly lower
+19:04
+priority and if they also exceed that then we move them down into the fifo queue
+19:09
+and the minute the minute that we do some i o we move them back up to the top okay all right everybody with me on that
+19:16
+and so long running compute tasks start at the top and they get demoted to
+19:22
+low priority automatically and things that have a lot of short tasks tend to float to the top
+19:29
+okay now one thing to note about this is it kind
+19:34
+of approximates srtf because it's predicting the future of that task because the fast tasks tend
+19:41
+to float to the top the short bursts i mean and the ones with longer bursts tend to go to the bottom
+19:46
+and so this is a way of getting at srtf when we can't perfectly predict the future
+19:52
+okay now this each queue has to have some scheduling done for it so if we did
+19:57
+fix priority scheduling where the top one's the highest priority and then the next priority and the next one
+20:03
+then um this is fine except uh you could imagine starvation
+20:10
+happening pretty easily here because if we keep having short tasks you might never get the long ones to run okay now
+20:17
+um the question here of does this mean that the long tasks down at the bottom have less contact switching
+20:22
+uh because they end up in a fifo queue so yes they have less contact switching amongst themselves but there's still the
+20:28
+context switching of the queues above okay so the long-running tasks are still
+20:34
+going to get somewhat interrupted when the short one running ones run okay
+20:40
+now um the problem with fixed priority scheduling is you can imagine the starvation issue another idea is that each queue gets a
+20:46
+certain amount of cpu time starting from the top with a large amount and down to the bottom which has
+20:52
+lowest so you can maybe have 70 percent of the cpu to the top ones 20 to the next 10 to the next okay
+21:00
+now if you're starting to get a little nervous about all of the heuristics here heuristics being how many cues what are
+21:07
+the quanta uh what fractions go of cpu go to each queue
+21:12
+uh you're right to be uh a little skeptical about that
+21:18
+in fact there there were schedulers i'll talk about one a little bit later in the lecture
+21:23
+that were set up along this lines and it turns out that the heuristics start getting so complicated that nobody
+21:28
+really knows how they work or why so that's a that's a danger right so one other thing that's interesting
+21:34
+here is this particular scheduling scheme is subject to a counter measure
+21:40
+by users okay so the counter measure would be something that a user could do
+21:47
+that's going to foil the intent of the os designer so for instance in a multi-level feedback scenario you put in a whole
+21:54
+bunch of meaningless io just to keep the jobs priority high
+21:59
+and of course if everybody did this then none of the scheme doesn't work right and there's a famous example of this
+22:06
+back in the early days of computers playing computers there was an uh othello contest where
+22:12
+everybody brought their othello playing games um othello is a a board game for those that you're not familiar with it it's
+22:18
+not just a shakespearean character and uh you play against the competitor
+22:23
+and so the key was you wanted as much cpu as you could get and so at one point the winning team
+22:30
+found out if they just put a whole bunch of printfs in a tight loop they could get scheduled more often and have a lot more
+22:37
+cpu time all right so there's an example of a malicious program exploiting the
+22:43
+underlying scheduler all right now
+22:50
+there is a real case of a schedule like this by the way i will uh say that there are many schedulers like
+22:55
+this in the world sun os uh uh was notorious for having a very complex one of these
+23:01
+linux had something called the o1 scheduler okay and it actually had 140 priorities
+23:09
+okay if you look here the first hundred of them from zero to 99 were considered real time priorities and
+23:15
+those are the highest by the way is zero the lowest is on the right and then the user tasks had another 40 priorities
+23:22
+which were changed by the the nice command okay so 40 for user tasks
+23:30
+100 for real time or kernel tasks the lower um priority value here of zero was higher
+23:37
+priority and highest was um and the higher priority value was lower priority so i realized that's
+23:42
+confusing but um zero is is a high priority and the key thing about that made this
+23:48
+01 was it didn't matter how many tasks there were in the system the computing that the scheduler did was
+23:55
+always 01. so that seems like that ought to be a good thing so you know you can imagine
+24:00
+we were talking about machine learning earlier you could imagine that the more tasks you got the more machine learning
+24:06
+you were doing and maybe things wouldn't scale uh you know constant time but rather might scale as
+24:13
+the number of threads or something like that and so you'd get very bad behavior as you added threads so the great thing about the o1
+24:19
+scheduler was all of the internal scheduling data structures and so on were o1 so
+24:27
+that seems like a good thing okay and time slices
+24:32
+that means quanta priorities interactivity credits are all computed when the job finishes the time slice
+24:38
+i'll say a little bit about what that means in a more moment but um you could imagine if i've got 40
+24:45
+possible user tasks we'll ignore the real-time ones for a moment user task priorities then i might want
+24:52
+to try to deal with interactivity by moving things that had short bursts to higher priority
+24:58
+temporarily as long as they had short bursts so that's where the heuristics start coming into play okay and the way that this ended up
+25:07
+being o1 was there's two completely separate priority cues for the ready queue one called active
+25:12
+and one called expired and all tasks in the active queue would run until their time slice expired and
+25:18
+then they'd get placed on the expired queue and you'd go through and everybody would get to run
+25:24
+and then you'd swap them okay and so it ended up being 01 as a result
+25:29
+and the time slice depend on priority linearly mapped so things with higher
+25:35
+priority got to run longer than things with lower priority okay
+25:40
+so this is very similar to a multi-level queue in fact it is a multi-level queue kind of in disguise here because every
+25:48
+we have 140 levels here okay and the decision about how you move something back and forth between
+25:54
+queues is where the heuristics come into play okay now here's another look at the o1
+25:59
+scheduler basically you have the expired and the active queue with a bunch of priorities
+26:05
+the priorities basically you run each task on the highest priority and
+26:11
+then when you're done with it you swap it over to the expired queue so in other words when the quanta now when you're done with the task excuse me
+26:17
+when the quantity expired you flip it over you keep going until there's nothing left and then you swap the two
+26:22
+and the thing that made this complicated was not what i just described to you and made it complicated was all of the heuristics to boost the
+26:29
+priority of i o bound tasks up and down or to boost the priority of starved tasks uh
+26:36
+from the low priorities up in order to make sure that somehow all users of the scheduler were happy
+26:44
+okay so heuristics would take every process or thread and make a decision
+26:49
+about move it down in priority up in priority based on its past behavior and these heuristics were very
+26:55
+complicated okay so the heuristics are interesting to at
+27:02
+least talk about so the user task priority got adjusted plus or minus five based on heuristics
+27:08
+uh involving how long it's been sleeping versus how long it's been running
+27:13
+and the higher sleep average here meant it was a more i o bound task you got more reward you got to raise
+27:19
+your priority there's something called an interactive credit which was earned when the task sleeps for a very long time
+27:26
+um and suspended when the task ran for a very long time and the interactive credit provided some
+27:33
+hysteresis to avoid changing the uh priorities too frequently
+27:39
+and um things that are interactive got some special uh dispensation so if it really figured
+27:45
+out something was interactive then it would even not do that run to the first quanta and switch over to the
+27:50
+expired but it would get you you get a chance to run for a little bit and switch over
+27:56
+hopefully you're starting to see that this is complicated right the cool the clean thing was the real
+28:02
+time tasks so those 100 tasks in the middle uh or excuse me on the
+28:07
+high end were always uh run at their priorities um they always preempted the non-real-time
+28:14
+tasks there's no dynamic adjustment and um and some very well-defined
+28:20
+schemes so either a fifo where you ran to completion or round robin where you ran with a fixed quanta
+28:26
+uh to completion so the real-time priorities were nice and clean and predictable but it was a
+28:31
+strict priority scheduler the heuristics were complicated
+28:37
+okay so uh i will oops sorry i will tell you
+28:45
+the uh the end of the story here is basically this got so complicated that um
+28:50
+a bunch of maintainers of linux basically decided that uh they were tired of it
+28:56
+because the heuristics got too complicated for anybody to understand their exact behavior and
+29:04
+eventually linus and a few others basically threw out o1 and came in with cfs which
+29:10
+we'll talk about for the later part of the lecture but uh it's interesting to note
+29:16
+the dilemma that uh that a scheduler designer is in so if you're the core developer of some
+29:22
+operating system that's used by a whole bunch of people and they have relied on the behavior of
+29:28
+your scheduler and its heuristics and however somebody isn't quite happy
+29:34
+so you need to change something you don't want to change the heuristics too much because now everybody else is going
+29:39
+to be unhappy and so you start making little tweaks and you get this complicated decision tree
+29:44
+if this and that and that change this by a little bit and then make this decision and things rapidly get out of hand and
+29:50
+at one point in the 2.6 kernel they just gave up and threw up their hands and tossed out the
+29:56
+o1 scheduler even though the scheduler itself is extremely efficient as number of tasks
+30:02
+grow it's just too complicated to understand and it starts doing weird things that nobody knows why
+30:07
+and it's not easy to make it work well okay questions
+30:15
+so the end of this story by the way is that 01 doesn't exist anymore well it exists but nobody uses it
+30:23
+okay so administrivia so we're still grading midterm one i
+30:29
+think it was a pretty reasonable difficulty it might have been a little bit on the hard side um but uh
+30:37
+we'll we'll know more when we get things up we had some people that had some issues with the zoom recordings
+30:44
+um so we'll probably look extra carefully at people that missed recordings
+30:50
+but may give a pass for not having them this time but you might want to practice getting the
+30:57
+zoom portion of that set up just so that it works smoothly with midterm too
+31:02
+it seemed like when we finally settled on the uh the actual zoom proctoring that we did that
+31:07
+uh it people mostly were okay with it and it mostly worked so that was a good thing um
+31:15
+there was a little bit of a discussion and i just wanted to say something to make sure everybody knows this but yes we are allowed to zoom proctor
+31:22
+midterms uh as well as finals so the cs department uh cs half of the department excuse me
+31:28
+was actually given permission to proctor midterms for select courses in addition
+31:33
+to finals and uh so cs 162 is authorized we
+31:38
+requested and we were authorized to do that just so if you have other folks that are still wondering about that we do have that
+31:45
+authorization and i think it worked pretty well i know that people got a little nervous about it
+31:50
+um you know don't be nervous if everything worked out you'll be fine um but you know i'm hoping it gave
+31:57
+people a little bit of a sense that um you know that they could just do
+32:02
+the exam normally without considering that cheating was a requirement you should let us know we're actually
+32:08
+going to put out a survey soon just to know how people think the class is going
+32:14
+and um you know midterms and projects and everything because this is a very hard term obviously being
+32:19
+all virtual um we're hoping uh so the bins are going
+32:27
+to pop up before the the uh grading is done we haven't i haven't looked at any of the grades yet
+32:32
+the bins are essentially uh slight tweaks off of what was in the summer but i um hadn't gotten them up
+32:38
+yet so i i apologize for that uh but um we are we really are
+32:44
+setting the bins and independent of the grading um so uh so the problem with noise
+32:50
+cancelling headphones is really the the issue with uh not knowing who's listening to what so there's a little
+32:56
+bit of a challenge on that um we will uh try to figure out things about that um
+33:05
+as we go all right um
+33:10
+and um there may be some way that we could handle that but for now no headphones but maybe we can work something out let's uh let's put that on
+33:16
+the list to figure out okay all right um let's see
+33:24
+uh sco yeah the question about when we'll be done grading we hope to be done certainly later this week as you can
+33:31
+imagine things get a little trickier in this format for grading and so on so
+33:37
+um we will we're working on it and as soon as we can we'll get them out
+33:42
+we won't make you wait too long i promise so um now back to non-midterm stuff
+33:51
+so group evaluations are coming out for project one soon later because project one is almost done
+33:57
+uh and the way this works is we uh you get to evaluate your partners for how well
+34:03
+they're interacting in uh in your group okay and so every one of you gets to uh
+34:11
+get 20 points for every other partner not yourself and you get to distribute it to your
+34:16
+partners uh in any way you want so if there's a four-person group that means you get
+34:21
+60 points because there's three other partners and you get to distribute it to the other partners okay no points to yourself and
+34:29
+this is one of many evaluation techniques this is not the only one but this is one of many evaluation
+34:35
+techniques that we use to understand kind of how partners are working with each other
+34:41
+the other one of course is what your tas understand about your project dynamics or what you've talked to any of us about
+34:47
+them okay but in principle if a partner really isn't participating at all
+34:55
+in the extreme cases almost never happens but it can all of the missing partners points could
+35:02
+be redistributed to their partners if that other partner's not doing anything okay you could think of this as almost a
+35:07
+zero-sum game in that point and the reason we do this and we've done this in 162 forever
+35:14
+is that um really this is a project course and you're supposed to be working with your partners and
+35:20
+relying on each other okay and so this is a way of us understanding how you're doing and one
+35:26
+of the reasons i'm bringing this up is there are a couple of folks in the class that have essentially dropped off the earth
+35:32
+i think they were kidnapped by aliens i'm not entirely sure but uh if you're one of those people and
+35:38
+you're hearing this broadcast out on mars please come back and start working with your group again
+35:44
+okay respond to email respond to your tas uh respond to your other partners
+35:51
+okay all right come back from mars now um you might
+35:58
+want to make sure that your ta understands any group issues you might be having i'm happy to meet with groups
+36:04
+that want to do a bit of fine tuning on their interactions but let's figure this out now that project one is essentially done
+36:10
+how to uh get a a fine-tuned happy group and uh to that uh uh
+36:17
+to that uh aspect we're going to start with the group coffee hours i promised
+36:22
+at the beginning of the term and uh one of the tas actually is going to be uh posting how to do this
+36:28
+a little bit later in the week but the idea is uh you can get extra credit points for
+36:34
+screenshots of you and your team with cameras turned on interacting and holding up your favorite
+36:39
+uh beverage of choice um and uh
+36:44
+this is just you know it's it's a gimmick but on the other hand it's a reminder that you ought to be interacting with your group with your
+36:50
+cameras turned on just to get things working if you're dealing with extreme kind of group
+36:57
+issues you know it starts with actually seeing the other members and talking to them okay texting
+37:06
+tweeting uh slack pick your favorite uh your favorite communication
+37:12
+technology that doesn't involve video these are all fine and they have their place but they can't be the
+37:17
+exclusive way that you interact because things are just not gonna go well um all right and look if we were in
+37:24
+real life uh instead of virtually you would be meeting with your team all the time so um
+37:32
+let's see if we can get the groups working well again okay uh you don't have to be holding a beverage you could
+37:37
+be pretending to hold a beverage if you like um you know glass of water works
+37:44
+cup of coffee whatever all right okay and don't forget to turn the camera
+37:53
+on for discussion sessions okay all righty now i think that's all i wanted to say
+38:00
+administration-wise so we'll get the final grades of the exam out um
+38:06
+i think things went fairly smoothly so that's good
+38:12
+okay so does the os schedule processes or threads
+38:18
+uh well many textbooks use the old model which
+38:23
+is one thread per process as we've already talked about [Music] oh and by the way i look if you really
+38:31
+can't use a camera for some reason talk to us but i think um you you can okay that
+38:37
+uh with us but i would really like you guys to to try to interact in whatever way works
+38:43
+so does the os schedule processes or threads so many textbooks as i said use the old model
+38:49
+one thread per process all right and this was the case for decades and then um threads
+38:56
+the advantages of threads started becoming obvious so you want a single protection domain with lots of
+39:02
+concurrency in it the only way to do that is many threads per process and the ways that this
+39:07
+started was it started with user level threads being scheduled on top of a single kernel thread and
+39:13
+then that got moved into the kernel to some extent which is where we are now with things like linux okay
+39:20
+so usually the scheduling is on a per thread basis not a per process basis the
+39:27
+only way we might the only reason we might think about processes is really if we were interested in
+39:32
+understanding some sort of fairness which said that each process gets a fraction of the cpu
+39:39
+and then we divide it up per thread that's a policy but the way that would actually be implemented today is you
+39:45
+would you know you divide the cpu up per threads
+39:51
+based on that policy and then the threads of the things that are scheduled because the threads are the things that are being switched out inside the kernel
+39:58
+okay so one point to notice is that switching threads versus switching processes
+40:04
+does incur slightly different costs so if you can really know that you're switching from thread a to thread b in the same process
+40:11
+uh the overhead is lower because the um in switching threads you really only have to save and restore
+40:17
+registers whereas in switching processes you're actually changing the active address space as well
+40:22
+which can get a little expensive and certainly disrupts caching okay and i think i showed you that there
+40:28
+can be a factor of 40 difference in linux for these two things okay now um i will toss out there just
+40:34
+to tie together the beginning of the class which is that simultaneous multi-threading or hyper threading
+40:42
+is available on some cpus and remember that the idea there is that different threads
+40:47
+are interleaved on a cycle by cycle basis on the same cpu okay and there that's got some magic
+40:54
+that you would talk about if you took 152 for instance but
+41:00
+the in those instances the different threads can have
+41:05
+each have different pointers to their page tables which means they can each be in different processes and it
+41:10
+would still switch them on a cycle by cycle basis so if you have hyper threading you might get really fast switching
+41:16
+but in general if you're switching from one thread to another on a cpu
+41:22
+and you have to switch the address space that's more expensive okay now what about multi-core
+41:29
+or even multi-process where you have a bunch of multi-core chips that are tied together into a big
+41:35
+shared memory machine okay so alg algorithmically sorry
+41:40
+one moment here there's not a huge difference from single core scheduling
+41:46
+except that there's a bunch of simultaneous things that can be running okay and so now you have the choice
+41:52
+if i have a big pot of potential threads on my ready queue which group of them do i have running at
+41:58
+the same time all right so it's helpful in some sense
+42:04
+to have a per core scheduling data structure okay for among other things cash coherence
+42:10
+so if each core typically has a first and a second level cash in today's processors
+42:15
+and so if you have a thread that ran on core one and then was put to sleep and then went back to core one you're going to have
+42:21
+some cache state that it can use whereas if you always schedule the thread on a different core you don't have the
+42:27
+advantage of the cache okay and so there's something called a affinity scheduling which most good
+42:34
+operating systems have which basically says that once this thread is scheduled on a cpu the os
+42:39
+tries to reschedule it on the same cpu to reuse cache or reuse other cpu local storage um
+42:47
+and uh resources like branch predictions another good one um but of course if there's
+42:53
+uh 20 idle cores and one busy core there is going to be a point
+42:59
+at which affinity scheduling is traded off against uh you know parallelism and probably the
+43:05
+choice will be made to migrate the thread at some point but we have to start thinking about these issues okay
+43:11
+and here's an interesting thing that we kind of brought up when i showed you uh test and set but i want to
+43:17
+re-emphasize it which is remember the idea of a spin lock so this was the the thing not to do
+43:22
+with test and set i told you okay that was the way you do an acquire of a lock
+43:28
+is you run test and set uh on the address of the value uh until you
+43:35
+eventually get back zero and the reason for that is the testing set if you remember
+43:40
+grabs the value stores a one returns the value and if you set the value to zero it
+43:46
+means the lock is free and even if you have a thousand threads that all simultaneously do test and set
+43:52
+because it's an atomic operation only the one of them ever gets uh the zero and
+43:57
+all the others get one and so that one that gets the zero gets to exit the while and now they're in the
+44:03
+critical section and the way you release the lock is you set value to zero okay so spin lock doesn't put the
+44:10
+calling thread to sleep it just busy waits which kuby said is a bad thing right
+44:17
+busy waiting is bad well okay i'm going to tell you one instance where it may not be bad don't
+44:22
+do this at home folks um and when is this preferable well that might be preferable if
+44:29
+you've got a set of threads running simultaneously on the same task
+44:34
+and they're waiting at a barrier for each of the threads to finish okay so let's give an explicit example
+44:39
+there are 20 threads and what they're going to do is they're going to run in parallel for a while and then they're all going to wait until
+44:45
+they're done before they continue just like a join and in that instance you want to have a
+44:51
+spinning something like a test and set that's going to wait uh spinning until the last of the
+44:59
+threads are done and then it releases quickly and the reason that can release quickly is because basically we don't have to
+45:05
+reload this off of some uh ready queue or some weight queue reload all the registers out of the tcb
+45:12
+and so on we don't even have to dive in the kernel necessarily so if we know that the set of threads
+45:18
+that are spinning are all part of the same task then um this could be okay okay because it would
+45:25
+wake up very quickly so every test and set is a right uh
+45:32
+unfortunately so anyway so i want to i want to stall at that for a second so this could be preferable if you've got a
+45:39
+multi-processor program with some simultaneously scheduled threads
+45:44
+that are all spinning and waiting for each other because that in that instance it's okay to spin because you're um
+45:52
+you you're all part of the same task okay um now this you got to be careful not to
+45:57
+do this for too long because you'll end up wasting cycles if you do it incorrectly now
+46:05
+how would you know they're waiting for each other so this is a question good the way the reason you'd know is because you've written a multi-processor program
+46:14
+that you know has a barrier you know that every thread
+46:20
+comes to a single point and waits for all the others to run to get to that point and then it
+46:25
+continues and you ask the operating system to schedule you all simultaneously so
+46:30
+all of the cores are all working on the same thing then this might be okay so if you're
+46:36
+trying to optimize a parallel program for instance you might use spin locks
+46:41
+okay and the limit of how many threads you could have would be the number of cores exactly you have to be very
+46:47
+careful about doing this now back when i was building multiprocessors in a while ago
+46:53
+we actually had a variant of this which was called too competitive what that meant was you'd
+46:59
+spin until the time that you've wasted spinning is exactly equal to the time it
+47:05
+would take to put you to sleep and at that point you'd go to sleep and so in the best case where you're only
+47:11
+waiting very briefly people would spin a bit and then they'd exit if something screws up like
+47:16
+interrupts happen or you don't have enough things scheduled then you would go to sleep after spinning for a while
+47:22
+and this is too competitive called number two competitive because in the worst case you'd never waste more
+47:28
+than twice what you'd waste having gone to sleep right away all right now of course the problem with
+47:36
+this spin lock is actually test and set is a write if you think about it why is that a write operation
+47:41
+well it's a read followed by a write and in cache coherence a write is a bad thing because it uh
+47:49
+invalidates all the other copies and then gets a copy in your cache before it does the right and so if you've got every core is all
+47:56
+doing well test and set then that poor lock is bouncing all over the place and you're and you're using up a whole bunch of uh
+48:04
+memory bandwidth okay and so if you're really what you really want uh is test and test
+48:11
+and set which we showed you this in lecture seven you can see where what you do is you say while value and you spin here
+48:18
+and that's a read and so uh everybody gets the the ones into their caches and
+48:24
+they're just spinning locally and then as soon as that goes to zero then you do test and set to grab it
+48:29
+and so you're you're vastly speeding things up as a result
+48:36
+okay so um now when multiple threads are working together like i just said then the only way that
+48:42
+this works well is if uh they're all scheduled at the same time that's called gang scheduling and so there's a lot of gang scheduling
+48:50
+operations that kernels offer which is making spin weighting more efficient okay because it's really inefficient to
+48:56
+spin weight for a thread that's suspended and sleeping on the weight queue because you're now you're really wasting
+49:01
+time okay and there's some alternatives where the os informs a parallel program
+49:07
+how many processors its threads are scheduled on called scheduler activations and there the application adapts to the
+49:13
+number of cores it's scheduled and so you get kind of the best of both worlds you only have as many threads as
+49:19
+you have core is currently scheduled okay now
+49:26
+let's talk about real-time schedule scheduling so what we've been talking up to now is
+49:31
+about scheduling that either optimizes uh response time or it optimizes throughput
+49:38
+right or maybe some sort of fairness which is some combination of them um real-time scheduling has a different
+49:44
+goal it's far more important in real-time scheduling for predictability of performance
+49:50
+so a typical real-time task might be something like the brakes on a car where you when the time from when you
+49:56
+slam on the brake to when the brake pads uh start slowing you down there's a
+50:02
+there's a limit to that we want to make sure it happens predictably and quickly otherwise maybe
+50:07
+i slam on the brakes and i end up hitting something okay um so in real time scheduling our goals are
+50:14
+different it's about predictability and meeting deadlines and here we need to predict with cons confidence for instance what's the worst
+50:21
+case response time of the system not how to optimize response time see that's a different thing
+50:27
+okay and so a real time system performance guarantees are often tasked or class centric and
+50:34
+they're they're figured out in advance and i'll show you how we do that but the simple example
+50:39
+that would be the time between when i slam my brakes on and when the brakes start working there's a deadline there that no matter
+50:45
+what the scheduling of the system is we hope that that deadline's never exceeded okay
+50:51
+so in contrast in a conventional system performance is
+50:56
+uh system or throughput oriented um it's kind of a wait and see we'll we'll
+51:02
+try to run everything we can at the best speed we can whereas real time is about enforcing
+51:08
+predictability so hard real time which is uh for time critical safety oriented systems
+51:15
+like breaks the idea there is you're going to meet all the deadlines if possible
+51:21
+determine in advance if this is possible and there are some good schedulers we'll talk about one called earliest deadline
+51:27
+first edf but there's also things like leaks laxity first rate monotonic scheduling deadline
+51:34
+monotonic scheduling etc soft real time is like hard real time but softer
+51:40
+and it's use for things like multimedia where we're going to try to meet all the deadlines so in the case of a video
+51:45
+you're going to try to make sure that every frame comes up at the right time but if you miss a video frame it's not
+51:51
+the end of the world okay whereas if you miss something in hard real time your car runs into a wall
+51:57
+okay and so we're going to try to make meet the deadlines with high probability and this is something like a constant
+52:02
+bandwidth server is a good example there okay so we're going to take a really
+52:07
+brief break and we'll be right back here
+52:14
+so let's let's see if we can define this real-time scheduling problem a little bit uh
+52:20
+more uh succinctly here so in a typical real-time scenario tasks are preemptable they're
+52:27
+independent and they have arbitrary arrival or release times tasks typically have deadlines and known
+52:34
+computation times and here's an example setup okay so if you take a look here
+52:40
+we have threads one two three and four and in this instance here let's look at thread one
+52:46
+so there's a release or arrival time that's the up arrow there's some computation which is
+52:51
+represented in gray here all right and then there's a deadline which is the point at which the real
+52:58
+time schedule has to have completed the computation so although i show you here that all of
+53:05
+the all of the computation happens right at
+53:12
+the beginning it could be spread anywhere between when the task arrives and when the deadline
+53:19
+is and that would be fine as long as it's completed by the deadline okay and t2 here sort of has an arrival
+53:28
+much uh at this point that's earlier than t1 and a deadline that's later etc
+53:34
+and the key thing uh in addition to those kind of key parameters when does it arrive what's the computation what's the
+53:40
+deadline notice here that since we have overlapped computation this is not a possible scheduler
+53:49
+result if we only have one core okay because notice that we would have to have
+53:54
+multiple things executing at the same time in order for this to uh happen this way okay is everybody
+54:01
+with me on this model okay questions
+54:10
+um so if this doesn't work what could we do well we could try running
+54:15
+around robin scheduler okay so notice by the way that t4 arrives first
+54:21
+and then t3 and then t2 and then t1 and so if you notice here so t4 runs and
+54:26
+we have some quanta that we come up with and um you know so t4 gets the first quanta
+54:31
+and then there's nothing to run so it gets to run again but now t3 is there and so this might be a round round-robin
+54:37
+schedule of that previous set of threads
+54:43
+and what happens is we hit a point at which we haven't finished all the computation but the deadline shows up so
+54:49
+in this scheduler uh instance here round robin doesn't work and your car runs into the wall so this
+54:56
+seems unfortunate okay and what's the problem here well the problem is that round
+55:02
+robin has no notion of deadlines i mean it wasn't designed for deadlines it was designed for multiplexing
+55:07
+okay and so the requirements for a scheduler for deadlines it's fundamentally different from the requirements for uh multiplexing
+55:16
+okay now one of the most common and you know i'll call it
+55:22
+famous schedulers is called earliest deadline first and uh in this instance there's
+55:27
+typically our threads are actually periodic
+55:33
+so they have period p and computation c in each period okay and so um the idea will be that if
+55:40
+we go back here in um our what we mean by periodic is that the thread will have an arrival
+55:48
+that will happen over and over again the computation will always be the same
+55:53
+and that arrival will be right at the deadline spot so you can imagine that we have another thread another thread another
+55:59
+thread and they keep getting reintroduced regularly and the the parameters are the
+56:04
+period for how often it is or how along the time between arrival and deadline
+56:10
+and the computation and the trick is can we schedule this in a way such that we
+56:16
+don't miss any deadlines okay and so every task has a priority
+56:21
+based on how close the absolute deadline is kind of makes sense right so as uh
+56:28
+if you take the set of threads that are currently ready to schedule on the on the uh ready queue and you say which
+56:34
+one of these is closest to the deadline uh closest to its deadline what i'm
+56:40
+going to do is i'm going to let it run okay so whoever is closest to its deadline is the one that gets to run so
+56:45
+this is a type of priority okay um scheduling where the priority is based on closest
+56:52
+uh pri based on proximity basically to the deadline that's why it's called earliest deadline first
+56:58
+okay and so here's an instance where uh thread one basically has a period of
+57:04
+four and a computation of one thread two has a period of five and a computation of
+57:10
+two thread three has a period of seven and a computation of two and so if you notice thread one
+57:15
+obviously is happening more frequently thread two is uh happening a little less frequently and thread three is the least
+57:21
+frequent and now let's run this okay and let's assume that everybody arrives at time zero okay and if they all arrive
+57:29
+at time zero then for instance four uh times uh periods later we know that
+57:35
+thread one needs has its deadline and arrives again and so if we look here um
+57:44
+from time zero which one has the closest deadline well clearly thread one's deadline is closest so we let thread one run okay and it
+57:51
+runs its one computation okay and at that point it's deadlines done thread two
+58:00
+is now the next closest deadline so it gets to run with its two units of computation and then last but
+58:05
+not least thread three gets to run and it runs it's three pieces of computation now as i told you this is
+58:11
+periodic so in fact after this arrival thread one
+58:16
+will have a new arrival thread tool avenue arrival thread 3l avenue arrival and we can start looking at the
+58:22
+scheduling i'm not going to go over this in detail but what we're doing here is we're saying that at any point
+58:28
+in time the thread whose deadline is closest is the one that gets to run
+58:35
+okay questions
+58:44
+now what we would find here is that um assuming that we have been careful not
+58:51
+to overload the system uh we will always meet deadlines okay and notice the requirement by the way is
+58:57
+uh preemption has to be a possibility so if you were to run these for long enough you would find that eventually
+59:03
+some of them get interrupted where they compute for a little while then something higher priority runs and then they compute
+59:09
+afterwards as long as your tasks can be preempted then edf is the best
+59:16
+way of handling this particular scheduling requirement okay and how do we know this well even
+59:22
+edf won't work if you put too many tasks here right if you fill this up with so much
+59:28
+uh computation that you're using more than 100 of one cpu then you're not going to be
+59:34
+able to schedule it okay now the question about how do tasks submit their periodicity to the
+59:40
+scheduler um they would they would actually say here's my thread and here's my periodicity
+59:46
+and here's my compute computation they would actually input that okay so this is uh this is
+59:52
+not just an idealistic scenario this is a this is a real scenario um the thing that you're probably
+59:58
+wondering which is a a very good thing but let's assume you are how do i know what c is
+1:00:04
+and if you were to go into the real time literature there's a lot of work that's been done on how do you compute
+1:00:10
+the worst case time for a computation and that's what we're calling c here and
+1:00:15
+so there's a lot of work in both having the compiler compute what c is
+1:00:20
+plus building uh processors that are more predictable than regular ones you might imagine for instance that uh
+1:00:28
+for instance the um you might imagine for instance that the cache
+1:00:34
+actually gets in the way of predictability and so some people who are designing real-time processors
+1:00:40
+actually completely disable the cache okay and this is that's right this is
+1:00:48
+only caring about deadline not deadline minus computation time because by my problem statement as long as we
+1:00:55
+get all the computation in before the deadline we're good okay now even edf won't work
+1:01:03
+but it turns out edf is optimal in the following sense if you take the amount of computation
+1:01:08
+divided by this should be period or whatever divided by the period and you sum all
+1:01:14
+those up what you see is that that's less than one okay and let me just give you a very simple
+1:01:20
+intuition of why that makes sense the idea here is that um
+1:01:26
+if i take the fact that there's one unit every four one divided by four is i'm using up uh
+1:01:31
+one quarter of the cpu you know two out of five is another 20 percent and so on
+1:01:37
+um and so uh another 40 excuse me and so if i were to add up all those percentages and they came out to more
+1:01:42
+than one then i would realize there's absolutely no way to uh schedule this okay and edf
+1:01:48
+basically is optimal in that um you can use 100 of the cpu here if you ignore the switching overheads
+1:01:54
+okay now how do we ensure progress so starvation is a situation where thread
+1:02:01
+fails to make progress and starvation is not deadlocked so next time we're going to talk about deadlock
+1:02:07
+because starvation is something that could resolve under the right circumstances
+1:02:12
+where deadlocks are unresolvable but starvation still can be bad okay and there can be causes of
+1:02:18
+starvation like the scheduling policy never runs a particular thread or threads wait for each other and are
+1:02:23
+spinning in a way that will never be resolved okay but isn't a cyclic deadlock now
+1:02:30
+by the way deadlock is a type of starvations not all starvations are deadlocks okay
+1:02:38
+so let's see a little bit about uh what kind of starvations we could have so here's a straw man which is a non-work
+1:02:44
+con serving scheduler so you have to know what work and serving means this is a scheduler that basically does
+1:02:50
+not leave the cpu idle when there's work to do okay and so a non-work conserving scheduler could trivially lead to
+1:02:57
+starvation if for instance it doesn't
+1:03:02
+schedule something right okay maybe there's a bug in your scheduler but let's assume that um everything's
+1:03:08
+worth conserving so here's a different one that is worth conserving but still could lead to
+1:03:14
+uh starvation which is last come first serve so this is a lifo stack the idea is that the late arrivals are
+1:03:20
+put on the top of the stack and they get first service the early ones uh end up waiting so this
+1:03:26
+is extremely unfair and in the worst case if tasks keep arriving the original ones never run
+1:03:32
+okay um all right that's when the arrival rate exceeds the service rate
+1:03:37
+we'll talk more about queuing as we get later in the term but you know this is a cue that if it builds
+1:03:43
+up faster than it drains then the things that were early on will never get to run
+1:03:49
+now if we had fifo instead of lifo the queue can also build up but at least there we're servicing
+1:03:54
+the oldest things first but you can still have a cue where things arrive too fast and you're not
+1:04:00
+servicing them okay so what does it mean for the cpu to be idle
+1:04:06
+so what it means for the cpu to be idle would be a situation in which it's not actually doing any useful
+1:04:11
+users work instead it's spinning or it's uh you know basically in the
+1:04:19
+idle thread and not not running things that are ready to run so that would be idle okay so we want to if things are
+1:04:26
+schedulable they can run then we want to make sure we always run okay
+1:04:33
+now what about first come first serve so we showed you this idea uh last lecture where what's
+1:04:39
+happening is we have things are arriving that's these colored threads and then they get scheduled in the same
+1:04:45
+order they came but notice that this red one is very long and so well it's running
+1:04:51
+all these other ones are building up and then when it finishes the other ones get to go back in order fight for order and this leads to
+1:04:58
+starvation because if a thread never yields it goes into an infinite loop or something then other tasks never run
+1:05:04
+so this is the problem with all of the non-preemptive schedulers is it that if you have a buggy task
+1:05:11
+or a non-uh social task let's say one that one that's being
+1:05:16
+anti-social then um you basically get starvation and
+1:05:22
+uh all of the early personal operating systems on personal computers had this problem
+1:05:27
+so i mentioned that the the first lecture things like mac os and windows 31 etc had this problem okay so
+1:05:36
+um what about round robin well the nice thing about round robin is that you always go through every task so
+1:05:43
+each of the n processes get one over n of the cpu in the worst case and so with a quantum
+1:05:49
+of length q milliseconds a processor uh a process waits at most n minus one
+1:05:54
+times q to run again and so process can't be uh kept waiting indefinitely so this doesn't lead to
+1:06:00
+starvation so it's fair in terms of waiting time not necessarily in terms of throughput
+1:06:06
+because we're varying sizes of tasks um
+1:06:11
+you know based on their requirements and so we don't necessarily guarantee everybody gets the same throughput
+1:06:18
+okay but what about priority scheduling we also talked about that so if you require recall a priority scheduler always runs
+1:06:25
+the thread with the highest priority so in this case on priority three has job one two and three and it's gonna run
+1:06:32
+everything maybe around robin um job one two and three and then finally when that's done it'll go down
+1:06:38
+to job two uh job four which is priority two and if one two three and four are gone then
+1:06:43
+it'll get around to five six and seven so here's a case where we're clearly going to starve if we keep putting high
+1:06:49
+priority tasks in there faster than uh they can finish then the low priority
+1:06:54
+ones never get to run but there's a lot uh more serious
+1:07:01
+problem even than starvation here okay called priority inversion where high priority threads might become
+1:07:07
+starved by low priority threads under the wrong circumstances and you're about to start uh the next
+1:07:15
+lab and project number two is basically going to
+1:07:20
+start looking at scheduling and you're going to need to address the following problem so let's talk about priority inversion
+1:07:26
+so here's a priority inversion situation where the low priority task job one acquires a
+1:07:31
+lock okay now let's suppose that it acquired
+1:07:37
+that lock and then jobs two and three showed up or suddenly became runnable or whatever the case may be there could be many
+1:07:43
+reasons why job was run one was running with two and three suspended i o take your whatever it is but now in
+1:07:51
+this scenario uh job one has the lock but two and three are higher priority and so now
+1:07:57
+maybe job three starts running okay but now what happens if job three
+1:08:03
+tries to acquire the lock all right so job three tries to acquire the lock held by job one
+1:08:09
+and it can't and so now job three has to go to sleep and it's blocked on a choir so already
+1:08:16
+just take a look at this picture here we have a scenario where the highest priority task in the system job three can't run and it's being
+1:08:24
+blocked by job one at least okay so this is this is an inversion of priority
+1:08:29
+which is uh problematic at best now if job two weren't in the picture
+1:08:36
+the fact that job three is blocked means that job one might be able to complete uh running until it released the lock
+1:08:43
+and then job three would wake up right away and we'd be good to go but the mere active job two being here
+1:08:49
+is a problem okay because if job two is busy running
+1:08:54
+it could run for a very long time and in that sense if job two runs for a very long
+1:09:00
+time now uh job one doesn't run and as a result job three doesn't won and so
+1:09:06
+you could doesn't run and so you could say that job two is actually holding up job three okay and there's a
+1:09:13
+a priority inversion that may not resolve quickly because job two may run for a
+1:09:19
+long time so this particular situation is one in which
+1:09:24
+um the priorities that were designed by the designer of your
+1:09:31
+task that's running here uh have been uh subverted by this priority inversion
+1:09:40
+so um you know whatever was the reason for you putting job three at highest priority in job one at lowest
+1:09:46
+is not happening right now because you know job two which is supposed to be in the middle of them is basically screwing this all up
+1:09:53
+so um what can we do well clearly what we need to do is we
+1:09:59
+need to somehow get job one to run long enough to release the lock so the
+1:10:04
+job three can run okay all right so
+1:10:10
+what do we do so the medium priority task is busy starving the high priority one
+1:10:15
+anybody think of what we do
+1:10:21
+okay signal well maybe you have a signal here but um that would require more programming
+1:10:28
+that might not be what we want yep give the task one more priority okay good or priority donation
+1:10:35
+all right and we'll show you how to deal with that but you know when else my hyper um my
+1:10:42
+priority lead to starvation or live lock lots of cases where you might have a high priority
+1:10:48
+task uh spinning waiting on a lock and a low priority one needs to release it and so this high priority one
+1:10:55
+is running but it's not running successfully because uh it's been waiting so that's another type of inversion where the thing
+1:11:02
+looks like it's running but it's not doing any real work and so yes priority donation so the trick here is a
+1:11:07
+job three temporarily grants job one its priority so the job one gets to run at high
+1:11:14
+priority long enough to release the lock okay so really what we're doing here is
+1:11:19
+job one gets this temporary boost in priority long enough to release the lock
+1:11:27
+okay and how did that happen well job three donated its priority to job one or sometimes
+1:11:32
+this is called priority inheritance that's another term for this okay all right and at some time job one
+1:11:40
+releases and at that point job one's priority goes back to low priority but the lock's been released so job three
+1:11:46
+can run okay and this is the point at which we go forward now the question might be how
+1:11:51
+does the scheduler know okay the scheduler knows because uh
+1:11:59
+it's paying attention to this pro this donation that's going on now the question is why is job 2 running
+1:12:05
+before job 3 if job 3 has higher priority well if you go back to this scenario
+1:12:12
+here the problem is that job three can't run because it's sleeping on the acquirer for the lock so job three is
+1:12:19
+not running it's sleeping and job two gets to run because it's runnable and job run
+1:12:25
+one is runnable but it doesn't get to run because job two is higher priority okay hopefully that answered that
+1:12:31
+question so this is a scenario where the reason job three isn't running is because it's actually tried to do an acquire and it went to
+1:12:38
+sleep okay now you get to actually deal
+1:12:44
+do priority donation in project number two okay now
+1:12:53
+this is not a theoretical problem okay so um you may have all heard of the martian pathfinder rover
+1:13:00
+so july 4th 1997 pathfinder uh rover landed on mars okay and
+1:13:07
+um this was the first u.s mars landing since viking
+1:13:12
+in 1976 it's the first rover what's very cool is you guys should all
+1:13:18
+check this out is the way they delivered this rover to the the surface was um when the
+1:13:25
+when the martian pathfinder uh spacecraft got into orbit it dumped um a
+1:13:32
+whole bunch of balloons that were wrapped around the rover and so the rover was inside
+1:13:38
+these this uh multi-balloon bubble thing and it actually fell to the surface and bounced until
+1:13:46
+it stopped bouncing and then they deflated the balloons and the spacecraft made it and the rover made it
+1:13:51
+there safely so that's pretty amusing but that's not part of our story today the story is
+1:13:56
+that um once this thing started uh whoops once this thing started uh working it
+1:14:02
+was great it was sending back pictures everything was great and then a few days into the mission multiple system
+1:14:08
+resets occurred over and over again and the system would reboot randomly losing valuable time and progress
+1:14:14
+and the problem was priority inversion so there's a low priority task that's grabbing uh
+1:14:21
+that's um collecting data and it grabbed a lock as part of an ipc task and um
+1:14:29
+and then what happened is uh the the high prior priority one thing just kept
+1:14:34
+running there was a bunch of random stuff going on and priority two wasn't able to run because it was trying to grab the lock
+1:14:40
+and so this was an actual scenario where the lock had to do with the buses and communication
+1:14:46
+where since forward progress wasn't being made there was actually a watchdog timer that went off and kept rebooting the machine
+1:14:53
+which was a good thing because it meant that it rebooted it into a safe state that then could be uh examined and patched and they were
+1:15:01
+able to reproduce the problem after uh a number of weeks down on earth
+1:15:06
+and then they sent up a patch and uh fixed it so the funny thing about this perhaps
+1:15:14
+is the solution was priority donation
+1:15:19
+that's uh easy right that's your project too the thing that is perhaps even more amusing or not for them
+1:15:25
+uh was that they had turned priority donation off okay so they had actually the vxworks
+1:15:30
+had priority donation they turned it off because they wanted to make sure things were fast and they were worried about
+1:15:35
+the performance implications of priority donation and as a result they uh they ended up
+1:15:41
+with a priority inversion that basically broke stuff so there's your there's your story for
+1:15:46
+the night okay now um i think actually up on the resources
+1:15:52
+page i have an analysis by one of the engineers that talks about this particular um priority inversion problem it's a
+1:15:59
+real thing so now um are the srtf or multi-level feedback cues
+1:16:06
+prone to starvation yeah well in srtf obviously long jobs are starved in favor of short ones
+1:16:14
+mlfq is an approximation to srtf so it suffers from the same problem and so yeah so we can get starvation out
+1:16:20
+of this just by having a lot of short bursty tasks running
+1:16:26
+priorities seem like they're at the root of all these problems because even in this instance we have
+1:16:32
+cues that are higher priority than others okay and so we're always preferring to give
+1:16:38
+the cpu to a prioritized job and non-prioritized jobs may never get to run but priorities
+1:16:44
+uh we're kind of a means to an end here our end goal was to serve a mix of cpu
+1:16:49
+bound i o bound and interactive jobs well you know give the i o bound
+1:16:56
+ones enough cpu to issue their next operation and wait give the interactive ones enough cpu to respond to
+1:17:03
+input and weight and let the long running ones grind away uh on all the rest of the cpu so
+1:17:10
+priorities were really a means to get at the kind of scheduling we wanted and if you remember you know this is
+1:17:17
+kind of we're living in a changing landscape here right this is the bell's law curve of computers per person you know
+1:17:23
+and back in the day in you know 60s and what have you you know there might be
+1:17:28
+one computer and a million people and now we might have thousands of computers per
+1:17:35
+person and so we're in a very different landscape and so the question might even be are
+1:17:41
+yesterday's scheduler is the right thing so priority-based scheduling was rooted
+1:17:47
+in time sharing allocating precious limited resources to a diverse workload
+1:17:53
+80s brought personal computers workstations servers etc different machines of
+1:17:59
+different types for different purposes and it's a shift to fairness and avoiding extremes like starvation
+1:18:06
+rather than maximal use of precious resources instead
+1:18:12
+we want to use resources in a way that meets our requirements okay and so
+1:18:18
+that's a little different and with the emergence of the web you know the data center
+1:18:23
+is the computer personal computers i mean you guys are all walking around with a cell phone that's extremely
+1:18:28
+powerful it's all about predictability now okay and so
+1:18:34
+does prioritizing some jobs starve those that aren't prioritized that's a question
+1:18:41
+all right and if you give me a few more minutes before we end up here i realize i'm running a tiny bit late but
+1:18:46
+proportional share scheduling is an idea where we're going to hand out portions of the cpu okay so the policies
+1:18:54
+we've studied so far is always prefer to give the cpu to a prioritized job non-prioritized ones
+1:19:00
+never get to run instead we could share the cpu proportionally
+1:19:05
+give each job a share of the cpu according to its priority so that low priority jobs get a little
+1:19:11
+bit less of the cpu than high priority jobs but everybody gets to run
+1:19:17
+and if you recall from last time we talked about lottery scheduling where every job got some number of
+1:19:23
+lottery tickets and then what would happen is to whenever we wanted to schedule the next
+1:19:28
+task is we'd draw a lottery ticket and the winning job whose lottery ticket we drew was the one
+1:19:34
+that got to run okay so for instance in this scenario with a a yellow red and blue
+1:19:40
+jobs um the red ones get 50 of the cpu 30 for the blue ones and 20 for the for
+1:19:47
+the yellow ones and this is a way of providing a fair queuing style of cpu distribution
+1:19:56
+now we talked about the lottery scheduling last time so i'm not going to go through this in great detail
+1:20:01
+but there is a certain unfairness that comes from randomness in this okay and the problem is that we're
+1:20:06
+picking these uh tickets and it takes a longer job before
+1:20:13
+two tasks that are have equal number of tickets really get an equal number of the cpu
+1:20:19
+so as cool as the lottery ticket idea is it's still got this unfairness point
+1:20:24
+okay and so we could do something similar but different which is
+1:20:30
+achieve proportional share scheduling without resorting to randomness and overcoming this law of small numbers
+1:20:36
+problem we have here which is by using something called stride scheduling so the stride
+1:20:41
+of each job is if we take a big number w of some sort divided by the number of tickets that's going to be
+1:20:49
+our stride so for instance here if w is 10 000 um a has 100 tickets b has 50 c has 250
+1:20:57
+then the strides are 100 240 and every job kind of has a a pass about
+1:21:05
+how long of its stride is and the scheduler picks the job with the lowest pass runs it and then adds a stride to its
+1:21:12
+pass and so what you see is because we're picking the job with the lowest pass number then um
+1:21:20
+then things that have small strides get to run more because they're they're advancing less
+1:21:26
+with each run and that are the things that have a lot of tickets in it so this is called stride scheduling because you're
+1:21:32
+adjusting the stride of how far you walk and low stride jobs which have lots of
+1:21:38
+tickets get to run more often and they get a bigger proportion of the cpu
+1:21:43
+now um it gets a little messy when you worry about wrap around and all that sort of stuff so the linux completely fair scheduler
+1:21:51
+is an example of this kind of fair queuing that is in common use today okay so n
+1:21:57
+threads is a simple first example simultaneously execute on one end of the cpu
+1:22:04
+so what we imagine is if we had one cpu that we could somehow divide it up into
+1:22:10
+uh n pieces and evenly give it to each one of the threads if we could do that
+1:22:16
+then we would be able to run um each thread would get exactly one end of the
+1:22:21
+cpu okay now you can't do this in real hardware
+1:22:26
+so the os has to somehow give out cpu and time slices
+1:22:31
+and so what happens is we're going to track cpu time to a thread so far and this we're going to repair the
+1:22:38
+illusion that we have a perfectly split up cpu like this and so in this instance t1
+1:22:44
+got to run for a little longer than its time and so and t3 ran for exactly its time and t2
+1:22:51
+is now short so what we're going to do is we're going to run t2 for a little while until we catch up
+1:22:57
+and if we keep making a scheduling decision that um lets the one that hasn't gone enough go
+1:23:04
+then we are going to get the illusion of completely uh fair chunk of the cpu
+1:23:10
+okay and this is this is very related to the stride scheduling i just mentioned okay now
+1:23:18
+in addition to fairness we want low response time so there's this idea of the target latency which is a period of time over which
+1:23:25
+every process gets to run so if the target latency is 20 milliseconds you've got four processes
+1:23:30
+then every process gets five milliseconds time slice um the problem with that of course is if
+1:23:36
+you have 20 milliseconds with 200 processes we've got a very small time slice so in fact what we're going to do is
+1:23:43
+have a throughput goal which is a minimum time slice so for instance if our target latency is
+1:23:49
+20 milliseconds our minimum granularity it's a millisecond we have 200 processes then we um we lose
+1:23:55
+our fair cueing and we go back to one millisecond time slice by the way this is my last exam the cfs is my last topic for tonight i
+1:24:02
+just wanted to give you this um the other thing that you've probably all learned about is nice
+1:24:07
+commands so the operating systems in the 60s and 70s gave you the ability to take a a task that was
+1:24:15
+running and give it a nice value where zero being nice of zero is you got to run
+1:24:22
+like everybody else if your nice values were higher than that then you ran a little slower or nicer and if they
+1:24:29
+were lower than that then you got to run with more cpu okay and i'll go over this again next
+1:24:35
+time but if you want now to get proportional share out to cfs there's a way of basically coming up
+1:24:42
+with a weight okay and um i uh
+1:24:47
+we're running enough out of time that i don't want to go into this in detail now i will next time but what i want to show you before we
+1:24:53
+leave here is this idea of virtual time so here we have uh one task has a weight that's four
+1:24:59
+times that of the other one what that means is that every thread has
+1:25:05
+the virtual time of how much it's run and so thread b when it runs
+1:25:11
+it um it doesn't register as much virtual time per physical time as
+1:25:17
+a and so then if we just keep picking the thread with the lowest virtual time we'll actually uh basically give b four
+1:25:24
+times as much cpu as a okay and so this is a real scheduler
+1:25:29
+that's actually used in linux and um you know you're probably using it now so
+1:25:35
+we need to finish up now so the way you choose the right scheduler if you care about throughput you might do first come
+1:25:41
+first serve if you care about average response time you might have some srtf approximation
+1:25:46
+if you care about i o throughput you must might have some other srtf approximation fairness you might use the
+1:25:52
+linuxcs cfs i just told you fairness with uh wait time to the cpu you might do round
+1:25:57
+robin if you're worried about meeting deadlines you might do edf if you're worried about favoring important tasks like on the martian
+1:26:03
+rover you might use priority okay so how does the linux uh real-time
+1:26:08
+kernels affect the scheduler so what happens there is the real-time kernels uh basically give you the ability to
+1:26:16
+schedule something in real time they might give you edf or they might give you others where the deadline is
+1:26:22
+an option okay um so that's uh and the real time
+1:26:27
+priorities i showed you earlier is a strict priority scheduler which you can do to use to use um to do real-time scheduling
+1:26:33
+as well all right so when do the details of the policy matter
+1:26:38
+when there aren't enough resources um when should you buy a faster computer
+1:26:45
+when your response time is getting too high okay so you might think you should buy a
+1:26:50
+faster x when x is utilized at 100 percent um perhaps we'll talk more about that next
+1:26:56
+time so i'm going to end now since we're way over time but i hope you guys have a great uh rest of your night and we will see you
+1:27:03
+on wednesday we'll pick this up where we left off and i'll say a little bit more about the cfs scheduler since
+1:27:09
+we were rushed a little bit on that but i hope you have a great evening and we'll get the uh graded exams back to you as soon as we can
+1:27:16
+good night

@@ -1,0 +1,1636 @@
+0:04
+welcome back everybody to cs 162. so um we're going to pick up where we left off talking about virtual memory
+0:10
+and uh memory mapping and then we'll continue with paging next time but if you remember we were
+0:17
+looking at this idea in general of address translation and the memory management unit that does
+0:23
+it and in this scenario where virtual addresses are coming out of the cpu
+0:29
+they get translated by this memory management unit into physical addresses which represent the actual
+0:35
+uh positions of the bits in the physical dram so there's kind of two views of memory
+0:41
+there's the view from the cpu which is the virtual addresses and the view from memory which is the physical
+0:46
+addresses and those two um are basically related
+0:51
+by a page table which is what the mmu supports now the one thing that we did
+0:58
+talk through last time is we actually gave you a couple of examples where we walked through some um
+1:04
+instruction execution that was going on in the processor and we kind of showed you when you keep to the virtual
+1:10
+addresses and when you actually have to translate into physical ones uh so with translation it's much easier
+1:16
+to uh implement production protection because if two processes have their translation
+1:23
+table set up so they never intersect with physical memory then it's impossible for them to interfere with each other through memory
+1:30
+an extra benefit of this of course is that everybody gets their own view of their personal address space
+1:35
+which means that you can link uniquely a program to the you know once
+1:42
+and run it multiple times on the same machine okay everybody gets their own zero is
+1:47
+the way i like to think of that we talked about simple paging in this context
+1:53
+and the idea of simple paging is basically that there is a page table pointer and that page table pointer points to
+2:00
+memory which is uh a set of consecutive translations we'll call these page table
+2:06
+entries a little bit later and these uh consecutive entries basically have both a physical page number and a
+2:14
+some permission bits okay and there's one of these page tables per process
+2:20
+all right and so the way the virtual address mapping goes we talked about this is you start with an offset which is how big your page is
+2:27
+and so for instance for a 1k page that's going to be 10 bits for a 4k page that'll be 12.
+2:33
+and then all the rest is the virtual page number and that offset never gets changed by the page
+2:39
+mapping so that's copied directly into the physical address and then the virtual page number is
+2:44
+basically used as an index into the page table you look that up and that gives you the physical page number which gets copied
+2:51
+in and uh you're good to go on the physical address so for instance uh if you had uh 1k
+2:58
+kbyte pages or one of two four pages um there's 10 bits of offset and what's
+3:04
+left in red is basically 32 minus 10 bits or 22 bits in a 32-bit machine
+3:10
+so there's essentially uh up to four million entries in this page table all right and so among other things
+3:17
+we're not necessarily going to use them all and so we need the page table size and so there are certain uh indices in
+3:24
+here or virtual page numbers which are above the page table size in which case you get an error
+3:29
+and then we also need to check our permissions so if we try to do a write and you see that this particular page
+3:34
+is marked as valid that's v and read but not right this is essentially a read-only page
+3:40
+so if you attempted to write to that address you'd get an error okay were there any questions on this
+3:46
+simple paging idea now we're saying we're talking about the
+3:52
+function of that memory management unit i showed you earlier okay so the the hardware there is going to help us
+3:58
+by translating these virtual addresses into physical ones
+4:03
+so the other thing i did is i gave you a very simple example this is almost a silly example because
+4:09
+it's four byte pages but because they're four byte pages you know that the offset's only going to be two bits
+4:16
+and basically what we can see here is that a virtual address zero zero we write that all out into uh
+4:24
+into binary basically the lower two bits are zero the upper two um upper six bits in this case are zeros
+4:31
+and so we take what's in red here and that's going to be our virtual page id which we'll look up in our page table
+4:36
+and what we see there is that there's a four okay and i don't have any permission bits in this example but that four
+4:43
+represents the translated page okay and so i take that four that's really zero zero zero one zero zero okay that's the
+4:51
+physical page id i copied the offset and that told me that things that are up here in uh the
+4:58
+virtual address space are gonna be down here in physical space and we looked at uh multiple options here as well like
+5:04
+for instance things from four to eight map basically to page three which is down here
+5:10
+things from 8 to c are going to map to the green up here
+5:15
+and that's going through the page table all right and then of course if you look at things in the middle like for instance
+5:21
+4 here has got an e in it uh five it's got an f six has got a g where does that
+5:27
+translate over here well we can see that that's gonna be right um basically over
+5:32
+here but the question is how do we get there well we take the fact that six is zero zero
+5:38
+zero zero zero one one zero because one one zero is six as you all know and um that means that we're
+5:44
+talking about page one which is the blue one the offset is one zero and that takes us over to this point
+5:51
+oe and similarly 9 takes us over to this point 05. okay now there's a
+5:58
+question here is page 0 always unmapped so that dereferencing null pointers always cause page faults
+6:04
+no not necessarily because sometimes uh page zero is uh reserved for the operating system
+6:10
+and can represent um different things like i o and so on so zero is not always
+6:15
+unmapped um it often is but you can't necessarily be assured of
+6:21
+that and that's why in fact null references can be very bad because some languages like c let them happen um okay
+6:29
+so but you could if you can afford to unmap zero then uh obviously you get a little bit of
+6:35
+extra protection there because you could cause a page fault uh because zero wouldn't be and wouldn't be valid in that case
+6:41
+so what about sharing so um first of all actually let me stop here for a second are there any pieces of this that people
+6:47
+are worried about i told you last time that um you need to get really good at transforming between hacks which is four
+6:54
+bits at a time and binary um i'd get to memorize that quite well because that's something that'll serve you well if you know how
+7:01
+to do it all right um good now
+7:09
+what about sharing all right so once we start having this mapping now we can do
+7:14
+some pretty interesting things okay here's a question let me just answer this why are we taking the top six bits
+7:19
+when there's only three entries in the page table well because presumably this is an 8-bit machine and
+7:27
+therefore everything that's not an offset remember i said these are four but by pages are basically the uh page id
+7:35
+the virtual page id and so this page table needs to uh potentially have
+7:42
+up to 64 entries in it but because the page table uh only has three entries
+7:47
+then the the size of the page table is going to be set at three okay and if you notice back here in my
+7:52
+previous example i showed you this idea that you have a page table size
+7:58
+and so what that really says is there are some virtual addresses in this scheme that are not valid they're ones that are
+8:03
+for which the virtual page id is too big all right good question okay but we have to take
+8:10
+six bits because we have to take all the bits that aren't the offset
+8:16
+now uh if you look here so here's another example we have our virtual page
+8:21
+id in the offset and what's interesting about this scheme is that now we can do something like this virtual
+8:27
+page number which is going to have a 2 in it it's going to be 0 002 here
+8:33
+might map to a place in physical memory okay and um we might have a second
+8:40
+uh page table that also maps to that same place in physical memory so now we have two processes two
+8:47
+separate page tables both mapping to the same physical page okay
+8:52
+so this is interesting right this basically means that that physical page now appears in the address space of both
+8:58
+processes so they can share information all right so if uh process a writes to uh
+9:05
+something in page two it'll show up in this page if virtual if process b writes to somewhere in page
+9:11
+four it'll show up in this page and they can read and write each other's data all right
+9:16
+now this is not a great mapping okay why well because i mapped the same page to different parts
+9:22
+of the address space for these two processes so in fact if you look in process a i
+9:27
+can read write an address 002 x66 and b i can read at address 004 xxx and so the
+9:36
+addresses are actually different all right which means that i can't make a linked list here and have the
+9:42
+addresses mean something between the two processes so that's a little broken so in fact it would be better to actually link them to
+9:49
+the same place now there's a good question in the chat here about can you arrange to set that up and yes
+9:54
+there are virtual memory mapping system calls that allow you to map the same
+10:00
+page to the same part of virtual memory and thereby make sure that you can do
+10:05
+things like linked lists that are shared between multiple processes notice that the other thing that i've shown you here is that process a
+10:12
+has both read and write permission to this page while process b does not and so that might be a producer
+10:18
+consumer scenario where process a is producing something and process b is consuming it and of course once
+10:24
+you've got shared memory then you need to synchronize and we get back to the synchronization we've been talking about
+10:30
+all right questions can everybody see why i'm talking about all the addresses
+10:36
+being of the form 0x0002 xxx and 0x0004 xxx
+10:44
+okay why why am i saying that process a has addresses like zero zero zero zero two x
+10:50
+x x
+11:01
+okay yeah so this corresponds to virtual page number two and number four
+11:08
+and if you notice the this is hex right so hex represents four bits so i have xxx in this instance
+11:17
+there are um 12 bits total so i'm talking about a 12
+11:23
+bit offset which means a 4k page okay in this instance and then all the
+11:28
+other bits the the remaining ones above are going to be um the ones that i use for my virtual page number
+11:34
+and so also get comfortable with figuring out what's the offset and then what's left over is a virtual page
+11:39
+number all right good and of course if i if i map the page in the same place in
+11:45
+both of these then the addresses would exactly match and then i could make a linked list or something
+11:51
+okay so what's a typical offset nowadays that's a good question so 4k 12 bits very common um some of the
+11:58
+higher end machines might get you to 16k okay
+12:04
+but um 4k is is pretty common okay or 12 bits
+12:11
+now where do we use sharing all over the place so remember we started out this term at
+12:17
+the very beginning saying we needed to protect address spaces from each other so their processes were protected from
+12:23
+each other and the kernel was protected from the processes but we have this sharing mechanism and i
+12:29
+like to think of sharing as selective punching of the the careful boundaries we've put
+12:35
+in processes in a way that does the kind of sharing we want so for instance the kernel region of every
+12:41
+process has the same page table entries for the kernel okay and that allows you
+12:46
+to basically pop in and out of the kernel um to uh without having to change any
+12:53
+page table mappings okay so the process is not i'll show you this in a second the process is not
+12:59
+allowed to access it at user level but once you go from user to kernel like say for a system call
+13:04
+now the kernel code can both access its own data and the user's data okay
+13:11
+but if it wants to access data from other user processes it's going to have to do something different at that point
+13:18
+if you want different processes running the same binary we talked last time i was accused of
+13:23
+starting a a culture war but if you want to run emacs multiple times for instance or vi
+13:28
+if you want to be a west coaster then um you can have the same binary stored in a
+13:36
+set of physical pages and then multiple processes can link to that binary and you don't have to waste memory with
+13:43
+duplicate code okay that's great and that's that extends to dynamic uh user level system
+13:49
+libraries you can also make that be uh shared only read only excuse me and then everybody
+13:54
+can share them and so obviously the last one is the one i was just showing you which is sharing
+14:01
+memory segments between different processes allowing you to essentially share objects between different processes
+14:07
+and thereby do you know interesting communication now of course you got to be careful
+14:14
+about that because the two processes are now trusting each other
+14:19
+to put data in each of those you know in that shared page that is properly formatted and can be
+14:27
+properly interpreted by the other process okay so that's a little bit less secure potentially unless you're very
+14:33
+careful so um now we can do some simple security
+14:38
+measures also with this like for instance we can randomize where the user code is rather than always
+14:45
+starting it at a particular part in virtual address space we can start it in different parts and that randomization which i'll show
+14:51
+you in another picture helps to make it harder to attack when you've got certain things like overflow errors and so on which you
+14:57
+might have heard about if you've taken 161 it also means the stack and the heap can start anywhere again
+15:03
+for security reasons and then we can also use kernel address space isolation
+15:09
+where we don't map the whole kernel space which is part of it and that can give us a little more
+15:15
+security notice that when we talk about meltdown which we will mention in a subsequent lecture
+15:21
+we have to in fact make sure that essentially none of the kernel space is mapped into user space
+15:26
+but we'll get to that a little later but if you look at this scheme i've got here with user space and kernel space
+15:33
+what this means is that because of bits that are set in the page table entry when i'm at user mode i'm not able to
+15:40
+actually access any of the kernel page table entries even though they're mapped
+15:45
+they're not available to the user but the moment that you take a system call now suddenly both the user's memory and the kernel
+15:52
+memory are all available to the kernel and this makes it much cleaner and simpler to do a system
+15:57
+call so here's a typical layout i actually showed you this last time
+16:03
+but we see a bunch of holes in here and these holes are basically allowing us to do
+16:09
+randomization and thereby making it harder to put executable code on the stack and
+16:14
+a few other things and harder to attack and so that's a good security measure okay but all of these holes are whole
+16:21
+things that we need to support and of course unfortunately so far with our page tables we don't have a good way to support
+16:27
+holes because in order to go from zero up to fffffff we need to have
+16:34
+all of the page table filled 100 filled and a lot of these empty spots
+16:39
+are just going to be null entries that say you know invalid and that's a waste and so we need to do something different and that's part of
+16:46
+our topic next okay questions
+17:00
+okay so right now the page table i've showed you this is answering a question in the chat
+17:05
+doesn't actually allow you to spread everything around without wasting a bunch of entries that are null okay so um
+17:13
+right now in order to map this virtual space i would have to have all of my entries
+17:19
+but um a bunch of them are going to be empty and that's a waste and so we're going to fix that okay and you're
+17:26
+right we can map around in physical space any way we want but virtual the virtual part of this is is wasted
+17:31
+yet so just to summarize i just wanted to give you a little bit here's an example
+17:37
+we have to have here's our virtual memory we've got all these holes that means the page table has to be a hundred percent full okay so
+17:45
+those advantages that we might have by setting the length of the page table to less than the full size we lose it because we have
+17:51
+to map the whole page table and that's because we need to have things like the stack at the top of the page table and
+17:57
+things like the code near the bottom and so that's a waste the other thing i wanted to show you here is this virtual
+18:04
+memory view goes through the page table and maps to data that's potentially spread all over
+18:09
+in the physical memory and i'm even showing you some gray things here which represent other processes
+18:15
+and so that scrambling of the physical memory is a big advantage of page tables
+18:20
+because now we can manage it much easier because every one of these pages is exactly the same size
+18:26
+and we can allocate or deallocate them any way we want the other interesting thing i want to
+18:31
+show you here is here's the typical stack grows down heap grows up if you notice in this case the stack
+18:37
+only currently has two pages associated with it that are actually mapped the rest of these entries like the one right
+18:44
+underneath the stack if you look over here in the page table is currently got a null entry in it okay
+18:50
+and that null entry means there's nothing mapped in here so the moment that we get
+18:55
+to try to go below that stack and suppose we're just pushing things on the
+19:00
+stack and we hit this point we're going to cause a page fault which we'll talk a lot about next time and at that point we can actually add
+19:08
+some more memory okay so if the stack grows we just add some more
+19:13
+uh stack and now all of a sudden we've got more stack and so what's great about this is that
+19:19
+we're able to start with the smallest amount of physical stack
+19:24
+that we can and will grow the stack as a process needs it so we don't have to commit physical resources to the stack because
+19:32
+the page faulting lets us grow that dynamically as we need it the page table
+19:37
+base register is actually going to be in cr3 in the x86 processor and so i'll show you that in a moment
+19:43
+um okay challenge now just to summarize what
+19:49
+i've been saying here is the the table size is equal to the number of pages in virtual memory so if you were to count up the number of
+19:56
+potential pages even the empty ones that's the size of our page table in entries and that
+20:01
+i'm the thing i'm saying is really unfortunate about what i've told you so clearly what i've told you isn't
+20:07
+really the full story okay and that's our next topic
+20:13
+so how big do things get all right so let's talk about size if we
+20:18
+have a 32-bit address space by the way i'm gonna go through these just to make sure everybody's on the same page with
+20:24
+their powers of two okay this is you are now uh uber os students and so you need to
+20:33
+know these things and you'll know them well so for instance in a 32-bit address space 2 to the 32 bytes or 4 gigabytes
+20:40
+okay and notice that i've got g capital g capital b so a lowercase b
+20:46
+means a bit a capital a capital b means a byte okay that's eight bits
+20:52
+for memory all right kilo is not a thousand it's two to the
+20:58
+ten which is a thousand twenty four that's almost a thousand but not quite now i think in 61a or something they
+21:05
+might have called this a kibby okay and kibbies are great if uh although they always sound like cat food
+21:12
+to me but they're great if you've uh if they come for you okay a kooby bite i don't know how much
+21:18
+a kooby byte is it's really big um m for mega is 2 to the 20 which is
+21:24
+almost a million but not quite okay it's more than a million um sometimes called a mibi
+21:30
+g for giga is 2 to the 30 not quite a billion sometimes called a gibby the
+21:36
+thing that you need to know is that when you're dealing with memory you need to sort of mentally translate
+21:41
+km and g into the powers of two rather than powers of ten
+21:48
+because um people don't always give you kimi and gi in fact they far fewer than um
+21:55
+they do it far uh less often than you might like okay and um and it might be maybe with an e
+22:01
+uh that's true um so the other thing that's a little
+22:06
+confusing about this by the way is that when you start dealing with things like network bandwidth
+22:12
+and you say kilobytes per second that is a power of 10. okay and so
+22:19
+this unfortunately this terminology is very confusing and um and i just want you to be aware
+22:24
+of the confusion because you're going to run into it as you go so typical page size as i said was four
+22:30
+kilobytes which is uh how many bits well if two to the tenth is a thousand twenty four then four kilobytes is an
+22:37
+extra two bits because two the second is 4 and so that's 12 bits okay how big is a sample page table for
+22:44
+each process well let's look at this if a page itself is
+22:50
+2 to the 12th in size bytes and they're 2 to the 32 total i just divide the 2 which means i subtract the powers
+22:57
+and i get 2 to the 20 which is about a million entries and they're going to be 4 bytes each i'm going to show you what the entries look
+23:03
+like in a moment so that's about 4 megabytes would be wasted in a page table where a lot of them are
+23:09
+are empty so we're going to need to do something different so when a 32-bit machines
+23:14
+first got started this is things like the vax 11780 the intel 8386 et cetera 16
+23:20
+megabytes was a lot okay and so four megabytes was a quarter of all memory so this is clearly not
+23:26
+something we want to do all right um and just to hammer this
+23:32
+home so how big is a page table and 64-bit processor all right so 2 to the 64 over 2 to the 12th is 2 to the 52nd
+23:40
+which is about uh 4.5 exa entries 4.5 times 10 to the 15th
+23:45
+they'd be eight bytes each which is 36 exabytes in a single page table
+23:52
+all right that's clearly a waste and so um this page table thing that i showed you
+23:57
+i'm calling it a simple page table it's clearly not what we want this is just a lot of wasted space all
+24:03
+right questions
+24:09
+so the address space fundamentally sparse remember all those holes i showed you and so we want a layout of our page
+24:16
+tables that handle holes well and really what's a page table so
+24:22
+um let's think about this what do you need to switch on a contact switch well you just need to switch the top pointer
+24:27
+so that's easy in some sense to the address space now what is not so easy is oftentimes you have to
+24:34
+flush a bunch of tlb entries and so on so switching the address space can be more expensive than just switching the
+24:40
+pointer now what provides the protection here well translation per process
+24:46
+and dual mode execution so what that means is only the operating system is able to a
+24:51
+install the um to install the page table pointer and only the kernel
+25:00
+is allowed to change the page tables okay because we can't let the process alter its own page table now the question about is the processes
+25:06
+page table stored with its pcb typically it's a different part of memory it's kind of like on the kernel's
+25:12
+heap in some sense because the pcb has sort of got pointers to everything but it doesn't necessarily
+25:17
+contain big things like page tables that's a good question though it could in principle
+25:23
+it often doesn't but some analysis here is the pros of the page table thing that
+25:28
+we've come up with so far is it's very simple memory allocation because every page is the same size
+25:33
+it's easy to do sharing the cons are if the address space is sparse which it is
+25:39
+then you start wasting a bunch of entries if the table's really big now the problem is that you're not
+25:45
+running every process all the time and so you're wasting a huge amount of memory and it'd be really nice if we could have
+25:52
+an actual working set of our page table and so you can see that we're going to stray into caching
+25:57
+very quickly here all right so the simple page table is just way too big
+26:02
+and we don't want to have to at all in memory etc and so is there something else we
+26:07
+can do and maybe we could make our table have multiple levels in it
+26:12
+and so that's where we're going now is the uh does the page table also specify
+26:18
+whether something's accessible to the user or the kernel yes and there's a bit in the page table entry i'll show you that
+26:23
+in just a second so how do we structure the page table well a page table is just a map
+26:29
+or a function from virtual page number to physical page number all right like this right virtual
+26:34
+address in physical address out and so there's nothing that says that this just has to be a single table
+26:40
+um if it is a single table it's very large just ridiculously large as we just
+26:45
+showed what else could we do well we could build a tree or we could build hash tables okay you
+26:50
+you think of it uh we could come up with it and so um one fix
+26:56
+for uh the sparse address space is the two level page table idea and i wanna show you what i like to call
+27:02
+the magic page table this is a fun one you'll see why it's magic in a moment but this is for 32-bit
+27:07
+addresses and it's a t tree of page tables where uh we have 4k pages so 4k pages
+27:15
+means 12 bits of offset and four byte page table entries
+27:21
+okay so these are four bytes total and i'll show you what's in those four bytes in a moment but what that means is that we can take
+27:28
+the virtual address we have our 12-bit offset and two 10-bit indices and the first ten
+27:34
+bits goes to the first level page table and it's used to select one of a thousand
+27:40
+twenty four entries which there will be because four k bytes divided by uh four bytes is
+27:45
+a thousand twenty four and then the second one we'll actually pick the second level and that will give us
+27:52
+the physical page number and of course we copy copy the offset there okay and so the
+27:57
+tables in here are all fixed size right and in particular they're all
+28:04
+4k bytes in size so these page table sub entries are four kilobytes this one is four
+28:10
+kilobytes the pages themselves are four kilobytes so what's cool about everything being four kilobytes is now we can start
+28:16
+talking about swapping parts of the or paging out parts of the page table to disk and so only those
+28:23
+parts of the page table we're actively using even have to be in memory okay now of course the top level one
+28:30
+always has to be there if that process can run but there's a whole bunch of other ones at lower levels that don't have to be there
+28:36
+okay so the tables are fixed size on a contact switch we just have to save
+28:42
+this single page table pointer in the pcb for instance and the page
+28:47
+tables themselves aren't necessarily stored in the pcb but that page table pointer is the address space
+28:53
+descriptor and just by switching that out possibly with flushing tlbs we'll get to that
+28:58
+later um is enough to change the whole address space of the machine and go from one process to the next
+29:05
+okay now the valid bits on the page table entries i sort of indicated we could pay we could swap out the pages but what did
+29:12
+i mean by that well if you if you look at this situation where we take 10 bits we look
+29:17
+it up in the first level page table if we had this second level page table if that wanted to be out on disk
+29:25
+we could actually mark this first level as invalid and then what would happen is we would
+29:30
+uh try to look up this virtual address those 10 bits would look up the first page table entry we would see
+29:37
+it's invalid we'd cause a page fault that page fault would then get resolved
+29:42
+by the operating system by bringing the next level page table in we'd retry and now the first 10 bits would work the
+29:49
+second 10 bits would get tried and maybe this one would be marked invalid in which case we pull the actual page in from disk
+29:55
+and then we finally are able to actually do the reference now that sounds really expensive because
+30:01
+the disk remember access is a million instructions worth but because of a sort
+30:06
+of a caching view of the world we only do this once and then the multiple one times that we do that
+30:12
+afterwards everything's faster okay all right
+30:20
+questions now good question is the information about how the page table is structured
+30:26
+built into the hardware yes all right so that typical machines these days like the memory
+30:32
+management unit i showed you that would be on the x86 have a particular structure for the page
+30:40
+table built into them okay and it's there by the same for uh pretty much all processes that
+30:48
+are actually running on a given machine at a given time now some machines
+30:54
+like mips processor line and basically the things that were related to them actually do something a little different
+31:01
+where they don't have hardware that that walks its way through the page table or does what we call a page table
+31:06
+walk they actually have software and when you um try to access
+31:11
+something that's not in the tlb which we haven't heard about you'll actually trap the software and then the software can
+31:17
+pretty much structure the page table any way they want but the page tables you're dealing with now with pintos on the x86
+31:23
+that's a hardware page table walk and so the structure of the page table is absolutely built into the hardware
+31:30
+all right now um here is the classic 32-bit mode of an
+31:35
+x86 i just wanted to show you this um so the intel terminology rather than saying there is two levels of page table
+31:42
+they actually cause that i call that top level a page directory but you know that's just a terminology
+31:48
+thing but essentially you have the cr3 which is the register only accessible to
+31:54
+the kernel that defines the top level page table it points at the page directory we take
+32:00
+10 bits off of the address pointed at that page directory that gives us
+32:05
+the next page table okay so that's actually going to give us a 20
+32:10
+bit pointer to the next page table in physical memory 10 bits come out of the table the the next 10 bits come out
+32:17
+that looks up the next page table entry that'll give us 20 bits that represent the physical page and then we combine with the offset and that
+32:23
+gives us the actual final address we're looking at okay now i just
+32:29
+threw something at you very quickly but let's see if we can understand this if you look at the way addresses even
+32:34
+the physical ones are structured there's a 12 bits of offset and 20 bits of either
+32:39
+virtual or physical address so that means that when i specify a physical page
+32:45
+i have to give 20 bits of unique address to specify that physical page
+32:52
+and then the offset the remaining 12 bits can be anything we want but that physical page is defined by 20 bits
+32:58
+which means that this page table entry has 20 bits of physical address in it
+33:03
+okay all right so some adventist trivia
+33:11
+uh midterm tour is coming up um thursday 10 29 so topics are going to be up until
+33:18
+lecture 17. so we have some good topics for the midterm we've got scheduling deadlock
+33:23
+address translation virtual memory caching tlbs demand paging and maybe a little bit of
+33:28
+io so first midterm was somewhat of a dry
+33:34
+run this next one will actually require you to have your zoom up and working uh when you're when the ta proctoring ta
+33:41
+pops into your zoom room um you need to have things going so just be aware that you should make sure you
+33:48
+get your setup going things are going to be almost the same as they were last time uh
+33:53
+except which worked reasonably well except for the fact that i think we're going to pre-generate all your zoom rooms for you
+33:59
+and then you're just going to be connecting to them but uh watch for that and anyway we want to make sure that
+34:05
+your setup is debugged and ready okay there will be a review session we don't have any details on that yet but
+34:11
+we'll get out the zoom uh details on that and uh the most important administration that i
+34:17
+wanted to say is you know the u.s election is coming up for those of you who are
+34:24
+citizens or have the ability to vote absolutely vote this is the most important thing that
+34:30
+you can do as a u.s citizen and um you need to do it and actually if you
+34:37
+don't do it then it's uh not you know you don't get to complain about the results but i would say don't miss
+34:43
+the opportunity and of course be safe if you can vote by mail do that otherwise wear a mask um and social
+34:51
+distance but be be careful okay um but i would say um without being political that this is
+34:58
+potentially the most important election in a century so don't miss it
+35:04
+all right um yeah and those of you in california
+35:10
+don't go to any of these fake ballot boxes there actually are a bunch of them you can go to the post
+35:15
+office and what's even better you can um sign up to find out about the status of
+35:21
+your ballot there's a there's an online thing to do that i did it it's awesome it i got a notification a text
+35:28
+the moment the post office found it scanned it and then when it got to the
+35:33
+destination it said it will definitely be counted so you get a text every time something happens so
+35:38
+be careful of the fake ballot boxes thank you for that ashley all right
+35:45
+um good so what is this
+35:51
+page table entry of which i s of speak here okay it's basically um it is the entry in
+35:59
+each of the page tables and it's potentially a pointer to the next level page table or it's the actual page itself
+36:06
+it's got permission bits like valid read only read write write only okay and so i'm going to give
+36:11
+you an example of the x86 uh architecture um the address is the same format as a previous slide
+36:18
+okay so this is going to be for the magic 10 10 12 bit offset um intermediate page tables are called
+36:24
+directories for x86 but here it looks okay so it's 32 bits or 4 bytes
+36:30
+and if you notice there's 20 bits of physical page number because remember i said you needed 20 bits to uniquely
+36:36
+identify a 4k page and then the remaining 12 bits are um interesting okay the lowest bit
+36:44
+here is the um presence bid okay most everybody except for intel calls it
+36:51
+the valid bit intel likes to name things differently than anybody else so they call it the presence bit but the same idea
+36:57
+if there's a one that means that this page table entry is is valid and you can go ahead and do the
+37:03
+translation if it's a zero it means it's invalid and all the other bits all 31 of the remaining bits are essentially
+37:10
+free for the software to use and that can be an interesting way to keep information about where that page
+37:17
+really is if it's not valid and mapped in memory so that's the the present bit the writable bit w
+37:23
+actually says whether this page is writable the u-bit um basically is uh is this a user or
+37:30
+kernel uh page and so if it's uh zero it's uh it's a kernel page to one it's user um i
+37:38
+believe i may have that reversed look it up in the spec then we have some things about caching so the uh
+37:44
+pwt and pcd are whether there's no caches allowed or not so page write transparent means you write straight
+37:50
+through the external cache and pcd means the cache is disabled
+37:56
+these two things are important when we start talking about memory mapped io so um we'll talk about that in
+38:03
+a few lectures um a says uh whether this page has been accessed recently or not
+38:08
+and that gets reset by software but set by hardware d is whether it's dirty which gets reset
+38:13
+by software and set whatever you do a write to that page and then this ps is going to give you a
+38:19
+page size so if you set this to zero it's exactly the 10 10 12 i showed you
+38:24
+if you set this to one then there's only one level of page table and you can get four megabyte pages
+38:30
+out of it which you might use for the kernel okay questions
+38:39
+now what can you use this for we'll talk more about this uh next time and the time after but
+38:46
+invalid page table entry where the p bit is zero for instance can imply all sorts of things one is
+38:51
+that the region of address space is actually invalid so there may be a hole in the address space that is never going
+38:57
+to get filled okay and in that case a page fault will occur and potentially the process will be
+39:03
+faulted the other option is that well it's not valid right now but the
+39:08
+page is somewhere else and so potentially go out to disk to pull it in and that means that after the
+39:14
+page fold happens the kernel will reset the page table entry such that the valid bits now won
+39:20
+and then you retry the the loader store and at that point it will go through okay the validity portion is checked
+39:27
+always first and so that means the remaining 31 bits can be used by the operating system for
+39:33
+location information like where is it on the disk for instance when uh page table entry is invalid
+39:40
+so a good example is demand paging okay this is the simplest thing when you hear about paging um right off the bat demand
+39:47
+paging means that we only keep the active pages in memory the rest of them are kept out on disk and uh their page table entries are
+39:54
+marked invalid and so now rather than having to swap a process out like we talked about
+39:59
+a couple of lectures ago by sending all of it all of its segments out to disk now we can send just pages that
+40:06
+aren't being used out to disk and we can get much more efficient use of memory that way another interesting one is copy on
+40:13
+write so we talked about unix fork multiple times and the interesting thing about unix fork if you remember is when
+40:20
+we fork a new process both the parent and the child in that case have a copy of the full address space
+40:28
+and we talked about that rather than being so expensive that you copy everything what you do instead is you copy the page tables
+40:34
+you mark them all as read only and the moment either the parent or the child tries to write then they will get a page
+40:40
+fault and at that point we'll copy the pages and make two copies it's called copy on right
+40:45
+okay another is zero fill on demand you can say well
+40:50
+all of these pages are going to be zero because we want to make sure that we don't accidentally reveal information
+40:56
+from the previous process and use that physical page what we do there is we mark the page as uh invalid and the moment you try to
+41:04
+access it you get a page fault and the kernel zero is a physical page for you maps it and
+41:09
+gives it back to you and that's a zero page on fill okay and so we're essentially doing it's like late binding for those
+41:16
+who have taken interesting language classes in cs we're kind of late binding our
+41:21
+zero fill and our copies okay
+41:26
+so here is a another example that's kind of interesting of sharing so i'm showing you
+41:31
+two processes with page table pointer and page table pointer prime
+41:37
+the important thing to see here is the green part and notice that we're actually saying that a couple
+41:43
+of whole sub pieces of the address space are shared
+41:48
+okay so the question about does that mean that zero filling pages doesn't actually
+41:54
+delete the information from physical memory well at the point that you hand it over it does overwrite it
+41:59
+okay so make sure that everything is fully written and you don't have to worry about what happens before you do that
+42:05
+overwriting because you can't even read it it's marked as read-only is invalid and so the moment you try to
+42:11
+read you get a page fault and then the kernel fills it with zeros and gives it back to you
+42:16
+so no worries about your secret keys at that point okay so we can share whole sub-pieces
+42:22
+all right and you can imagine that perhaps a whole big chunk uh might represent the user's space
+42:30
+and you could have a user page table and a kernel page table that just had um user plus kernel
+42:36
+entries in it and they mostly share the whole page table and this is going to be uh useful when
+42:41
+we talk about the meltdown problem okay but uh we'll uh we'll talk about that
+42:47
+later all right so for two level paging very simple okay just like before here we have an address
+42:54
+um and the first three bits are used to look up the first level page table the second
+43:00
+three bits look up the second uh level page table and then you get the uh the final actual physical mapping and
+43:07
+the point is that this particular slide is showing you virtual memory uh position mapping all the way to
+43:15
+physical memory just to get a better idea how that multi-level mapping goes okay and notice
+43:20
+that we did we do copy in this case uh zero zero zero gets copied to the offset okay
+43:29
+so in this case in the best case the total size of the page table is approximately equal to the number of
+43:35
+pages used by the virtual memory so this page table is there's not as
+43:41
+much wasted space as a single page table because if we have big chunks of no of
+43:46
+non-mapped space what we do is we put a null in the top level page table and then we don't even have to have the second level page table
+43:53
+so we save a whole bunch of space in the page table when we have sparse
+43:58
+tables okay now
+44:05
+we can take this this is like a meme right we can make multi-level pretty much anything we
+44:10
+want and if you can think of it it's been done so what about a tree of tables so the lowest level page table
+44:16
+might still be uh to pages and map with a bitmap like we talked about the higher level might be segmented and
+44:22
+you could have many levels so here's an example where um i take the virtual address
+44:28
+i split off some segment id at the top and i have a page number and then i have an offset okay and so i copy the offset
+44:35
+always do and now the virtual segment number goes to a segment table
+44:42
+and that gives me a base which is in memory for a page table in which case i
+44:47
+use the virtual page number to look up the page table entry and that gives me a physical page number
+44:53
+and of course for all the reasons of sparseness i talked about what you're really going to do is you're going to have a segment number and then two levels of
+44:59
+page table to deal with sparseness okay and then we're going to check for access errors like is it valid um
+45:07
+is it writable or not okay and so there's various places i can
+45:12
+get errors what do you have to save and restore in the context switch here remember
+45:18
+for the simple page table only we just have to save and restore the base in a segment situation typically as i
+45:24
+said a few lectures ago these segment registers are stored on the processor and in that case you got to save and
+45:30
+restore the segment registers during a context switch so this is a little bit more expensive
+45:35
+now you might say wait a minute why are these segment registers not stored in memory simply because there's such a small
+45:41
+number of them they're typically just stored in the processor okay because it's much faster than going
+45:46
+to memory and you're only paying the costs when you do a contact switch okay
+45:54
+what about sharing complete segments well you know this is i'm giving you you know obvious things
+46:01
+this is par for the course but you can have the virtual segment number of process a and the virtual segment number of
+46:07
+process b both point at the same chunk of page table and now they're essentially sharing that
+46:14
+all of the pages that are in that page table amongst these two processors okay so the cool thing about the
+46:21
+flexibility you get out of these mapping schemes is you can do whatever sharing is appropriate
+46:27
+the key there being that you're you're punching these holes in the protection afforded by processes
+46:33
+you're punching these holes carefully so that you're only sharing when you want to rather than
+46:38
+sharing and not knowing that you're doing so okay
+46:45
+so the pros of the multi-level is you only need to allocate kind of as many page table entries as you need for the
+46:51
+application i'm going to say that approximately right and that's basically gives you a way to have sparse address spaces
+46:58
+it's easy memory allocation why is it easy memory allocation because the pages are
+47:06
+all the same size okay and so it's really easy to put those pages on a free list in fact you don't even
+47:11
+have to put them on a list you just have to have a very large bitmap it's easy sharing and just showed you
+47:16
+many ways of sharing okay cons are there's a pointer per page
+47:22
+typically 4k uh 16k pages today um if you got a 64-bit address
+47:28
+space i'm going to show you this in a moment the page tables still add up even when you've got multi-level page tables okay
+47:34
+um and these page tables need to be contiguous so that means that each of the sub pieces
+47:40
+have to be contiguous um but that's okay because we're allocating things in 4k at a time right
+47:47
+and so in the 10 10 12 configuration the page tables have been set up to be exactly one page in size
+47:54
+so that the same allocation can be used to allocate both the page table entries and the pages themselves
+48:02
+now the other con which we haven't addressed yet is i've slipped something uh
+48:09
+underneath here without you guys realizing it these this looking up multiple levels of translation there's
+48:15
+time involved okay this is not magic it's hardware um and so every level requires cycles to go to dram to
+48:23
+look things up okay and so how are we going to possibly deal with that because that just seems like i've turned
+48:29
+something that was fast loads and stores to cash and i've turned it into something slow
+48:35
+what am i going to do anybody have any ideas
+48:44
+caching exactly tlb is a type of cache exactly now um we're gonna
+48:51
+we're gonna use caches all right and um they're uh for the person who asked about virtual caches these are all gonna
+48:56
+be um caches where the index uh in the tlb is going to be virtual but
+49:03
+for the the actual data caches are going to be physical and i'll try to mention that when uh when it gets there all right now
+49:10
+if you remember for dual mode operation i just want to toss this out again can a process modify its own translation
+49:16
+table no because if it could all of this protection's gone right only the kernel
+49:22
+should be able to modify a the tables themselves and b which tables are in use
+49:27
+that you know setting cr3 can only be done in the kernel so and to assist with protection
+49:33
+hardware is giving you the dual mode right we talked about kernel mode versus user mode and um
+49:40
+even though in x86 there's four of them we're really only using two and there's bits and control registers
+49:45
+that get set as i go from user mode to kernel mode and back okay just remember this all right and in
+49:51
+x86 there's actually rings where ring zero is kernel mode ring three is user mode and sometimes
+49:57
+the ones in the middle are used uh when you're using virtual machines okay
+50:02
+and there is some additional support for hypervisors which we'll talk about in a later lecture that sometimes people call ring minus
+50:09
+one or something like that all right so summary of all of this now
+50:14
+that we're um know more about virtual memory mapping is that certain operations are restricted to kernel mode
+50:20
+things like modifying the page table base register can only be done in kernel mode page tables themselves can only be
+50:27
+modified in kernel mode okay now um there is a question here
+50:32
+about can we use virtual caches and um avoid some of the fast trend some of
+50:39
+the slow translation problems and the answer there is we could except that virtual caches have
+50:45
+all sorts of consistency problems with them and the simple way to see that is that since every process has its own notion
+50:52
+of zero the moment you put in pro virtual caches it means that if you try to switch
+50:57
+from one process to another now you got to flush the cache because uh the the notion of zero for the first
+51:04
+process is different for the notion of zero for the second process and so virtual caches uh are
+51:11
+not used very much these days because they have that very complicated mess involved in having
+51:18
+to flush them when you switch from one process to another okay now here let's make this real for a
+51:25
+second here's the x86 uh memory bottle with uh segmentation so here we have a segment
+51:31
+selector all right and typically you get that segment selector out of the instruction this is for instance the gs segment
+51:38
+okay and that segment selector now gets uh looked up in a table and that table is
+51:43
+combined with an offset to give us a linear address and now we combine we have that combined address which is a
+51:51
+linear address uh 32 bits and now we take that linear address
+51:56
+and we look it up um so this is the virtual address space as set by the segments and now we go
+52:03
+ahead and we look up the first page directory the page table oops and uh we look it up so we actually have
+52:09
+a segment followed by uh two page lookups okay
+52:14
+all right um and uh the the thing about virtual caches is yes it's expensive which uh computer
+52:21
+architects hate expensive operations because they slow everything down okay now i just wanted to show you this
+52:29
+is very briefly to say a little bit more about what's in a segment in x86 so segments there are six of them
+52:35
+typically the sscs ds es fs and gs segments they look like
+52:40
+this so there are registers i was making them green earlier i probably should have made this mid-green but a segment register has 16 bits 13
+52:48
+of them are a segment selector and then there's a global local bit and then there's the uh the current
+52:55
+mode that you're in and so what's in that segment register so it's a pointer to the actual segment
+53:01
+so what's in the processor is a pointer to what's in memory and if you look here what's in memory is
+53:08
+a big table uh two different tables actually the global table the local table depending on which bits
+53:15
+you've got here you look it up that gives you a segment descriptor and in that segment
+53:21
+descriptor is a set of bits that sort of tell you where the segment starts in memory
+53:26
+how long it is and what are its various uh protection bits okay and
+53:32
+um if you're wondering why this is so messy by the way you take the the things of the same color and you put
+53:38
+them together and that gives you the actual offsets and position of the segment
+53:46
+can anybody guess why this is so messy
+53:57
+uh not easier in hardware
+54:02
+it's just messy it's it's not complicated in hardware but that's not the reason it's messy
+54:07
+yeah because it's really messy to have to deal with it in software so nobody in their right mind would make something like
+54:13
+this unless there was a reason and the reason is that they're trying to do backward compatibility with the original x86
+54:19
+processors even as they expanded them to 32 and 64 bits so messy but notice that uh
+54:25
+the original six segments uh have this rpl which basically for the
+54:31
+code segment tells you what your current privilege level is zero or three okay
+54:38
+all right and the difference between cpl and rpl has to do with uh the
+54:45
+privilege levels of the actual uh of the actual um
+54:52
+descriptor itself versus what the segment register says okay
+54:59
+now um how are segments used well there's one set of global segments for everybody
+55:05
+another set of local ones that are per process in legacy applications the 16-bit mode
+55:12
+um is is utilized and the segments are real okay they they actually have a base
+55:19
+and they have a length and they do something
+55:24
+helpful okay and they were originally not paged that way once we get to 32 and 64-bit mode what
+55:30
+happens is what i showed you earlier which is that the segments are used to
+55:36
+figure out what the linear address is and then that just goes through a normal paging scheme and modern operating systems there's
+55:43
+this question was on piazza as well is really if you notice the segments at
+55:49
+least the first four segments are all set such that the base is zero and the length is
+55:54
+uh four gig which effectively makes them not do anything useful and the reason
+56:00
+for that is that basically operating systems just don't bother with segments and they like they call that flattened address space
+56:08
+okay and so you have to keep the segments there because the hardware needs them but essentially they're
+56:13
+they're set up in a way that doesn't do anything right the one exception is the gs and fs
+56:20
+segments are typically used for thread local storage and so every thread can potentially have a little chunk of memory
+56:26
+that is unique based on its identity and you can do things like you know move gs offset zero into eax that's actually
+56:35
+getting the zeroth entry in the thread local storage for that thread
+56:40
+and that's supported by um it was originally supported by some of the new tools like
+56:45
+gcc and it's certainly been part of uh modern operating systems for a long time the other thing that's interesting
+56:52
+is when you get to the 64-bit mode uh the hardware doesn't even support segments anymore
+56:58
+so even though they're still in the instructions in fact the first four segments have a zero base
+57:03
+and no length limits and are unchangeable and so that that flat mode has been
+57:09
+basically uh baked into the 64-bit hardware and the only ones that still have some functionality is fs and
+57:15
+gs and that's because of the thread local store okay so you could almost say that
+57:20
+segments are essentially unused in modern x86 uh operating systems pretty much okay
+57:26
+except for the thread local store it's definitely would be faster to not
+57:33
+have the hardware support segments but um if they're not used but the x86
+57:39
+uh several of the modes basically have them uh and so they need to support them okay
+57:46
+if they were start from scratch and uh say they were building a risk processor like risk five which you guys
+57:51
+are aware of you might not put segments in at all now what about a four level page table
+57:58
+well here's a uh here's a typical x86 64. there's actually four uh nine bit entries the
+58:06
+the um the the physical address uh page number is long enough that these
+58:11
+entries actually have to be eight bytes long okay and so um that's why we have
+58:16
+nine bits here instead of ten and uh and so to look up from a virtual to a physical address you actually have
+58:23
+to look up four things okay so we're starting to get pretty expensive and then when we get to virtual machines which we'll talk about
+58:29
+then potentially you double all of this and it gets even more expensive so for the x uh 8664 architecture here
+58:37
+we go cr3 and then four references to get to the actual uh page okay and
+58:45
+interestingly enough you can even have larger pages so if you look here let me back this up for a sec if you
+58:50
+notice we take cr3 that gives us
+58:56
+first level second level third level fourth level if you actually look in that first
+59:01
+second third level there's a bit in the page table entry there that if we set it equal to one
+59:07
+there's no fourth level and therefore we actually get two megabyte page out of this because
+59:12
+the offset is 21 bits okay rather than 12. and we can also
+59:18
+go even further than that if we set ps equal to one in this second level page table we can get
+59:23
+gigabyte pages all right so that is a mode supported by the x864
+59:28
+and um these larger page sizes kind of make sense since memory is so cheap these days
+59:33
+but the trick there is if you allocate really large pages and they're not used now you got
+59:40
+internal fragmentation waste again and so these larger page sizes are typically
+59:45
+used by things that are fixed always present and unlikely to be paged
+59:50
+where the kernel is a good example or maybe if you're building a special operating system for
+59:56
+something that's streaming really large items you might use some of these bigger pages
+1:00:01
+but they're certainly available okay um what happens to the higher bits um
+1:00:08
+that's a really good question and um i will show you that in a later lecture but the bottom answer or the simple
+1:00:15
+answer is if you look at the virtual address
+1:00:21
+here um in all of them the higher bits are all the same
+1:00:28
+and what that means is either they're all zeros or they're all ones okay and everything in between where
+1:00:35
+they're not all the same is a page fault okay and what that looks like in uh the physical address space is that
+1:00:43
+you have uh a chunk at the top and a chunk at the bottom and a really big hole in the middle
+1:00:49
+okay and that um that really big hole is is a is a permanent page fault that you can't
+1:00:54
+map anything into and the reason that they do it that way is typically the things at the top are kernel and the things at the bottom are user
+1:01:01
+okay and as you uh expand your hardware you can add more and more bits as you go
+1:01:09
+now there was uh ia64 actually had a six level page table
+1:01:16
+no too many bits uh this was basically an intel architecture that was
+1:01:21
+uh designed for really huge machines and they were going to map all 64 bits but
+1:01:27
+they didn't want to do it this way because there's way too much to look up and so the question is what
+1:01:33
+else could we do if we're trying to build a table that's mostly sparse well we could build a hash table
+1:01:40
+okay so all of the previous things we're looking at are called forward page tables because you take the virtual address
+1:01:46
+and you peel bits off and you look up in the first level and then you peel off some bits in the second level third
+1:01:51
+level fourth level and instead we can do an inverted page table which looks kind of like this where you
+1:01:57
+take the virtual address and this virtual page offset and you look it up in a hash table and that gives you the physical page
+1:02:04
+okay so um the advantage of this is now that this hash table
+1:02:10
+is related in size i'm going to say of order size of the number of physical pages you
+1:02:16
+have in dram whereas this scheme the size of the page
+1:02:22
+table is related to the number of bits you have in the virtual address okay think that through even though
+1:02:28
+we've done this good job of keeping things allowing things to be sparse by doing a forward page table
+1:02:34
+the size of the page table is of order of the size of the virtual address space not the amount of dram you have whereas
+1:02:40
+here this is of size the amount of dram you've got okay and so that's why inverted page
+1:02:47
+tables have shown up in a few architectures over the years actually supported in hardware
+1:02:53
+okay so things like the power pc the ultra spark the ia 64 that's one i just
+1:02:58
+showed you all had inverted page tables supported in hardware and you know there's more complexity to
+1:03:04
+it and so the hardware is a little more complicated and the page
+1:03:09
+tables themselves don't have any locality because it's a hash table and so while the previous things we were
+1:03:15
+showing you the pages can be page table entries can be cached in the cache
+1:03:20
+here it's much harder with the inverted page table okay and what makes it inverted is
+1:03:26
+really that we're taking the virtual address and kind of looking up the physical page rather than
+1:03:33
+um taking the virtual or the way to think about this is this hash
+1:03:38
+table is is got one entry per physical page whereas the
+1:03:44
+previous thing has an entry per virtual address okay and that's why it's inverted it's it's what's stored in here
+1:03:50
+is an entry per physical page whereas what was stored in the other one was kind of an entry per virtual page and uh
+1:03:59
+whether it's faster or slower depends a lot on the architecture it's certainly potentially a lot faster
+1:04:05
+than looking up nine entries it's certainly not
+1:04:10
+simpler though so it's a question of simplicity of the hardware
+1:04:16
+so the total size of the page table here is roughly equal to the number of pages used by the program in physical memory
+1:04:22
+rather than the number of pages in the virtual memory so we can compare some of our options we
+1:04:29
+talked about really simple segmentation that was actually an example of what was in the very first x86s before there was
+1:04:35
+even paging that was before the x the 8386 you get very fast contact
+1:04:40
+switching because you're just changing the segment map um and there's no page tables to go through
+1:04:46
+so it's very fast but we got external fragmentation so we very quickly got rid of that and we put
+1:04:51
+in some level of paging and the different schemes we've been talking about all have some advantages or disadvantages
+1:04:57
+the simple paging was just uh they had no external fragmentation but the page size was huge and you
+1:05:03
+couldn't have any sparseness in the in the virtual memory and then we talked about several
+1:05:09
+different uh options here for um paging okay and all of the remaining ones other than simple
+1:05:15
+segmentation basically all have the page as a basic unit of allocation and thereby we don't have that external
+1:05:21
+fragmentation problem we did with segments so how do we do translation well
+1:05:30
+the mmu basically has to translate virtual address to physical address on every instruction fetch every load
+1:05:36
+every store those of you that remember 61c and caching will remember there was a
+1:05:43
+lot of work done to try to make a load and a store fast by having first and second level caches
+1:05:48
+what i've just done here in the way i've described this lookup so far is i've made that really slow again because yeah
+1:05:54
+maybe my cache is fast but before i can figure out where to look in the cache i got to go to dram
+1:06:00
+and look up a bunch of stuff in a page table and then i have an address which i can then look up quickly in the in the
+1:06:06
+cache okay um the one the one um example where that's not true
+1:06:13
+would be with a virtual cache but we're gonna talk about physical caches because those are pretty much what everybody has these
+1:06:19
+days okay so what does the mm do on mmu do on a translation well in the first level page
+1:06:24
+table it's got to read the page table entry check some valid bits and then go to
+1:06:30
+memory second level has to read a couple of page table entries out of dram check valid bits and so on and level
+1:06:36
+page table much more expensive and so um clearly
+1:06:42
+we can't go to the um the page table all the time or we got
+1:06:48
+problems we've just destroyed all of the cool cache locality we've been working with so um what do we do about this
+1:06:56
+okay so where and what is the mmu so typically we have a processor
+1:07:01
+and then we have the mmu between the processor and the cache and then we have a memory bus where the
+1:07:06
+physical dram is so the processor requests read virtual addresses the memory system through the
+1:07:12
+mmu to the cache and so we want to figure out how to make this thing fast when we make this request sometimes
+1:07:19
+later we get data either back from the cache or back from the physical memory and we want to try to have the
+1:07:26
+principles of locality work well on this okay so what is the mmu doing the mmu is
+1:07:32
+well the simple thing is it's translating right from virtual to physical as long as it does
+1:07:37
+that translation correctly we don't care how it makes itself fast so there's nothing that i've
+1:07:43
+done so far in describing the translation as a tree of tables
+1:07:48
+that requires us to go to the full tree of tables all the time as long as we can keep
+1:07:53
+something fast consistent with the actual tree of tables okay so let's see if we can use caching
+1:08:01
+to help okay so if you remember caching okay and this is uh this is a picture of me and my desk
+1:08:07
+which you guys can't see because of my background right on my zoom cache if you remember is a
+1:08:13
+repository for copies that can be accessed more quickly than the original and we're going to try to make the frequent case
+1:08:19
+fast and the infrequent case less dominant so caching basically underlies everything in
+1:08:26
+uh computers and the operating system i like to joke is all about caching everything okay so
+1:08:32
+um everything's about a little bit about protection and dual mode but the rest of it's about caching so you can
+1:08:38
+cache memory locations you can cache address translations you can cache pages file blocks file
+1:08:45
+names network routes you name it you can cache it and the rest of the term is going to
+1:08:50
+be about how we can use caching in clever ways to make things faster it's only good
+1:08:57
+though if the frequent case is frequent and the infrequent case is not too expensive so that means
+1:09:03
+that when i put something on that desk so that i can look at it frequently it better be the case that i am
+1:09:10
+frequently looking at things on my desk otherwise i'm basically just wasting desk space
+1:09:15
+it also ought to be the case that when i can't find something on that desk that it doesn't take too long to find it
+1:09:20
+otherwise everything is just slow no matter how good your caching is okay and so an important measure which
+1:09:26
+this is just reminding you guys is the typical average memory access time amat
+1:09:32
+which is the hit rate times the hit time plus the miss rate times the miss time okay and that's uh that should be
+1:09:39
+familiar to you so hit rate plus miss rate together add to one
+1:09:45
+so for instance uh this is 61c idea right so the processor has to go to
+1:09:50
+dram it's 100 nanoseconds all the time or if i put a cache that's one nanosecond
+1:09:57
+maybe i can make this a much faster operation on average if i can put some uh the right
+1:10:03
+stuff in the cache so the average memory access time which i just showed you
+1:10:08
+is for instance like this if the hit rate of the cache is 90
+1:10:13
+then the average memory access time is point nine times one which is the time to get that out of the one nanosecond cache plus
+1:10:20
+point one that's that ten percent where i miss it times 101. now why 101 well because in a
+1:10:26
+situation like this i go all the way down to dram i pull it into the cache and then i do that last
+1:10:32
+access out of the cache and so the um the final here is on average 11.1
+1:10:38
+nanoseconds as opposed to 100 nanoseconds so i've gained a lot by having a 90 hit rate okay
+1:10:45
+if the hit rate's 99 notice that my average comes down to 2 nanoseconds 2.01 so the higher my hit
+1:10:53
+rate the better i can do okay and
+1:10:59
+the other thing is you can do the following you can say that miss time includes the hit time plus the
+1:11:05
+missed penalty so when i miss it's both the time to hit which is the one nanoseconds plus the time
+1:11:11
+to actually do the miss so that's why i ended up with 101 nanoseconds there okay now
+1:11:19
+another region the reason to deal with caching is basically this right look at all of these
+1:11:24
+lookups in various memories looking up things uh checking uh permissions et cetera
+1:11:31
+we just got to do this somehow quickly okay and if we're if the irony of this
+1:11:38
+is if we're using caching to make loads in stores fast but to figure out what to load and store
+1:11:44
+we have to go to dram then that's ironic okay in a very big way so we want to have caching
+1:11:50
+be fast enough that we get back our advantage for excuse me we want to make the the
+1:11:55
+translation fast enough that we get back our advantage for caching and that's kind of where we need to go
+1:12:01
+and so what we're going to do is we're going to use a translation look aside buffer or tlb to cache our translations and thereby
+1:12:07
+make this fast okay and why does caching work well you know about locality this is 61c
+1:12:12
+there's temporal locality which is locality and time that says basically if i access something now
+1:12:18
+i'm likely to access it soon again right spatial locality says that if i access
+1:12:24
+something i'm likely to access something close to it in physical memory okay that's spatial
+1:12:30
+locality and spatial locality uh temporal locality is clearly because
+1:12:36
+we have loops and all sorts of stuff where we tend to access things over and over again spatial locality is because we build
+1:12:41
+objects that are in structures and so when you access one thing in a structure you tend to access the other one
+1:12:47
+uh soon okay and so um we can look about at caches as an
+1:12:53
+address stream coming from the processor that works its way through an upper level cache and then a second level cache and so on down to memory
+1:13:00
+and we can start talking about what's the total performance we get by adding caching okay
+1:13:09
+now if you remember the memory hierarchy this is a good example where we have registers
+1:13:14
+that are extremely fast then we have level one cache which is uh quite fast um level two caches which is bigger but
+1:13:21
+slower level three cache which is maybe shared on a multi-core system additionally slower and then
+1:13:29
+main memory is even slower ssd is slower disc is slower but you notice that as we
+1:13:36
+get slower we also get a lot bigger so that speed
+1:13:41
+relationship between speed and size is really physics okay because that something that can store
+1:13:47
+a huge amount of data is going to take longer to get at than something that can only
+1:13:52
+store a limited amount of data all right and really we want our address translation here
+1:13:58
+between the speed of registers in the l1 cache okay but main memory which is where our
+1:14:03
+page table is stored is down here so there's clearly a problem right we're talking about things in sub nanoseconds
+1:14:10
+versus things in multiple nanoseconds to get to or hundreds of nanoseconds to get to dram
+1:14:16
+and so we can't have every access go to memory or we got a problem okay
+1:14:24
+so now the time to access memory and the time to access dram if i made that distinction partially
+1:14:32
+it's because kind of everything down here is sometimes maybe considered storage
+1:14:38
+i'm not i don't want to confuse you much though so if i say memory and i don't make any distinctions i'll be
+1:14:45
+talking about dram so i didn't mean to make that distinction for you sorry about that confusion so we want to
+1:14:52
+just cache the results of the recent translations and so what that means is let's make a table that sort of goes
+1:14:58
+from virtual uh page frame to physical frame and we'll just keep a few of them
+1:15:04
+around so that we can be very fast and so really um this table
+1:15:11
+which is a quick lookup table needs to be consistent with the page tables but it needs to be small enough that
+1:15:17
+it's really fast so that we can work between the processor and the cache okay and that's the tlb
+1:15:24
+it's really recording recent virtual page number uh physical page number uh or physical
+1:15:30
+page frames or the same thing translations um if a lookup is present
+1:15:35
+then you have the physical address without reading any of the page tables and you're quick okay this was actually invented by
+1:15:43
+sir maurice wilks who is one of the famous luminaries for designing computer architecture he actually developed this
+1:15:49
+thing before caches were developed and when you come up with a new concept you get to name it
+1:15:55
+so if you're wondering why it's called a translation look aside buffer uh you know it's because he decided to
+1:16:01
+call it that you get to name it anything you want and people eventually realize that if it's good for page tables why not for
+1:16:08
+the rest of data and memory and that's where caches came from the question in the chat here about is the tlb stored on the processor
+1:16:14
+um is an interesting one today absolutely this is part of the core
+1:16:20
+there's the processor the mmu and the first level cache those are all uh tightly bound on the same little
+1:16:26
+chunk of the chip even and i'll show you a picture we may not get to it today where i show you that
+1:16:32
+originally the mmu was actually a separate chip back in the 80s and early 90s and so it's been
+1:16:39
+getting closer and closer to the processor at the same time the caches has have been getting closer and closer to the
+1:16:44
+processor okay so when a tlb miss happens the page tables may be cached so
+1:16:50
+you only go to to memory so here's a another look at this so the cpu
+1:16:56
+gets a virtual address that hands it to the tlb the tlb says is it cached if the answer is yes we go immediately
+1:17:03
+have a physical address and we go to physical memory now here for sarah who asked this
+1:17:08
+question earlier here this physical memory could be the cash backed dram okay so i'm
+1:17:15
+actually explicitly not saying dram here but whatever we want to do here that's fast
+1:17:20
+is this is uh our cache and dram okay and so if the tlb is cache and if the
+1:17:28
+tlb is fast enough then we can get a virtual address go through the tlb quickly and look up in our cache and now
+1:17:34
+we're we've scored right because that's fast if on the other hand it's not in the tlb then we have to go to the mmu and
+1:17:40
+actually walk the page table take the resulting tlb entry stored in the tlb and then we can go to cash
+1:17:48
+and the hope is that and then obviously if we're in the kernel and we're doing untranslated stuff we can go around the
+1:17:53
+tlb the question is really is this caching going to work
+1:17:59
+is there locality in our page translations and the answer if you think about it
+1:18:06
+certainly instructions have a huge amount of locality right because you do loops the code is executed together so you got
+1:18:12
+spatial locality so certainly for um for instructions this sounds
+1:18:17
+clear stack has a lot of locality spatial locality so this sounds good
+1:18:23
+and even data accesses they don't have as much locality but they do have enough locality to make this tlb work pretty well
+1:18:30
+okay and so you know just because of what i mentioned earlier objects tend to be together in physical space and so that's
+1:18:36
+going to lead to locality in the tlb
+1:18:41
+and i'm going to remind you guys i don't think we're going to get to it this time but i'll remind you next time about all the stuff you learned about
+1:18:47
+caches caches can be multiple levels there can be first level cache second level cache and
+1:18:53
+so you can do the same thing with tlbs there's nothing that says that the tlb which is a cash
+1:18:58
+can't have first second third levels okay and modern processors have multiple levels
+1:19:04
+of tlb caching all right so what kind of a cache is the tlb well we can start talking
+1:19:11
+about things like well it's got some number of sets um and the line size is the storage
+1:19:17
+you know how much is in the page table entries and so we can talk about what's the associativity of these k this cash um et cetera
+1:19:25
+all right and so this is uh where i'm going to remind you a little bit of some of the caching things that you remember so you might ask the first
+1:19:32
+question might be how might the organization of a tlb differ from that of a conventional instruction or data
+1:19:38
+cap okay and to do that we're going to start by
+1:19:45
+remembering what causes cache misses okay and then um next time we'll talk more about cash structures but
+1:19:53
+there's uh the so-called three c's which are actually from berkeley uh mark hill who's been a professor at
+1:20:00
+uh university of wisconsin for a long time uh when he was graduate student at berkeley came up with the three c's
+1:20:06
+and that was the compulsory misses capacity misses and conflict misses
+1:20:11
+the compulsory misses are the first time you access something and it's never been accessed before
+1:20:16
+there's no way the cash could have it because it's never seen it before that's a compulsory miss or a cold miss
+1:20:22
+okay pretty much a compulsory miss you can't do anything about the best you
+1:20:27
+can do is pull it in for memory or if you can pre-fetch that would be one way you
+1:20:33
+might be able to deal with compulsory misses capacity misses are examples where you pull something into the cache but the
+1:20:39
+cache is just too small and therefore um you know the next time you go looking for it it's not there
+1:20:46
+conflict misses are cases where you actually have some associativity
+1:20:52
+that's smaller than fully associative and that's an example where two entries
+1:20:58
+overlap each other in the cache you pull the first one in you access the second one kicks the first one out and then when you go
+1:21:04
+looking for the first one again you now have a conflict miss so in the case of compulsory misses the best you
+1:21:10
+can do there is to figure out how to have some sort of prefetching in the case of capacity misses you gotta
+1:21:16
+make your cash bigger in the case of conflict misses this is the case where either making the cash
+1:21:21
+bigger or increasing associativity is going to be of importance and we'll we'll explore that next time okay
+1:21:28
+i like to call this fourth c i like to say that there's three c's plus one the fourth c is a coherence miss which
+1:21:36
+we will talk about a bit as well but that's an invalidation miss where you have multiple processors
+1:21:42
+process a processor excuse me a core a reads some data
+1:21:47
+core b writes the data that invalidates the data that core a had when core a goes to look at
+1:21:53
+it again it's a miss and it's a coherence miss okay so um i'm going to leave it at that
+1:21:59
+since we're running out of time but um in conclusion
+1:22:04
+we've been talking a lot about page table structures which is really what does the mmu do and how does it
+1:22:11
+structure the uh the mapping between virtual and physical addresses in memory
+1:22:16
+and we talked about this notion that memories divided into fixed size chunks as being very helpful and
+1:22:23
+that those fixed size chunks are pages and the virtual page number goes from virtual addresses
+1:22:28
+mapped through the physical the page table to physical page number okay um we talked about multi-level page
+1:22:34
+tables which is a virtual address is mapped to a series of tables and this is a way of dealing with sparseness
+1:22:40
+and then we talked about the inverted page table as basically providing a hash table
+1:22:45
+that was more closely related to the size of the the physical memory rather than the size
+1:22:51
+of the virtual address space okay now we've been talking about the principle of locality
+1:22:57
+reminding you about temporal locality and spatial locality we talked briefly about the three major
+1:23:03
+categories of cache misses compulsory conflict capacity and then coherence for that plus one as
+1:23:09
+you can imagine in the case of the tlb if we miss in the tlb that can be very expensive
+1:23:16
+because we have to do many dram accesses potentially in a miss in the tlb so we have to be very careful to have as
+1:23:22
+few misses as possible and that's going to lead us to higher associativity or even a fully associative cash
+1:23:28
+okay and so when we talk next time about cash organizations like direct map set associated
+1:23:34
+fully associative we're going to talk about high highly associative ones okay and we've also talked about the tlb
+1:23:40
+this time which is uh a small number of page table entries are actually cached on the
+1:23:46
+processor so they're extraordinarily fast it's the speed of registers and on a
+1:23:51
+on a hit you basically have the full advantage of caching of the regular loads and stores being
+1:23:57
+able to translate quickly and then go to the actual data cache or instruction cache on a miss you got to go and traverse the
+1:24:03
+page table all right so i think we're good there um i'm going to let you guys go i hope you have a great weekend
+1:24:08
+and next monday we will pick up with our a brief memory lane through
+1:24:15
+some caches and then we're going to start talking about page faults and um interesting things that we can do
+1:24:22
+with them so i hope you have a great day a great evening and a great weekend we'll see you next week

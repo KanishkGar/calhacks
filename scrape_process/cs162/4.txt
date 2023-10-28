@@ -1,0 +1,1680 @@
+0:02
+all right everybody welcome back to uh cs 162. um as you
+0:09
+those of you that are local have noticed today it's like uh we're on mars or something because the sun is red and the smoke is
+0:16
+in the sky it's pretty strange but let's see if we can uh get a good lecture out of here anyway
+0:21
+so today we're going to continue our very short little discussion of um talking about some abstractions at
+0:29
+user level both to help you get going in the class and kind of see what it is that we're going to be doing
+0:35
+um in the kernel when we are trying to support these abstractions so today we're going to
+0:41
+talk about the file abstraction which is really also the i o abstraction uh which is an interesting thing about
+0:48
+about unix and we're going to finish discussing process management which we didn't quite
+0:54
+get finished with last time but we'll talk about both the high and the low level file io
+1:00
+apis and we'll talk a bit about why we have the different ones and and then we'll look at some
+1:06
+interesting gotchas uh that sort of come about when you mix processes and file descriptors and i o
+1:15
+and yes to the comment in the chat we are definitely in the upside down today so um
+1:23
+if you remember from last time among other things we talked about threads and processes and we introduced just briefly this
+1:30
+notion of synchronization now i'm going to talk a lot about that in a couple of lectures but just remember some ideas here one
+1:36
+was there was mutual exclusion which is ensuring that only one thread does a particular thing at a particular
+1:42
+time one thread excludes the others and that's piece of code that's being excluded from
+1:50
+is called a critical section it's typically something that's uh opt that's being operated on
+1:57
+um that basically if you have more than one thread in there you're probably going to get some bad behavior
+2:02
+and so that's why we call it a critical section and why we need mutual exclusion and the way we did that last time is we
+2:08
+talked briefly about locks only one thread can hold the lock at a time and it gives you that mutual
+2:14
+exclusion so um we talked about uh two atomic operations we talked about
+2:22
+lock acquire and release uh wait until the lock is free and then grab it and then releases
+2:27
+unlock and wake up any of the waiters and uh again that was just a brief quick
+2:33
+discussion we will get there in much more detail when we start diving into synchronization in a few
+2:39
+lectures but uh one thing i did want to briefly uh do is tell you that there's some other tools that
+2:45
+we might use instead of just locks and there's a really rich scent of of uh synchronization primitives that
+2:52
+we'll start talking about but one of them that i wanted to just mention since you might encounter it uh
+2:58
+fairly quickly is uh semaphores and the semaphore is basically uh it's a generalized lock
+3:05
+that was uh first defined by dijkstra in the 60s and it's been around since then and
+3:10
+everybody uses it inside of uh various operating systems and um it's really kind of like a
+3:17
+generalized number okay so a semi-four has a non-negative value
+3:22
+associated with it it has two numbers or two operations p and v okay so p
+3:29
+uh means that the it's an atomic operation that waits for the semaphore to become positive and then decrements it by one
+3:36
+um some implementations call this the down operation and then v is an atomic operation that increments
+3:43
+a semi four by one and if somebody's waiting on it uh it'll wake one of them up
+3:49
+okay so um p by the way stands for uh proveran to test and dutch and uh v sense for
+3:56
+fair hogan which is uh dijkstra's influence on this um what i wanted to give you was a
+4:02
+couple of patterns so one pattern for a semaphore is uh very much like a lock we call it a binary
+4:08
+semaphore or a mutex the initial value of the semaphore is equal to one and then if you do a semaphore down uh
+4:17
+then uh the first thread that does that decrements the semaphore from one to zero and it gets into the critical
+4:24
+section if any other thread tries to do that then it immediately gets put to sleep because that would decrement
+4:29
+the semaphore below zero which is not allowed so all subsequent threads that uh try the
+4:35
+semaphore down are all put at sleep and then eventually when you finish the critical section that first thread calls
+4:41
+up which increments the semaphore from zero to one which immediately wakes up one of the threads that then decrements it
+4:47
+again so this acts exactly like a lock and it's a mutual exclusion pattern using
+4:55
+semaphores and we actually saw the lock we used was called a mutex so that terminology
+5:01
+uh gets intertwined between locks and this particular use of semaphores another pattern which is kind of
+5:07
+interesting with semaphores which is why they're so interesting they can have many patterns is for instance if we start a semaphore
+5:12
+off at zero instead of one then what happens well if somebody executes semaphore down
+5:18
+um they're immediately put to sleep okay because they would try to decrement this below zero
+5:24
+wouldn't happen they'd go to sleep i'm going to call that thread join for a moment because if another thread
+5:29
+then executes semaphore up you immediately wake up the one that did down and so
+5:35
+this is like this thread finish join pattern we talked about and this is yet another use of
+5:41
+semaphores so um in a couple of lectures we're going to go through a number of different synchronization patterns and
+5:47
+you can see that just by setting the initial value of the semaphore to different values you get some
+5:52
+pretty interesting patterns okay so notice um by the way the question in
+5:58
+the um in the chat here let me clarify just so we know uh the initial value of the semaphore is
+6:04
+zero so that means that semaphore down doesn't actually decrement it can't because you can never
+6:10
+go below zero so what happens instead is the thread that executes this block of code goes to sleep right away without
+6:16
+decrementing the block that executes thread finish increments it to one which then immediately wakes
+6:23
+this uh guy up and then he decrements it back down to zero again okay all right now
+6:30
+these are these are actually it's it's from the dutch if you actually look at dijkstra but um anyway all of those languages are
+6:37
+related in one way or another okay so if you remember also from last
+6:42
+time um we talked about uh so non-negative uh
+6:48
+value of a semaphore is actually a locking pattern not necessarily exclusively due to the
+6:55
+hardware so we will talk a lot more about how you implement these things later so if you notice we're talking about
+7:01
+abstractions now so you don't have to worry how they're implemented you just have to worry about the api
+7:06
+we'll get to implementing them uh all in due time all right so try to get the pattern and
+7:12
+the api not how it's done so um the other thing we talked about of course was processes
+7:18
+and uh in some detail and we noticed that there's multiple versions of processes one which only has a single
+7:24
+thread another which has multiple ones the key idea is that a process has a
+7:29
+protected uh address space and uh state such as open file descriptors
+7:36
+which we'll talk about today and then one or more threads and for every thread each thread has a stack and
+7:41
+a thread control block for saving its registers okay and pretty much anything that runs
+7:47
+outside of the kernel these days uh runs in a process of some sort and the other thing we talked about last
+7:54
+time as we talked about how to create processes and that to do that we introduced fork
+7:59
+and i'm going to briefly say again what fork does because it is the first time you see it it's a little
+8:04
+weird but basically what fork does is it takes an existing process and it absolutely duplicates it
+8:11
+duplicates it so there's a new process that is uh duplicate and
+8:18
+um that new process has an exact copy of all of the
+8:23
+the data in the address space plus copies of things like file descriptors and we'll go into that
+8:28
+in more depth um the question here about on the on the chat about whether
+8:34
+threads basically share the heap is yes they do so they share the same heap they each have their own stack because
+8:40
+if you shared a stack you would actually have a clean execution of any sort and so they don't
+8:45
+share stacks but they do share the heap so now so this thing about duplicating
+8:53
+is a little weird okay so the return value from fork is uh it's a it's a system call so
+9:00
+what you get back is a value and um if that value is greater than one
+9:05
+then you happen to know you're running in the parent and the parent process that value that came back is the process id of the child
+9:13
+on the other hand if you get a zero back then you know you're the child okay and then you have to call uh get
+9:19
+the id to find out what your process id is okay and uh
+9:24
+if you get less than zero then everything failed and you didn't actually create a child process
+9:29
+okay and so just to to repeat this and we're gonna see it again later in the lecture
+9:35
+the state of the original process gets duplicated in both the parent and the child completely duplicated okay the address
+9:42
+space the file descriptors etc so um if you looked for instance we
+9:47
+looked at this brief bit of code here so uh here we execute fork before we execute fork there's this
+9:54
+one apparent process after we execute fork then um we now have two processes
+10:02
+and i'm going to say this again because it's just weird right so those two processes are running at exactly the same spot
+10:08
+and have exactly the same state until they return from fork one of them returns a non-zero
+10:14
+number the other one returns a zero and that's uh the point at which they
+10:19
+diverge and are no longer exactly equal okay so the process that calls fork is
+10:26
+always the parent but it doesn't know that it's the parent so the way it knows is
+10:32
+it gets back a non-zero number okay and it's uh it's parent process
+10:39
+uh parent um yes this should say process uh but it's also there's also a thread running there too
+10:44
+but uh yes that would be a parent process child process in fact here let's just
+10:50
+fix that
+11:06
+okay so there we go we are fixed now um if you notice
+11:13
+uh the um
+11:18
+so we'll talk about what happens when you fork uh inside a multi-threaded process it's not pretty okay so uh we'll get to
+11:25
+that a little bit later in the lecture but the bottom line is the only the thread that happened to have called fork is the one
+11:31
+that survives and all the remaining uh threads just go poof um their state is around but there's no
+11:37
+thread that's actually running so if you look at this example we gave can everybody uh see the screen again now since i went
+11:44
+out and came back i think we're good right yep all right so if you notice here
+11:49
+we call fork so now there's two processes the one that got greater than zero we know is the parent
+11:55
+the one that got zero is the child so the parent with this kind of an if else if else pattern is how we typically
+12:03
+write a fork uh pattern and so here the parent goes off and says i
+12:09
+goes from zero to to uh to nine basically and writes parent and goes
+12:14
+parent zero parent one parent two the child goes i from zero uh to minus
+12:19
+nine and basically says child zero child minus one child so on and the thing we talked about last
+12:25
+time is this does not get through screwed up because does anybody remember why uh what happens is the parent goes up
+12:32
+and the child goes down and they don't prevent each other from doing their task anybody remember why
+12:40
+yep they all have their own eyes okay so this eye this int eye starts out as a global
+12:46
+variable that's um in the apparent process but as soon as we fork there's now two
+12:53
+different eyes one in the parent one and the child and so this uh going up and going down thing don't
+12:59
+interfere with each other because they're in completely separate address spaces so you've got to keep that in mind as well the only thing that's going to be a
+13:06
+little weird here is the since we're going to be sharing the uh file descriptors for standard out to the
+13:12
+screen the parent and child statements are going to get interleaved in a non-deterministic fashion so we won't
+13:18
+know how they're interleaved with each other but we do know that the parent will have 10 values and the child will have 10
+13:24
+values okay all right and um they uh the heaps will be separate
+13:33
+from the point at which the fork happens okay because the entire address space is
+13:39
+copied so it doesn't really matter whether this is uh global
+13:44
+in the static space or it's on the heat all right completely new process
+13:51
+now here's a question would adding sleep matter here if i put sleep in there would it change the outcome and the
+13:57
+answer is no what it's going to do is it might change the interleaving a little bit but again it's not going to prevent
+14:03
+the the two processes from running to completion okay
+14:09
+are we good any questions on that
+14:15
+so the reason it uh matters whether a parent is a parent versus a child is that
+14:21
+the parent typically has control over the child in terms of signals and the parent also can wait for the
+14:27
+child which is my next statement i'll show you here uh to exit and get its return value from the child so the child
+14:34
+process really is a subordinate of the parent so um the other thing we
+14:39
+talked about at the very end of the lecture was uh starting a new program with exec and notice this here's the fork pattern
+14:46
+we do our fork we say if we're the parent we're gonna wait and i'll talk about this wait for a moment we're gonna wait for the child
+14:53
+but when we go to um the child process what it does
+14:59
+immediately is it doesn't exec there's many flavors of exec so you should do a man
+15:04
+on exec to find out this particular one takes a path and some arguments and it's now going to
+15:11
+take the completely copied uh address space from the parent and then it's going to throw out all the
+15:16
+copy and start a new program in that address space okay all right so um
+15:25
+so uh anyway so this seems a little strange this pattern where the we fork a new
+15:30
+child which is a copy of the address space and then we throw out the address space um does seem like uh
+15:37
+it's uh a waste but in fact to get the fork semantics as i briefly
+15:42
+mentioned last time we're actually going to pull tricks with copying the page tables not copying
+15:48
+uh the data and so this is not as wasteful as it seems okay so um just to look at this uh
+15:55
+idea of starting a new process here's a typical shell pattern let's just look at this in
+16:00
+a different way again notice we fork if we're the pair if we're pid equals zero or the child so we'll exact the new
+16:07
+program otherwise we wait and uh if you notice what happens is the result of the fork
+16:14
+the child up here says oh i'm the child i'm gonna exec and the parent goes to wait
+16:20
+and now a parent is waiting for the child to exit and the child goes off and starts the
+16:26
+new program okay so um this is a typical pattern in a shell
+16:31
+now i haven't quite showed you how to wait yet that's my very next slide but you get the idea that in a shell when you type a command
+16:37
+it actually forks a separate process for the child it runs the program and then later when that program exits
+16:44
+which means the child exits then the parent will come out of weight and it goes on to give you the next prompt
+16:50
+okay now if those of you have been typing uh commands in your version of uh pintos
+16:57
+uh you're typing them at the command prompt that's the shell so that's the process that lets you type commands and have
+17:04
+them run and that's homework number two you're gonna actually get to design a shell
+17:10
+okay all right command line so bash t t c s h s h all of those things are
+17:16
+our shells now um so let's uh look at a couple of other things so weight
+17:23
+uh for instance is waiting for a child process to finish and so here's a very simple example i
+17:29
+just showed you the weight okay and so there are many versions
+17:34
+of weight you should also do a man on that one this particularly simple one takes a pointer
+17:40
+to an integer as you see here and that pointer to that integer will get filled with a return
+17:48
+code and this particular version of weight says doesn't care which child process it waits for it just says
+17:54
+wait for the next one okay and then this instance of this program there is only one and it'll wait till it finishes and then
+18:02
+when it finishes we'll actually get back um the pid in that case of the child uh which
+18:09
+there's only one and that just finished and its status well what does the status come from well the exit code here so as
+18:16
+you all remember 42 is the meaning of life so in this case we exit with 42 um and
+18:22
+uh what will happen is that's the child finishing that'll wake the parent up who's been trying to do a join type operation by
+18:28
+waiting that 42 will get filled into the status variable we'll get back the pid of that
+18:35
+child and now we'll get to move forward okay and of course that pid is going to be the same
+18:40
+as the pid from cpid because we only made we only created one child
+18:47
+in this instance okay now the last two things i want to show you here they're related to each
+18:53
+other is how to how to use the signaling facilities so this was about how to interact with child processes and
+19:00
+if you have many child processes then you can actually wait for specific ones etc
+19:06
+okay and weight works because the kernel keeps track of parent-child relationships and uh that's
+19:12
+going to be something that you're going to get to have a chance to do some implementing with and we'll talk about more uh later okay
+19:19
+and this this uh we're not passing the this is has nothing to do with which child we're waiting for we're passing
+19:25
+a container for it to put the status in but this particular weight says wait for the next child to finish
+19:33
+okay now and if the child said faults or
+19:39
+something else causes it to fail that will also uh wake up the weight because that'll just exit with a with a non-zero code
+19:46
+uh kind of automatically now um and uh if the child calls exec
+19:53
+then um it's still the exit code of the actual child process not the particular code they're running
+19:59
+okay so the weight will wait until then the the uh process finishes not this
+20:05
+particular piece of code because you're really waiting for the process not for whatever's running in it hopefully that's clear
+20:11
+so um now let's look at signaling and so last but not least if you have two processes and you're interested in
+20:18
+signaling from one to another remember that processes don't share processes don't
+20:26
+share memory unless we do some work which we haven't told you how to do yet and so they have
+20:32
+to have some way of communicating and one way is the signaling facility which is kind of like a user level interrupt handler and the
+20:40
+way we do that is we have to declare a special structure called a sig action and inside that sig action we can set
+20:46
+some flags and some masks for what's enabled and you can look that up but here's a simple thing to do here
+20:52
+that uh the sig action structure the handler we're gonna set to this signal callback handler
+20:58
+okay and that's this function we've declared here and the same then we use sig action to
+21:04
+set that whenever we see a sig int signal call uh use this sig action handler
+21:11
+okay and notice that this code is uh you know not particularly great because uh it goes into an infinite loop
+21:19
+right while one do nothing so this particular code on the face of it
+21:24
+looks like it goes into an infinite loop forever except if you send it a sig int which by
+21:31
+the way is what you've got uh it's what you got when you do a control c
+21:36
+then that's control c will cause that signal to go to this the callback handler
+21:41
+called the callback handler to be called and we'll say caught signal and then we exit at that point
+21:47
+okay all right and uh there's a question here about whether we need to do struck sig action saw or
+21:53
+sig action saw it depends on whether it's type theft or not so you should take a look in the actual header file
+21:59
+okay now good question great question is there a default um i'm thinking sig action isn't
+22:06
+necessarily type theft but um it could be in the version of headers that one has because they change but this
+22:12
+this you know struck sig actions essay would work now the question that was in the um chat which is a good one is uh what
+22:19
+happens if you didn't redirect it so there's a whole bunch of default actions
+22:24
+so uh the default action for sigint is actually what happens when you hit control c is it kills the
+22:31
+process so uh the default sig action actually kills the process what
+22:36
+you can do here is if you don't want control c to kill it but rather to do something else then you can make your
+22:42
+own signal handler okay and so there's plenty of default actions
+22:47
+now there are some handlers that in fact don't have any default actions or don't
+22:53
+have anything you can set okay and so for instance sig kill is a good example if you do kill minus
+23:00
+nine uh and you send that to a signal there's or to a process there's no way for it to
+23:05
+catch that signal and it will immediately die but simple things like control c have
+23:10
+either default actions or things that you can do on your own okay and so there's a
+23:15
+whole bunch of posix signals um and sigint is control c
+23:21
+sig term is uh the kill shell command uh sig stp is control z et cetera
+23:27
+and um so the things like kill and stop are ones that you can't actually change with sig action
+23:33
+all right so we'll get to what posix stands for in just a little bit but it's the standard uh for um for the uh
+23:41
+system calls we're gonna be talking about talking about okay and uh it is the portable operating system interface
+23:47
+for unix where's where the x comes from all right um so just uh to remind you of
+23:54
+where we're at we've been talking about the levels operating levels of the operating system and the
+24:01
+last lecture and this one we're kind of floating up here in user mode but you got to remember that there's a bunch of things down here
+24:09
+uh in the kernel that are providing functionality for us and we need to
+24:16
+talk about how we get from up here to here this interface is a system call interface and we briefly talked about it
+24:24
+last time you're going to get to learn a lot more about it as you uh design a system call of your own but basically
+24:31
+the things that you're used to at the user level all kind of float in the standard libraries and they're pretty
+24:36
+much above the system call interface so we showed you this last time this was kind of the the narrow waste
+24:42
+or the um of the uh system call interface okay it's kind of like an hourglass or
+24:48
+whatever user code above system code running below and then there's the hardware and this system come a system call
+24:55
+interface is basically uh a set of standardized
+25:00
+functions that you can call that go across users kernel uh interfaces and we're
+25:06
+mostly again focusing at the the os library and above what you do with that
+25:12
+okay and i i pointed out i think uh last time as well that there's this
+25:18
+lib c which is the standard thing that gets linked when you uh use gcc
+25:23
+and you link a program and that libc has a whole bunch of standardized functions that you typically call and
+25:30
+when you think of c they're often the functions that libc's got and that those functions end up calling
+25:38
+the system calls which call the os which is why many of you have not quite seen system calls yet but
+25:43
+you will okay so administrivia we are now
+25:48
+in full game mode in this class um project zero was due today um remember this is to be done on your
+25:54
+own this is just getting uh you used to everything about the projects and compiling them and so on
+26:02
+um i also mentioned briefly that we we upped the slip days a little bit because uh of the weirdness of the pandemic and
+26:10
+um maybe because of the weirdness of uh living on mars these days uh today which
+26:15
+was weird but um i'm recommending that you guys bank these for later rather than using
+26:21
+them right away um so uh group assignments should be
+26:26
+mostly done um plan on attending uh your permanent discussion session this friday assuming
+26:32
+that we've assigned them yet um and remember these discussion
+26:37
+sessions are uh mandatory so we're going to start taking attendance as soon as people get
+26:43
+used to them um and remember to turn your camera on so that your ta can get to know you because
+26:48
+they are going to be your advocate throughout the term so it's important to get to know them the question about when they're going to
+26:54
+be out is soon i'm not entirely sure the exact
+27:01
+timing on that but it'll definitely be before before you need to attend and attendance will be taken
+27:06
+uh through the zoom um so just uh make sure to log in um
+27:13
+the other thing that we've chosen now is so midterm one is going to be october 1st as we said on
+27:20
+the schedule um it's going to be five to seven which is uh and it's gonna be three weeks from tomorrow so it's coming up on us
+27:26
+and um we understand this conflicts with cs 170 but uh the 170 steph staff said
+27:33
+basically that you can start the 170 exam after 7 pm and they'll give you some details about
+27:39
+that um rather than starting it at 6. all right and our exam is going to be video proctored
+27:46
+there's going to be no curve this will be a a non-curved
+27:51
+exam so that will reduce a little of the pressure there and it's video proctored which will
+27:57
+reduce a little additional pressure and also so you know you're gonna be using uh the computer to answer
+28:04
+questions uh so we'll put out more details as we get closer to the exam we haven't put the bins out yet but
+28:10
+we'll get those uh for you um semi soon just so you know um
+28:15
+this is going to be uh based on previous terms uh for the bins okay
+28:23
+um and there are no alternative exam times uh during our pandemic so there's one exam
+28:28
+so um that's uh you should uh talk to uh you know send mail to cs162 and make
+28:36
+sure you talk about um the uh you know talk to the conflict forums and
+28:43
+the fact that discussions are on thursday we'll take care of that okay all right um
+28:49
+the other thing is start planning on how your groups are going to be collaborating okay so get
+28:54
+um you guys should talk to everybody okay um you're gonna uh we'll talk more about
+29:01
+video proctoring but we're also gonna want microphone and video and stuff um but uh basically start thinking about
+29:08
+how you're gonna collaborate and plan on meeting multiple times a week i would suggest with a camera right this
+29:14
+is kind of the how to humanize things enough that you can actually have interactions we may even give some
+29:19
+um we may even give some extra
+29:25
+credit for uh pictures of you guys uh all on zoom together uh we'll see how
+29:30
+that works uh make sure to fill out the conflict form on piazza if you have other conflicts okay i think that's been out
+29:37
+for a while so hopefully people know about them the regular brainstorming meetings try
+29:44
+to meet multiple times a week i'm going to give a part of a lecture that i used to give a while ago and i
+29:50
+think i'm going to start giving again on strategies for collaborating with teammates
+29:55
+uh again it's very hard to deal with this in uh today's
+30:01
+sort of virtual environment so we'll see what we can do okay i think that's all the
+30:06
+administrivia that i had for today is there any questions
+30:16
+okay uh homework one i don't know i haven't looked at the schedule it's uh
+30:21
+everything is on the schedule so um whatever so i think
+30:27
+it's wherever it is so definitely take a look um i don't think it's due quite so soon
+30:34
+all right now let's move on so there was a question earlier what is p threads uh
+30:40
+stan or what does posix stand for so posix is a portable operating system interface for unix
+30:46
+uh and um just to there's a chat right now about
+30:53
+deadlines we will make sure that every deadline you need to worry about is on that schedule
+30:58
+okay so we'll try to keep that as up to date as possible so just look at the schedule all right i'm glad um we cleared up that
+31:06
+i was pretty sure homework one wasn't due tomorrow so anyway so posix is the portable operating system interface for unix
+31:12
+and it's loosely based on uh versions of the system calls uh that were appearing in different
+31:20
+variants of unix you should know there are many variants of unix okay starting with the early at
+31:26
+t days and then there was berkeley standard distribution unix yay berkeley and a bunch of other ones
+31:31
+including uh the one you're working with pintos and so um just among the unix variants there were
+31:38
+variations and then um you know and then there were other operating systems that didn't have
+31:44
+the unix versions of the uh of the system calls and so there was a standardization effort
+31:49
+to come up with a set of standard system calls that operating systems could support even if they had their own unique ones
+31:57
+and so in fact if you actually go to look at the the windows system calls uh interfaces there's
+32:04
+actually a partial version of posix for some of the uh system calls
+32:10
+so you can take a look um the uh and what p thread is the posix
+32:16
+threads okay and so that was what piece fred stood for so um
+32:22
+let's now talk about this uh unix or posix idea that's kind of the the linchpin of this
+32:28
+lecture which is the everything is a file okay so this was actually a little bit
+32:33
+of um of a strange idea when it first came out and now pretty much everybody's used
+32:38
+to it but there's an identical interface for files for devices like terminals and printers
+32:44
+for networking sockets for inter-process communication like pipes etc
+32:50
+all use the same interface with the kernel okay and what is that interface well
+32:56
+that interface has open read write close those are very standard um variants and
+33:02
+the question of is linux a version of unix yes um so open read write close
+33:09
+are standard calls and you use those on everything from files on disks to
+33:15
+devices etc okay and there is an additional call
+33:21
+there's an additional call ioctyl for um those things that don't quite fit in the
+33:27
+standardized open read write close or some people call it io cuddle i've always heard ioctyl it's really io
+33:34
+control so i call it an ioctal but there are a lot of ioctal calls that
+33:41
+you can make once you've opened a device to configure it so it might be things like what's the resolution of a screen
+33:47
+what's the uh you know are you blocking or non-blocking etc those are all typically ioctals
+33:54
+okay and so when you make a new device and you're developing your device driver interface with the kernel you typically
+34:00
+have an ioctal interface for those specialized things that don't quite fit into that uh you
+34:06
+know they're square pegs in a round hole as far as open rewriting clothes now sockets the question about sockets
+34:13
+and operations on that we'll actually start talking a bit about sockets next time as well
+34:18
+so this idea that everything's a file was a bit radical when it was proposed um there's a kind of a seminal paper
+34:25
+from dennis ritchie and kim thompson that described this idea um back from 1974
+34:31
+and uh i actually usually teach this paper when i teach 262
+34:36
+because it's an interesting first paper for that class but since i'm not teaching it this term i'm teaching you guys instead i figured i'd pop it up
+34:43
+there as an optional reading so if you go to the resources page you can actually take a look at that paper and see how they talk about this idea
+34:50
+and how they talk about things that still are well used ideas in
+34:59
+unix operating systems to this day and that's from 1974 so it's pretty impressive how some of their very clean interfaces
+35:06
+and ideas have lasted so long it's kind of a it's a little bit weird from a research paper standpoint if you've done
+35:13
+any reading of research papers we'll read some more normal ones
+35:18
+later in the term this one doesn't really have a lot of evaluation but it doesn't describe some ideas so
+35:25
+give it a shot so the file system abstraction which is what goes across devices and files and
+35:32
+sockets etc uh is pretty much the simple idea that it's a named collection of
+35:38
+information in this file system um posix file data is a sequence of bytes
+35:44
+as you can imagine the input from a keyboard is a sequence of bytes the input from a disk is kind of a
+35:50
+sequence of bytes it's really blocks that then get put into the kernel and then
+35:56
+eked out to the user as a sequence of bytes um for files themselves there's actually
+36:01
+metadata which is information about that file such as how big it is what was the last modification time
+36:08
+who's the owner what's the security info what's the access control on it etc
+36:13
+um does it have a set uid bit um or set gid bit on it we'll talk a
+36:18
+little bit more about that um later not today
+36:24
+and then so a file is like a bag of bits okay a directory is as you well know a
+36:30
+hierarchical structure for naming bags of bits okay and if you notice
+36:37
+um as you're all very well aware a folder is uh something that contains files and
+36:43
+directories and uh what you're going to learn as you get inside the kernel as a folder is
+36:48
+really just a file that happens to map names to uh to actual file contents okay and if you
+36:56
+look um the uh hierarchical naming is really a path through a graph okay so you start
+37:04
+at the root directory which is a file that contains root uh names like slash home
+37:10
+means that the root directory slash has a home entry in it which points to a different file which has
+37:16
+an ff entry in it which points to a file that has cs 162 etc and opening a file is a
+37:24
+path through all of these different directories and you can imagine we're going to want to
+37:29
+talk about caching and stuff to make that fast but we don't need to worry about that later and then there's a bunch of other
+37:34
+interesting things about links and volumes and things that we can talk about as we get more in detail but we're trying to
+37:40
+try to keep things a little more at the user level for the moment so and then tying this all together of
+37:47
+course every process graph or tree that's a good question depends on what you're talking about
+37:54
+the directory infrastructure you see described in the
+37:59
+original unix is strictly speaking a tree we've got the ability to make something
+38:05
+much more graph like uh with modern operating systems and especially when you get soft links it
+38:10
+gets much more like a graph okay so soft links or sim links as
+38:16
+it was mentioned in the in the chat there they're the same thing so um so every process actually has a
+38:22
+current working directory it can be um uh set with a system call
+38:28
+which you could look up you could do man on chadeer change directory and it takes a path and it
+38:33
+changes the current working directory of that process okay so that uh on the face of it is
+38:41
+nothing more than just uh a path that looks you know like here's this is a path here home ff cs
+38:47
+162 public html so on but that path is associated uniquely with that particular process that called
+38:54
+change directory um and then it can be used now we can still use absolute paths like
+39:01
+home osce cs 162. this is an example of a path that's absolute because it starts
+39:07
+with a slash at the very beginning of the path and therefore ignores the current working directory
+39:12
+but all these other things you're used to you know index.html or dot slash index or dot dot
+39:18
+slash index or tilde slash index these things are all uh relative to the
+39:25
+current working directory okay and so that's why you might set that current working directory
+39:31
+and then you can use file names that look like this so if you say in you know index.html what happens there
+39:38
+is it takes the current working directory and then appends to it uh slash and
+39:43
+index.html and that's the real file we're talking about so that's why you don't need to have an absolute path for
+39:48
+everything you use okay and dot dot is a standard notion for the parent of a directory so if you
+39:55
+use dot dot slash index it would actually take the current working directory uh go to the
+40:01
+up a level and then down to index.html okay and tilde is actually um a form of
+40:08
+absolute so that's uh um it's things it's it's under my relative
+40:14
+so this is uh a little misleading it's not relative the current working directory it's under my notion of relative here uh
+40:19
+because everything is relative to whatever your home directory has to be so that's that's a good catch i'll fix that okay
+40:27
+um so tilda slash index it says my working directory slash index
+40:34
+tilde cs162 means the working directory of the cs 162 account
+40:40
+all right so those are two different usages of tilde okay so the focus of today's lecture
+40:48
+sort of did everybody catch that so there this tilde slash and tilde name slash those are two different
+40:55
+usages for different users okay the either the you user
+41:00
+whoever you are or the cs162 user okay now so
+41:07
+we're going to be working our way through a lot of different things through here okay um it's by the way
+41:14
+uh the uh tilde is actually a function of your shell it's not necessarily a function of the operating system so if
+41:21
+you think it's too much of a hack then you could use a different shell that doesn't have it for instance um so today we're going to kind of work
+41:27
+our way through uh parts of this upper level here okay so for instance
+41:32
+we'll talk about the high level io with streams and then we'll get into file descriptors and the system calls
+41:38
+and we'll go a little bit below the system call um interface okay but we're not going to
+41:44
+get too far down there because we're trying to keep ourselves in the mode of um you know user level
+41:50
+here okay so quickly high level file i o for
+41:56
+streams so a stream is really an unformatted sequence of bytes could be text or
+42:02
+binary data unix is notorious for
+42:07
+having no being agnostic as to what the format of files are that was actually also a really big
+42:15
+innovation at the time that that unix paper came out and you can take a look um but uh if you
+42:22
+if you notice that means that an unformatted secret sequence of bytes with a pointer that's a stream and so here are some um
+42:30
+operations uh oftentimes you want to include standardio.h s to the stdio.h uh but for instance f
+42:38
+open uh is an example of a high level uh streaming interface most of them have an f
+42:43
+in front of them not all of them okay excuse me and f close and notice that f
+42:49
+open which opens a stream returns a pointer to a file structure
+42:55
+okay and over here we have a mode and that mode is actually a string
+43:00
+which tells you about how you want to open that file so you can do things like open it for reading or writing or
+43:06
+appending or um etc okay um and some of these options
+43:12
+allow you to truncate a file to zero and and so on okay so there's nothing in it if you open it
+43:18
+etc so an open stream if we succeeded because the file existed
+43:24
+and we have permission then what comes back here is this file star so f open returns a pointer to a file data
+43:31
+structure and that file data structure is what we're going to use from that point on
+43:36
+to to read and write and interact with that data okay if we had an error
+43:44
+we would actually get back a null or a zero from this so we'd get back no file star and so ideally you would
+43:51
+actually check to see whether what came back from f open is null or not and that would indicate an error and
+43:57
+then you have to go take a look at an error structure to find out why
+44:03
+so um standardio.h is the is the file you want to include okay
+44:10
+here um include standardio.h uh has all of the the things that you're
+44:16
+going to need to be uh interacting with io so if you try to use some of the things i'm talking about in lecture and it tells
+44:22
+you it doesn't know uh some of the constants i'm using it's probably because you've forgotten to include that.h file
+44:29
+and you're going to want to get used to figuring out what dot h files you need to include because that's going to be a
+44:35
+an important part of figuring out how to get your compiles to work okay so uh let's try to keep the chat
+44:42
+down a little chatter down a little bit so that we're not distracting people uh in the lecture here so they can ask
+44:48
+questions there are some special streams
+44:53
+okay s-t-d-i-n s-t-d-i out and std error which um are defined for you
+45:01
+okay so standard in is a normal source of input like the keyboard standard out is the normal source of
+45:07
+output like the screen and standard error is the place where errors go
+45:12
+and usually standard out and standard error both go to the same place which is to your screen okay
+45:18
+but these are all defined without you opening them so when your process first starts up
+45:23
+you have a standard in standard out standard error and by the way um when we well you'll also have the uh
+45:30
+the low level io versions of these as well okay um so standard in standard out
+45:36
+basically give you composition in unix okay the reason file is capitalized is because uh
+45:43
+it's um it's a structure um and they've chosen to capitalize a
+45:49
+lot of the names of of important structures uh the other answer of why the file is capitalized is i guess because it is
+45:59
+anyway uh so uh the question about what happens if you open a file but don't close it and then exit
+46:05
+uh the process um typically what happens is it uh flushes everything out for you
+46:12
+and then uh closes in the kernel so it's not possible for you to to uh cause a major problem by opening
+46:17
+something and then killing off the process without closing it it gets cleaned up automatically
+46:23
+so standard in and standard out you're gonna see when you start working with your shelves
+46:28
+and especially in homework 2 are basically going to allow communication between processes because
+46:36
+if you have a whole chain of processes and you manage to connect standard out of one to standard into the next
+46:42
+then you can communicate between those different processes in a chain and that will be one of the
+46:48
+patterns that you're going to get very used to as you get more comfortable with unix okay so this is an example here the cat
+46:55
+command says just take a file and send its output to the console so if you were to
+47:00
+say cat hello.txt you would just see and you had a hello.txt file
+47:05
+you'd see the whole file just streaming on your screen on the other hand when you put a pipe symbol like this little
+47:11
+vertical bar and you pipe it to grep then what happens is cat takes the file sends it to
+47:18
+standard out but by putting this little bar i've redirected standard out to be equal to standard end of the grep
+47:25
+command and so now grep will take the input that we got from hello text
+47:30
+and we'll grep for the word world and it will only output to the screen or it's standard out things that actually have
+47:37
+the word world exclamation point in them okay so this composition with bars
+47:43
+which you will implement uh on your own in homework two is really a connecting of standard in
+47:50
+and standard out okay good
+47:55
+now um let's look a little bit more at some of the high level api so for instance there are character
+48:02
+oriented versions so notice that all of these commands have a file star pointer into them so we
+48:07
+have to open the file first and then we pass in the pointer we got back to something like f put c
+48:14
+or f put s or f get c or f get s we put that file handle in there and as
+48:20
+a result the file structure then we can put characters that's a type of writing a
+48:26
+single character at a time or a string at a time or get characters okay so example
+48:32
+here's a simple example where i open uh the file input.txt notice that this is a relative reference
+48:39
+so the current working directory is going to matter here and i'm opening that input.txt for
+48:45
+reading i'm opening output.txt for writing what comes back from f open is uh the input file
+48:53
+structure pointer what comes out from this f open is the output file structure okay and we also have an integer which
+49:01
+we're going to use for getting characters so we we uh do an f get c on input that gives us the first
+49:06
+character um or end of file eof if there's no character there
+49:12
+okay now can anybody tell me if if we know that characters um let's talk talk about
+49:19
+ascii characters for a moment um are eight bits why did i use an int
+49:24
+for c can anybody think of that
+49:30
+okay eof is something that is uh not eight bits right because it's
+49:38
+minus one which is really um in representation it's really um
+49:44
+all ones in c so it's 32 ones it's a minus one and so we can basically check for uh
+49:50
+end of file by looking at that character otherwise we can use it as its character representation of eight bits
+49:57
+okay good and so then notice we check and c is the character eof if it's not we put it on
+50:02
+the output with f put c um and then we continue uh f get c
+50:08
+for the next and so on okay yep exactly like a 61c project so
+50:13
+hopefully this is reminding you guys what this is like now um let's look briefly at the block oriented version so those were character
+50:20
+oriented block oriented rf read and f right and here
+50:26
+um we again we're opening the same files but now we have a buffer okay and so
+50:33
+um the uh now f get uh so now what we're gonna do is f read is
+50:40
+going to be grabbing a buffer pointer from us so we're going to put the buffer here we're going to say how
+50:45
+big the buffer is and we're going to say uh what the size of the the uh
+50:51
+items in the buffer so notice this buffer is char uh characters and it's a buffer size in
+50:57
+size okay and if you notice um so then what we're saying here is our buffer
+51:03
+can take buffer size characters that's what those two things are and here's our input file descriptor or
+51:10
+excuse me input files structure pointer and we'll f read will read uh
+51:17
+data into the buffer now how much uh can anybody tell me how many
+51:22
+characters that this f read command will read from the file
+51:35
+anybody have any idea um how many uh how many characters this f
+51:40
+read will grab okay so everybody's looking at
+51:49
+buffer size of 1.024 and they're all saying 1024.
+51:55
+however what happens if the input file only has 20 characters in it
+52:00
+this f read how much will it return
+52:10
+so it's going to return 20 right because we're going to get 20 characters so this will read the whole file in that
+52:16
+instance so just because you give it a buffer that has a thousand 24 characters worth of space
+52:22
+doesn't mean you'll get a thousand twenty four okay so the f read is going to give you tell you how many it got
+52:27
+then we're going to say while we're getting uh some characters that are greater than zero uh which why would we get zero well if
+52:35
+we're at the end of file because we've read all the characters we're going to get zero back so this says well we got some characters
+52:40
+let's write those characters out so notice the pattern here for right is here's the buffer this is its length in characters and
+52:48
+we're gonna out that's our output uh file and that will write the characters we just read then we'll read the next grouping and
+52:54
+we'll keep looping until we're done and then we'll close so this really just copies input.txt output.text
+53:00
+okay all right now
+53:08
+and uh moving okay so if there are only 20 characters in the file of course we'll run we'll read one grouping we'll write it
+53:15
+out and then we'll get zero this time and we won't even go through the while loop a second time
+53:22
+okay now you have to take a look at the uh do
+53:28
+do a man page on the on the commands to see the exact or um organization
+53:35
+okay so we have a question here about why we get 20 so the reason we get 20 is
+53:42
+if the file only had 20 in it if the file had uh you know 1025 characters what would
+53:49
+happen is we'd get 1024 in this first read length is definitely bigger than zero in
+53:54
+that case we would write a thousand twenty four characters out we'd grab the second read would only get
+54:00
+one character even though it could get a thousand twenty four we'll go through the loop one more time
+54:05
+we'll write that one character out the next read will get zero characters then we'll close the two of them okay
+54:14
+all good now uh system programmers that's you guys
+54:24
+so the question also will this block depends a lot on what you're reading from if you're reading from a file
+54:31
+uh if you're reading from a file it's uh there won't be necessarily any blocking there it'll just read till the
+54:37
+end of the file um okay if you're reading from a standard in like a keyboard
+54:45
+then end of file comes when special characters are typed like ctrl d sometimes as end of
+54:50
+file okay and so no it doesn't have to be 1024 either and these could be something other than
+54:55
+characters they could be integers in which case you would uh you'd say size of int and this thing would uh
+55:01
+pull things in in quanta of uh four bytes at a time okay characters um
+55:09
+depends on whether we're talking about uh unicode or not as to how many bits for now
+55:14
+since we're not that's not an issue we want to deal with we're going to say that characters ascii characters are eight bits for now
+55:20
+okay um you guys will get to learn more about that later okay so you as system programmers that's
+55:27
+what you are now need to be paranoid which means you want to uh always check for errors so for instance
+55:36
+we ought to always write code like this i mean you guys ought to always write code like this f open input.txt
+55:44
+if input is no you gotta deal with the fact that there was a failure
+55:49
+okay always check for null always check whatever the return code is make sure you check it this case
+55:55
+the return the fact that there is an error is returned as a null and then you have to do something else
+56:01
+like call p error or whatever to find whatever it is this will actually uh say fail the uh open input file and
+56:07
+then tell you what the error was um every one of the commands has a way of of giving you an error back
+56:13
+if there's a possibility of an error so be paranoid okay check return values it's very easy
+56:20
+to be bad as a system programmer not check your return values and then you're going to get code that behaves very badly at the
+56:27
+worst possible time okay there's a murphy's law for um bad code okay and uh
+56:35
+yes so a language with result such as rust i'm assuming that you're talking about which is totally an awesome
+56:41
+language we'll maybe we'll talk a little bit about that later in the term would give you a better way to check but we're talking about c here right now
+56:48
+okay and pr knows the interface uh to interact with which is the air no
+56:53
+interface that knows how to look for where the error is okay all right i may be a little loose
+57:00
+with error checking don't take what uh my looseness with error checking is anything more than trying to make sure
+57:05
+the code examples on the screen don't get ridiculously long okay so this is literally do as i say not as i show you
+57:11
+in class when it comes to error check all right all right
+57:17
+so um i do want to talk a little bit about positioning uh
+57:22
+the pointer with your inside of a file so there's f seek which lets you basically set where that
+57:28
+pointer is so the next read comes from it so what i've been talking about transparently uh without really saying a lot about it
+57:35
+is i said well maybe this f read reads the first thousand twenty four and then when we do it again we start at
+57:41
+that thousand twenty four point for the next read why is that well because there's an internal pointer okay
+57:47
+there's an internal pointer that's in um in the uh buffering system that's going
+57:54
+to keep track of where you are and so you need a way potentially to change that position and so f seek
+58:01
+lets you change uh where you're going to read from next and f tell tells you where you're reading from next that tells you where
+58:07
+the pointer is and uh rewind goes back to the beginning okay so and um notice that this uh seek
+58:15
+command actually has a wence argument to it which basically can be one of these three constants seek
+58:21
+set seek end or seeker which basically tells you that when you say go to a given offset what happens
+58:27
+well if you seek current it takes the current position and adds an offset to it uh if you say seek set it basically just
+58:35
+takes your offset and sets the pointer to that absolute value and then if you say seek end it
+58:40
+actually takes from the end back okay and you can look this up but it's preserving this
+58:45
+high level of abstraction of a stream um now let's contrast what we've been
+58:51
+talking about uh with low level i o okay so kernel unix uh the
+59:00
+unis c's which have posix i o have sort of the following design
+59:05
+concepts behind them okay um there the question here about whether you need wentz there are
+59:11
+different forms other than f seek that actually don't need wince you can just do a man
+59:16
+on on fc you can see them okay so um some concepts that went into this which i've
+59:23
+already hinted at is uniformity that everything's a file we already talked about that open before using clearly we've talked
+59:29
+about that but uh for instance that gives a an opportunity for the kernel to check for access control and arbitration
+59:36
+and not return an open file handle that you can use unless you have permission to use it
+59:43
+everything's bite oriented okay which is even if the blocks are transferred everything is in bytes
+59:50
+so this is the fact that the kernel is completely agnostic on the structure and format of any
+59:56
+files or data in the system it has no no requirements except for one
+1:00:02
+particular type of item and that's the directory so the directory has a special format that
+1:00:08
+the operating system excuse me can know how to interpret okay the kernel is going to buffer reads
+1:00:15
+and writes internally part of the reason for that is for caching and performance we'll
+1:00:21
+talk about that but another reason for that has to do with the fact that things like disks are blocks oriented so you can
+1:00:28
+only pull in a block at a time whereas again this is a byte-oriented interface to the user
+1:00:34
+and so we need to have buffering inside reads and writes to uh give us both performance and the
+1:00:40
+ability to to match uh the block structure of the devices against
+1:00:46
+the bytes of the user okay and then explicit close so let's look at this raw interface so
+1:00:52
+notice there's no f in front of open here no f in front of creator close there are
+1:00:57
+some flags that sort of say what access modes you want and what permission bits
+1:01:03
+okay and what comes back from open is not a file star it's an integer okay it's a file descriptor it's just a
+1:01:10
+number and uh if the return value is less than one that's an error and then you have to look at the erroneous variable to know
+1:01:17
+what the error was okay all right um will uh there is no explicit locking of
+1:01:26
+the form that um it's being asked about for mutexes in there you can take a look at that philosophy in the unix paper
+1:01:31
+we'll talk about locking a lot more as we get further um so what so when you get back from an
+1:01:37
+open you get a number which is a file descriptor this is a open is essentially um isomorphic to
+1:01:45
+a system call in fact what's inside of open in the lib c library is a little bit of wrapper
+1:01:51
+around a call system call okay and so the operations on the file descriptor
+1:01:57
+are as follows when you do open and it succeeds you actually get an open file
+1:02:03
+description entry in a system-wide table in the kernel okay and the open file description
+1:02:09
+object in the kernel is an instance of an open file and the question i might ask you is so
+1:02:14
+why did we return a a number that's really a pointer
+1:02:22
+or is really an index inside a table that points at file descriptors rather than a pointer to the file descriptor
+1:02:28
+can anybody figure this out yes security what sort of security
+1:02:36
+anybody guess yeah so there's lots of good good answers in
+1:02:41
+the chat there so one uh this description uh entry is in the kernel so the user couldn't
+1:02:47
+access it if they wanted more interesting there's a philosophy here which is by returning only a number and
+1:02:54
+only allowing you to access a number in the commands it means that there's no way for you to access
+1:03:02
+things you're not supposed to because the kernel immediately checks your number about uh against the
+1:03:08
+internal table and if uh it doesn't match up it just doesn't let you go and do anything there is a little bit of a
+1:03:14
+information leakage advantage to that as well but this is mostly about the security of not being able to address file descriptions you're
+1:03:20
+not supposed to so if you look at some of uh if we look at the parallel to the ones
+1:03:27
+we talked about before there are um standard in standard out and standard error which are the uh system call
+1:03:35
+descriptors equivalent and they're numbered their values are 0 1 and 2
+1:03:40
+okay and they're in this uni std.h okay and then there's a way to say well
+1:03:45
+for a file star give me the file number inside of it and that's because when you did if you did f
+1:03:51
+open you actually are running a library call that internally calls open and so every file star you've got
+1:03:58
+actually has a file descriptor saved inside of a user level data structure and you can go back the other way as
+1:04:03
+well so the low level file api we have things like read instead of f read so real
+1:04:10
+read takes the file descriptor integer a buffer and uh the maximum size of that buffer
+1:04:16
+in bytes in this case it doesn't quite have the flexibility of f read and it'll tell you how many came
+1:04:22
+back okay and if you get zero bytes you get an end to file and if you get minus
+1:04:28
+one byte you have an error uh writing is similar and seeking is uh kind of the equivalent
+1:04:34
+of fseq we talked about earlier so here's a simple example where we do
+1:04:40
+open here's the name of the um of the file we have uh the following flags for the fact that we want to be
+1:04:46
+read only um and uh various uh um
+1:04:54
+permissions that we want to have on that file okay and we open it we get a file descriptor back
+1:04:59
+we read from it okay we close it notice that read and close have to use
+1:05:05
+that same file descriptor okay and then right we might uh open or we
+1:05:10
+might try to write something to that file descriptor okay but if you notice when we've closed
+1:05:16
+the file descriptor by the time we get around to writing it uh it's already closed so that could be an error right
+1:05:23
+there's lots of errors that can come back the file being bigger than max size is not going to
+1:05:28
+come back as an open error that's going to come back when we try to write on it of course okay so how many bytes does
+1:05:33
+this program read well we look at what came back from rd and that tells us how much we read
+1:05:41
+so design patterns again just to tell you this this is actually at the system call interface always open before
+1:05:48
+you use it's bite oriented and you have to close it when you're done okay
+1:05:55
+reeds are buffered inside the kernel rights are buffered inside the kernel for lots of reasons we talked about
+1:06:00
+this buffering is all part of a global buffer management which we'll also talk about when we get to the internals
+1:06:06
+and you'll see why the demands of things like the file system and the buffer manager and so on
+1:06:13
+require that caching but also that it can give us good performance as a result
+1:06:21
+so some other operations in low-level io we talked about iactls okay this is an example of
+1:06:26
+when you open something that's not a file in the file system but rather as a
+1:06:33
+device or whatever you might call some iactyls on it you can also call you can also use
+1:06:38
+ioctyl on open files for certain issues about blocking and non-blocking and so on
+1:06:44
+we can duplicate descriptors okay i'm going to show you that where you have an old descriptor and you
+1:06:51
+get a new one out of it okay and we can also make pipes where we
+1:06:56
+we create a brand new pipe which is two file descriptors uh two integers in an array and then if
+1:07:03
+you do fork um then you have uh two ends of a pipe that the two processes can use to
+1:07:09
+communicate with each other and that pipe command is exactly what you're gonna use to set up pipes when you do your shell
+1:07:16
+okay and there are ways to do file locking but it's not a mutex per se
+1:07:21
+it's uh it's locking that's specific to the actual file systems
+1:07:26
+okay and ways of memory mapping files so that'll be another interesting thing that we'll talk about once we get a
+1:07:32
+little bit uh further along in how uh things like page tables work we'll talk about in fact how to take a
+1:07:38
+file and map it directly into memory so that now you can do reads and writes to memory
+1:07:44
+instead of reads and writes to the file system so you'll be actually uh looking at at memory uh
+1:07:50
+and structures and so on in memory rather than executing read or f read and write or f write
+1:07:57
+calls okay and we'll talk about asynchronous io a little later as well so why do we have
+1:08:05
+a high level file i o well high level file i o first of all to look at it we have
+1:08:11
+something like f read what happens when you execute f read is there's a bunch of work being done just like a normal function in the
+1:08:17
+library and some of that work is about checking to see if the thing that they're trying
+1:08:22
+to read might already be buffered in a local user level buffer okay and if not then
+1:08:28
+it goes ahead and does this pattern we talked about last time or the time before and how to actually do a system call we have to set
+1:08:34
+up some special registers with the system call id and the arguments et cetera and then you do a
+1:08:40
+special trap that goes into the kernel and does the system call and comes out okay all right low level
+1:08:48
+is an example in which where the read really just does the
+1:08:53
+system call so read is essentially just a c level wrapper for the system call f read
+1:09:00
+is something more sophisticated now there was a question in the chat about what i mean by buffering what i mean is you may do read
+1:09:08
+you may read 13 bytes at a time but the underlying system is maybe
+1:09:13
+optimized for 4k bytes at a time what f read will do is it'll actually
+1:09:19
+ask the kernel for 4k bytes and then put it into a local memory data structure
+1:09:24
+and then all the subsequent f reads you do for a while just look in that buffer and grab the next 13 bytes without having to go into
+1:09:30
+the kernel much faster okay because kernel crossings actually take some time
+1:09:37
+okay and so streams as i mentioned are buffered in memory and so one of the ways you can see this for instance
+1:09:43
+is if you do printf beginning of line so printf actually goes to the buffered version of standard out
+1:09:50
+and you do a sleep and you say end of line what happens is when that finally gets flushed to the console possibly because of that
+1:09:57
+control or that new line there everything gets printed at once it says beginning of line and
+1:10:02
+end of line as a single item whereas with the low level uh
+1:10:07
+direct system call you might do write to standard out file file number so the standard out
+1:10:13
+beginning of line you wait a little bit and then you do the same thing with end of line and what you'll see is the word beginning of line on your
+1:10:20
+console you'll wait 10 seconds end of line so there's no buffering in this path at the bottom but there is
+1:10:26
+buffering in the up in the path up top okay so um yes so now you're starting to say
+1:10:33
+some interesting uh questions here okay so um
+1:10:38
+the 18 and 16 have to do with the number of characters we're writing there by the way um so uh the question you might ask
+1:10:46
+is uh is there buffering the question that was asked is there buffering in the kernel if there's buffering at user
+1:10:52
+level yes there's two different buffers going on okay the buffering in the kernel is
+1:10:58
+completely transparent to you there's no way for you other than timing uh and failure your
+1:11:04
+system to really know that buffering is going on in the kernel buffering and user level can make things
+1:11:09
+much faster but you can do things in a way that mixes things up quite a bit
+1:11:14
+uh if you're not aware that you're using for instance uh the the stream version of a file um
+1:11:21
+and the raw version of the file together and that's usually a problem okay
+1:11:29
+so what's in a file star well as we mentioned the file star has user level
+1:11:35
+buffering so inside of it it's got to do the raw calls and so it's clearly going to have
+1:11:40
+a file descriptor inside of the structure file star that structure is going to be in
+1:11:45
+your program okay and so when you do f open what happens is f
+1:11:50
+open allocates a new file structure then calls the raw open and then returns and some buffering
+1:11:57
+inside the file and then returns the pointer to that structure from its library to you
+1:12:04
+okay so buffering inside of a file is done at user level
+1:12:10
+so when you call f right it's put into the files buffer until you flush
+1:12:16
+the c standard library may choose when to flush out to the kernel if you really care that something is
+1:12:22
+visible in the file system then you're going to need to do flush on your own okay and so you want to make
+1:12:28
+sure that you're not expecting things that you just wrote with f open but you do have open f right and you're
+1:12:35
+doing something else you don't necessarily know that that's gone to the file system unless you do flush
+1:12:40
+flush okay so weakest possible assumptions about whether things got from user level into the kernel or not
+1:12:47
+so here's an example where we do f open a file.text we write something okay
+1:12:55
+to uh we write a b to that file okay and then we do uh f open file.text
+1:13:02
+again so notice we have two copies of the file open in two different uh file star structures and so if we go
+1:13:10
+to read from the second one we're not necessarily gonna see the first one
+1:13:16
+okay so this f right here may or may not have gotten into the kernel depending on
+1:13:21
+whether it got flushed or not okay all right because we've opened this file
+1:13:28
+twice two different bufferings in the kernel we've written to one
+1:13:34
+and we haven't flushed in two different uh bufferings in the user level we haven't flushed it out so we don't
+1:13:40
+really know what's going to happen so if you're going to write code like this be aware so notice what i changed here
+1:13:46
+is i wrote the data then i did an f flush at that point all the data that's buffered gets put into the kernel
+1:13:52
+and now this f open and read will get the data okay so just be aware that when buffering is going on
+1:13:58
+and you start doing weird communications you got to be careful okay and if you close the first file
+1:14:03
+then yes it'll get flushed out okay so your code should behave
+1:14:09
+correctly regardless of what's going on so make minimum calls to flush and uh with the low level api you don't
+1:14:15
+have this problem so if you only do open reads and writes you're not going to have the the problem of
+1:14:22
+different users of the file not seeing the data because the kernel hides all of its buffering from the
+1:14:27
+users okay but uh you don't get the performance
+1:14:34
+advantage of all the buffering in user level and why do you want to buffer and user
+1:14:39
+level i just wanted to show you system calls are 25 times more expensive than
+1:14:45
+use than a regular function call so if you look uh here the blue is time for regular
+1:14:51
+user uh just function calls the green is system calls for doing get pid in this
+1:14:57
+case and the red again is a version of get pid that doesn't have to do a system call
+1:15:04
+okay and so notice that it's much better not to make system
+1:15:10
+calls if you can avoid them okay so if you read or write a file byte by byte the max throughput for instance
+1:15:16
+might be 10 mega bytes per second whereas if you do f get c which is a buffered single byte by
+1:15:24
+at a time you could actually keep up with the speed of your ssd why is that well fgetsy
+1:15:32
+is a buffered command and so you're giving it a file star and what happens is the first character
+1:15:38
+you read goes into the kernel brings a big block of data into user level and then the subsequent f get c's
+1:15:44
+just quickly return you another character until you use up that buffer and then you make another system call
+1:15:50
+this is exactly a form of caching okay exactly and uh that's part of the reason that
+1:15:57
+you can run into trouble if you use it uh incorrectly so system call operations
+1:16:03
+uh why why buffer in user space now so in addition to performance we want to
+1:16:10
+keep the kernel interface really clean okay so the operating system doesn't know anything about formatting
+1:16:16
+okay for instance there's no way to read until new line from the kernel because again the kernel doesn't know what a new
+1:16:22
+line is that's a that's a feature okay so what the solution is is
+1:16:27
+you use the buffered calls like f get s or get line that take file stars and what they do is
+1:16:34
+they read a chunk of data out of the kernel and then they just very quickly walk through until they find the next new line and give it uh
+1:16:40
+give the whole line to you okay so now let's talk a little bit about
+1:16:46
+process state okay if you notice here we're kind of moving
+1:16:52
+our way down to the bottom a little bit but the kernel on a successful call to open
+1:16:59
+has a file descriptor returned to the user and an open file descriptor is created
+1:17:04
+in the kernel okay and so for each process the kernel maintains a mapping from file descriptor
+1:17:10
+to open file descriptor description in the kernel and then on all the future calls the
+1:17:16
+kernel looks up uh the file descriptor it gets to find uh the actual um description
+1:17:24
+structure okay so here if we notice we have two buffers we open um food.txt
+1:17:32
+and then we read here we read from that file descriptor into buffer 100 characters why does this
+1:17:40
+work well the kernel remembers because you opened it that fd the number
+1:17:45
+is talking about the file fu.text that's all cached okay and therefore just calling read
+1:17:52
+uh knows what file to work with and furthermore it also knows to pick up where it left off so this read gives you
+1:17:58
+100 characters this read gives you the next hundred characters and why because that's stored in this
+1:18:03
+file description in the kernel okay so what's in the file description well
+1:18:10
+you could look it up right you guys have uh pintos you can check it out the things that are important for today here
+1:18:17
+are um the inode structure which is an internal file system thing we'll get to soon
+1:18:22
+enough tells us about where all the blocks are on the disk for your file and the offset
+1:18:28
+tells you kind of where you are in the stream okay so what's the abstract
+1:18:35
+representation of a process so if you guys bear with me a little bit there's a couple other things i wanted to say before we're done
+1:18:40
+um so remember a process has got threads registers etc it's got uh
+1:18:47
+memory for the address space and then in kernel space we've got this file descriptor table
+1:18:52
+which maps um numbers that are file descriptors to actual descriptions of files so if we
+1:18:59
+we execute open for.text and it gives us back descriptor three this is what happens we have descriptor
+1:19:05
+three in your process points to an open file descriptor table description table
+1:19:11
+in the kernel that says the file is fu.text and it's at position zero
+1:19:16
+okay and not shown is uh descriptor zero one and two so i started at three
+1:19:22
+and uh hopefully we'll get to zero one and two here in just a second um but now suppose that after we open
+1:19:27
+the file we say read descriptor three which is this file uh into the buffer the next
+1:19:34
+hundred characters well what happened was we read the next hundred characters into that buffer and we're at position 100.
+1:19:39
+and notice the kernel knows what position that file description's at it's
+1:19:45
+at position 100. okay finally if we close what happens
+1:19:50
+there is the file descriptor table is cleared and the file description is cleared and voila we've just
+1:19:57
+finished that off okay but let's do something more interesting so let's not close let's fork
+1:20:04
+okay so here's process one here's a child process we just created notice that we have the address space uh is
+1:20:11
+duplicated we've got uh the thread control block i'm assuming there's only one thread for a moment
+1:20:17
+and the file descriptor table is duplicated so now both process the parent and the child
+1:20:22
+point to the same file description so that means that either of them
+1:20:29
+can um can read from that file okay so if this process tries to read
+1:20:37
+uh 100 bytes from file descriptor 3 then it's going to read 100 bytes and
+1:20:43
+will now be at position 2 and now this guy does the same thing and voila we're at position 300 because
+1:20:50
+we have uh forked the process and they're sharing the file descriptor
+1:20:55
+all right it's copy so now we start to see what it is that
+1:21:01
+fork is doing that's more than just the address space okay and if this process one closes the
+1:21:07
+file notice that all that that does is it only removes the file descriptor pointer
+1:21:13
+to the file description because that pointer for that file description is still in use by another process so
+1:21:19
+there's a reference count on there and the fact that process one closed it does means that process two still has
+1:21:25
+access to it okay um
+1:21:30
+so if we wanna uh if you're asking can we copy this open file description for process
+1:21:35
+two if you fork process two you'll get a copy of it again okay the only way to get a new file
+1:21:42
+description that's unrelated to the old one if that was your question is by doing another open of the same uh file okay
+1:21:51
+so why do we allow this well aliasing the open file description is a good idea for sharing resources like files between
+1:21:58
+parents and children processes if they're working on the same thing together okay and remember in posix everything's
+1:22:05
+a file so this really means that both the parent and the child is uh both have um access to the same
+1:22:14
+resources the question was why is this 300 and not 200 if you notice the point at which the
+1:22:20
+read happened we went to 200 notice that the uh this process goes to read another hundred bytes
+1:22:27
+from file descriptor three if we look up three we see that yes indeed here's the file description
+1:22:32
+the pointer is at two hundred and so when we read the next three hundred next hundred bytes we've just advanced it to
+1:22:37
+300. okay so um so when you fork a process the
+1:22:44
+parent and child's printfs go to the same terminal so this is one of the last ideas i want to finish up but let's take a look and this is
+1:22:51
+going to be very important for homework two so hold on for a second here there are a
+1:22:56
+set of three standard file descriptors that are always allocated we already talked about them
+1:23:01
+zero is for standard out one is for standard in and two is for a standard error
+1:23:07
+so zero is all the inputs from keyboards one is the standard output that has no
+1:23:13
+errors and two is the output for errors so if a process that happens to be say a shell forks
+1:23:20
+another process which might be a child process it gets copies of all the same file descriptors
+1:23:27
+this is why if we have a parent that forks a child and the two of them are both printing output notice that
+1:23:34
+descriptor zero is shared and so the outputs go to the same terminal interleaved okay and that's the standard
+1:23:43
+way that a command that you type at the the command prompt for a shell works
+1:23:49
+which is why when you type a command and it's printing it goes to the same terminal that your shell was running from okay
+1:23:58
+so if we close uh standard out in process one we don't close it in process two
+1:24:04
+same with standard in okay the only thing that will change
+1:24:09
+standard outer standard in is if you change them okay which is uh
+1:24:15
+the question here is if you have two processes both on standard in uh wouldn't they uh duplicate the the
+1:24:21
+input the answers no it's whichever one reads uh first gets the next character and vice versa okay there's only one copy of
+1:24:28
+things coming in so other examples are sharing network
+1:24:33
+connections after fork sharing access to pipes these are all things that when we start getting into more interesting patterns are going to
+1:24:39
+be there okay the the final thing i wanted to show you here is about dupe and dupe 2
+1:24:45
+which is uh for instance suppose we've got uh file descriptor 3 pointing at this
+1:24:51
+description and now we uh we execute dupe of three so what dupe of three is gonna
+1:24:58
+do is it's gonna make a new file descriptor for okay which points at
+1:25:05
+the open fi the same open file description that three was and so after dupe now we have both three and four pointing
+1:25:11
+to the same file and we could if we wanted close three and still use four
+1:25:17
+okay dupe two allows us to do something a little different which is basically allows us
+1:25:24
+to take file descriptor 3 and duplicate it and call it file descriptor 162
+1:25:30
+and so now we've chosen which file descriptor we wanted to use whereas dupe chooses us
+1:25:35
+i want okay and when you start getting into the shell with homework two rearranging what
+1:25:41
+descriptor zero one and two do is how you will make uh pipes from one command piping to the
+1:25:48
+next and so on if you remember cat uh piping into
+1:25:54
+piping into grip okay all right and i think we've run out of time there
+1:26:00
+are some fun uh things i guess we did have enough questions i wanted to just give you this one which is a fork in a multi-threaded
+1:26:06
+process everybody's asked me about this don't do it uh unless you really know what you're doing and aren't going to be
+1:26:13
+surprised so here's an example of a process that not only has some file descriptors but it's got multiple threads
+1:26:19
+a red one and a black one if you fork and suppose it's the black thread is the
+1:26:27
+one that runs the fork command then when you're done you've got
+1:26:32
+duplicates of all the file descriptors and address spaces but only thread one's still running so this is unlikely to do what you want
+1:26:40
+unless you're really doing what you expect okay all of the memory that the threads had
+1:26:46
+will still be around but the threads themselves won't be running okay if on the other hand you exec
+1:26:52
+that's exactly right that was a good question then you throw everything out and you get a brand new process and
+1:26:57
+that's probably will do what you expect okay okay safe if you call exec
+1:27:04
+um the other question about does dupe always assign the next int um i wouldn't count on that if you had
+1:27:10
+anything that depends on that i wouldn't count on it it basically gives you one it's probably the next one but you never
+1:27:16
+know for sure okay and what does exec do exec erases all of the processes address space and
+1:27:23
+loads it up with the new process okay all right i think we're we're over
+1:27:28
+time so i'm just going to say in conclusion we've been talking about uh user level access to to the file i o
+1:27:36
+and some of the user interfaces that you're going to become really familiar with okay and the positive idea of
+1:27:42
+everything's a file uh is a pretty interesting one i encourage you to take a look at that original unix paper
+1:27:48
+all sorts of ios managed by open read write close uh an amazing amount um and we also
+1:27:54
+added some new elements the process control block like mapping from file descriptor to open file descriptions the current
+1:28:00
+working directory etc so i want to wish you all a great uh weekend and we'll see you on monday
+1:28:07
+and sorry for going a little bit over have a have a great weekend everybody
+1:28:14
+you

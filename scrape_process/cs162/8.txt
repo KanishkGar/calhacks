@@ -1,0 +1,1716 @@
+0:03
+all right everybody uh welcome back to cs162 we're going to
+0:08
+pick up where we left off on synchronization um and we were just starting to discuss
+0:15
+atomic instructions last time so uh we're going to start however by
+0:22
+reminding you a little bit about what we've been talking about so we've been trying to figure out how to implement locks and we uh
+0:29
+started by asking ourselves if we only had atomic loads in stores what could we do
+0:36
+and uh at best what we came up with uh in the too much milk solution
+0:41
+domain here was this where we had two threads that were both synchronizing on
+0:46
+a critical section of if no milk by milk and uh after working at several different
+0:52
+varieties we finally came up with this and it works it's uh it's related to uh
+0:58
+dijkstra's solution from way back when and it was solved uh in general by lanport as i mentioned
+1:04
+um it works it's very unsatisfying because essentially every thread
+1:09
+in the system would have to have a different synchronization protocol uh and different set of uh instructions
+1:17
+and so you know if you look carefully you see thread a is uh different from thread b
+1:22
+and you can basically figure out you know at the x point here if there's no node for b it's safe for a to buy otherwise you
+1:28
+wait to find out what's going on and then b uh basically just says uh if there's no note from a
+1:34
+then it goes forward and so we you know this was an interesting exercise but we wanted to move on
+1:41
+and so then we reminded ourselves why locks were appealing because really what
+1:47
+we wanted is this simple milk problem solution where we acquire a lock do the critical section and release the lock
+1:53
+and if we could somehow figure out how to build a lock uh that was um
+2:00
+gave us this sort of uniform api then we would you know might be in much better shape
+2:05
+and so in the hope of doing that we we first started as you might recall
+2:11
+uh talking about disabling interrupts okay and here was an example uh that we had last time and what i'm
+2:17
+gonna do what i did here was i actually augmented this example which i gave in class by
+2:23
+showing that you can have as many locks as you want you just name an integer and uh and then the acquire and release
+2:30
+take a pointer to that just like the high level locking that we've been talking about and
+2:35
+this particular solution uh disabled interrupts uh had a critical section which was
+2:42
+related to uh basically modifying that
+2:47
+lock variable and then enabling interrupts and we got to this uh after we decided that disabling
+2:53
+interrupts to acquire the lock and enabling interrupts to release the lock was way too risky and not something that we would
+3:00
+want to actually do and so this was our solution and just as a at a high level here you notice that
+3:06
+the lock is either free or busy that could be zero or one when we go to acquire we first disable interrupts and by doing
+3:12
+that what we've done is we've prevented the scheduler from switching threads and so now we've got uh we've got one
+3:19
+thread that's currently um the active one and that's the one we're running on we check
+3:25
+the lock's busy if it's not busy we set the lock to busy and re-enable if it is busy then we have to go through
+3:31
+this trick of uh putting ourselves to sleep which means putting ourselves on the right
+3:37
+cues and so on while uh you know still running right and so
+3:42
+that's a little bit of a paradox but we talked about how in fact that isn't as much of a paradox when you realize that the way the actual
+3:48
+scheduler works going uh through switch and back up again and so on actually
+3:54
+uh deals with uh disabled interrupts and so on okay and so um on the release side again we disable
+4:01
+interrupts and that's because we have a critical section and uh in that case we see if there was anything on the weight queue then we'll
+4:08
+put it wake it up otherwise we will free the lock and re-enable and the uh the question about does the
+4:15
+idle thread re-enable interrupts like every other thread yes so we haven't really talked a lot about the idle thread um
+4:21
+in some sense there the idle thread is uh kind of what runs when nothing else is
+4:26
+running clearly if there's nothing running and you're going to be in that state for a long time you have to re-enable
+4:32
+interrupts so yes now uh the other thing i did for you guys last time and i just wanted to
+4:37
+do it again quickly is to see exactly how this uh works and so i made an animation
+4:43
+and notice that i've i've also changed this animation a little bit to reflect the fact that
+4:48
+we're actually inputting the particular lock we're interested in as an address into acquire
+4:54
+and release and so this particular simulation which is in the kernel
+4:59
+right why well because we're disabling and re-enabling interrupts if you're really interested in doing this in user level it means you have to
+5:05
+take a system call before you run this acquire and release but if you notice we have thread a is running
+5:11
+thread b is on the ready queue so if you remember what that means is you're either running which that means you have the cpu resources
+5:17
+or you're on the ready queue which means the next time timer tick you could potentially get switched in by the scheduler
+5:23
+so both a and b are runnable the value of my lock is zero which means that nobody has the lock
+5:29
+okay and so basically if if we never got to acquire and release here a and b are just gonna alternate back and forth
+5:36
+just like s snt did in that example i gave you last time and
+5:41
+the other fields we have up top here in addition to the actual integer memory location mylock we have a
+5:48
+list of waiters which is a weight queue associated with the lock so every lock has a weight cue
+5:53
+and those are the uh the threads that can't be runnable but instead are waiting for the lock to
+6:00
+be released and obviously it's empty right now nobody's waiting on the lock and then finally this owner which is going to
+6:06
+point to the current thread that has uh ownership but it's not a requirement there are some variants
+6:12
+of locks that you will have that explicitly remember who their owner is but there's nothing about a lock that
+6:17
+really needs to remember an owner if you think about the key analogy you lock your door
+6:22
+um you know does that mean your own you own that lock well you could hand the key to somebody else and they could
+6:28
+unlock and so the the notion of a lock doesn't by itself require an owner
+6:33
+putting an owner in is really more about understanding for instance whether somebody's
+6:38
+violating violating something by trying to unlock when they don't own
+6:44
+okay so here we go we're running the acquire and release codes in the middle here so this thread uh runs and it hits the
+6:51
+acquire and so the first thing it does is it runs a choir and so acquire of course disables interrupts that's
+6:57
+what that little red circle was and it now says well if um the lock uh
+7:02
+variable that's being passed in is equal to one because somebody's got it we're gonna do something but that's clearly not true because it's zero
+7:08
+and so we're gonna go to the else clause we're gonna set the lock to one meaning we've got it um for our own uh edification we're
+7:16
+going to consider it being owned by a now but this isn't we
+7:22
+haven't actually changed anything anywhere this is just for us we'll re-enable interrupts we'll go back
+7:27
+and now thread a is happily running along and it's in the critical section why because it's got the thread
+7:33
+uh or it's got the lock excuse me um now uh or the lock is locked and it has come
+7:39
+back from a choir right that means it's in the critical section it's doing fine now at some point because thread b's on
+7:45
+the ready queue well the timer goes off and now we're going to let thread b run so
+7:51
+if you think about what has to happen we have to unload thread a's registers put them into the thread control block
+7:57
+execute a switch when we're done what's going to happen is a is going to be now on the ready queue and b is going to be running
+8:03
+okay so here we go we get a timer interrupt that takes us into the kernel um that's what these dots are
+8:11
+we interrupts are disabled during that period of time so we've entered the the switch routine at some point
+8:18
+it you know it takes thread a and it puts it on the ready queue it takes and pulls thread b off and
+8:23
+loads its registers into the cpu and then we re-enable interrupts and now b's running
+8:30
+okay and notice that b's happily running that's what this blue line means without running into anything because it hasn't
+8:36
+tried to acquire the lock that a has already acquired however the moment we hit acquire what happens well we
+8:42
+we go to run the code we disable interrupts and at this point somebody's got the lock because my lock is one
+8:50
+and so it enters into this uh portion of the code that basically puts
+8:56
+puts itself on the weight queue see it's not waiting um and then going to sleep really means that now
+9:03
+that we're going to take ourselves off of the cpu and run switch to get back to thread a
+9:08
+okay and of course just before a runs again it's going to re-enable interrupts
+9:13
+and now we get to keep running and so a is now running happily in the critical section b is put asleep and if you ask yourself
+9:21
+where's the pc for b its program counter is right here uh the end of the blue arrow
+9:26
+so when it finally wakes up it's going to come out of that part of the blue arrow and go uh and finish up the acquire and
+9:33
+then return back to the thread so at some point a is now going to execute release
+9:40
+okay and this is going to be important as you see here we're going to execute release we disable interrupts is there
+9:45
+anybody on the weight queue yes there is so that means this waiter is now going
+9:50
+to be woken up and ready to run okay and uh the mere act
+9:58
+of putting him on the ready queue means we're going to let him continue to run and come back from acquire so um
+10:05
+just by putting him on the ready queue he's now going to wake up and have the lock now notice i haven't changed the lock
+10:11
+from one to zero right why well because in some sense a's handed the lock to b and things are just going to stay locked
+10:17
+okay and so then a re-enables interrupts and continues to run notice b hasn't started running so it's
+10:24
+not just because i unlocked doesn't mean that a uh immediately starts running all it means is that age is taken off the
+10:30
+weight cue and put on the ready queue sometime later timer goes off scheduler comes into play
+10:36
+it disables interrupts as the interrupt you know the timer interrupt happens it goes into the scheduler which is
+10:43
+going to restore is going to put thread a back on the ready queue and it's going to restore the registers for
+10:49
+thread b and get it runnable in which case it's going to emerge from sleeping it's going to re-enable interrupts and now it's
+10:55
+going to emerge from the acquire call so from the standpoint of b it's tried to acquire
+11:00
+and it's been in that acquire call for all this time and then eventually we reena it came
+11:06
+back out of acquire and now it's in the critical section running okay that's my simulation so i'm going
+11:13
+to let that go since we did it already last time are there any questions on that i just wanted to do it again to make sure we're good
+11:22
+okay good so b actually got the lock that's a good
+11:29
+question why do i know b got the lock because it emerged from acquire
+11:34
+okay when you return from acquire that means you got the lock okay that's true of all of the locking
+11:40
+protocols when you do an acquire uh you're sleeping there and the moment you do return
+11:46
+you now have the lock okay and notice also that since b is running in a
+11:51
+critical section and the lock is set you know that somebody's got the lock and it's going to be b that's running in the critical section
+11:58
+all right so interrupts as i've mentioned here
+12:03
+we've said a couple of places where interrupts are scheduling uh thread a to run and thread b to run
+12:09
+so these uh dotted lines are all about the uh timer interrupt coming in waking
+12:15
+uh coming in and rescheduling the next thread okay now um where we were last time is
+12:23
+he said some problems with that solution is first of all you can't give this lock implementation to users
+12:28
+because you can't allow them to enable and disable interrupts way too dangerous um and so uh we could have a system call
+12:36
+so what i've got here they could be the acquire and release system calls okay but of course the downside of that
+12:43
+is that means that in order to just grab a lock we're doing a system call which is expensive
+12:48
+okay and so the number of locks per unit time we can have is going to be seriously
+12:55
+limited by something that has system calls in the way so we'd like to have something that's running at user level rather than the kernel
+13:01
+of course you know just to see where we're going with this of course if we actually have to put
+13:07
+somebody to sleep we got to go in the kernel but that's already a long operation so
+13:12
+the moment we decide we have to put them to sleep doing a system call at that point to put them to sleep
+13:17
+is probably the right thing and so we'll we'll get there uh toward the i don't know two thirds of
+13:23
+the way through the lecture or so but so the other thing that is a little more subtle is this doesn't work on
+13:29
+a multi-processor or even a multi-core because when you disable interrupts you're only disabling them for one of
+13:35
+the processors so yes it might be the case that when i disable interrupts and re-enable them
+13:40
+i'm preventing the timer on that particular processor from going off and other interrupts from disturbing me
+13:46
+and so i have a nice atomic section to make a nice lock but the moment i have more than one processor this doesn't work
+13:53
+okay and so that uh that's a bit of a downside to this particular
+13:58
+this particular implementation so the alternative is going to be doing
+14:03
+something that's runs in the memory system uh that doesn't have to go into the kernel
+14:08
+and will work across multiple processors and this is uh atomic instruction sequences okay now
+14:14
+when we started talking about atomic actions remember we said here's a set of
+14:19
+instructions grab the account deposit money
+14:25
+store their account back that we wanted to put together into a single atomic sequence and so what we did is we
+14:30
+acquired the lock and released the lock what we would like to do is mimic that
+14:36
+idea but have it as uh instruction sequence that um is atomic okay and so in this um
+14:44
+all of these cases i'm going to tell you about these instructions read a value and write a value to memory atomically such that no other
+14:52
+thread can get between the read and excuse me the right okay so hardware is responsible for implementing this
+14:58
+correctly and it's going to work on both unit processors and on multiprocessors which
+15:03
+in some cases requires some work from the cache coherence protocol and unlike disabling interrupts
+15:08
+these atomic sequences are actually going to work fine across multi-core or multiple processors
+15:13
+okay and there are you know you can get uh intel boxes that have multiple uh
+15:20
+multiple chips that are all tied together in a server system and so they're not just multi-core but
+15:26
+they're multi-processor as well and this would work for that so here are several read modify write style
+15:32
+instructions the most common one which you're going to find on pretty much i'm going to say every architecture it
+15:38
+says most here but i'm going to say every looks like this and what the way you interpret this
+15:43
+code here is that this test and set is actually an instruction so everything that's inside here happens
+15:50
+atomically all at once in a way that can't be interrupted by any other thread and so what actually
+15:56
+happens here what happens is you you pass in an address um you get
+16:01
+the value at that address so this is like pseudocode i've got here you get the value at that address and at
+16:06
+the same time you store a one there so whatever was there you grab you store a one there and you return the
+16:12
+result okay and if you think about this it's going to help us with
+16:19
+synchronization because if we start out with a zero there and twelve thousand threads all do a
+16:24
+test and set it once on the same uh instruction only one of them will notice
+16:30
+the zero was there before they put the one all the other ones will just see a one there okay so that's going to be our first
+16:36
+primitive it's an atomic primitive because all of these things i show you here all happen atomically
+16:42
+and 12 000 threads all doing test and set at once on the same address won't interleave okay so only one of
+16:49
+them in that instance will turn a zero into a one and the rest of them will just try to turn a one into a one
+16:54
+we'll see how that helps us now we can get much more interesting than this okay so here's a swap
+17:00
+where it takes not just a memory address but a register on say the x86 or or spark
+17:07
+processors or a value depending on what particular system you're working
+17:13
+with but the idea here is grab the value in the memory location and store the value of the register there so this is more like a generalized
+17:20
+test and set so if there was the number five down there and i do a swap with a six what happens
+17:25
+is when i'm done there's a six in the memory location and i get a five out of it
+17:30
+okay the uh even more powerful is the so-called compare and swap
+17:36
+okay and this is a very popular one on the x86 um as well as it was on the 6800 originally
+17:42
+68 000 i mean and this is a little more complicated so bear with me for a moment it has a memory address and two
+17:48
+registers and what we do is we say well if the value in the address is equal to
+17:54
+what's in register one then store register two there and return success otherwise return
+18:00
+failure okay so look carefully at this we have a memory address so that's
+18:05
+somewhere in memory and it says that if what's in memory is equal to register one
+18:11
+store register two there atomically other and return success otherwise return failure okay and this
+18:17
+is um this is an instruction that i'm going to show you has some pretty interesting properties to it very quickly
+18:24
+okay the last one is called load link store conditional and this was uh something that showed up
+18:30
+originally on the r4000 and on the alpha processors and what this does is it basically lets
+18:35
+you load a value and do something about it you can look at it you can store it in register
+18:42
+one and then you can store something back to the location so i'm loading from the location i'm storing back to the
+18:47
+location but that store is conditional so that if anybody else
+18:53
+uh stored anything in that address between the point when i loaded and when i stored it fails and i loop okay and i'm not
+19:00
+going to go into this in great detail right now but the idea of this is that this is a
+19:07
+way to spin enough times you can you can construct test and set swap and
+19:12
+compare and swap in a more risk fashion i guess a little simpler than having a single instruction that
+19:18
+does all of those operations okay so let's let's focus on swa and
+19:24
+so are there any questions on this and keep in mind that everything i show between braces here this is not like a
+19:29
+normal procedure call all of this stuff together happens atomically as a single instruction
+19:35
+in a processor okay questions
+19:46
+all right so can i repeat everything in
+19:52
+take your given instruction everything between the two braces happens all together at once atomically
+19:59
+in a way that two threads can't be interleaved okay the way it gets implemented such that
+20:05
+it's just one instruction for instance think of test and set is you lock the memory bus all right you
+20:11
+lock the memory bus and uh a load store happens simultaneously
+20:16
+okay um why is it set to one well one is uh is a good value for doing
+20:23
+synchronization we'll show you how this works in a moment okay if the value is already one then all you did is you get a one you store a one
+20:29
+okay if it's already got a one what was there well you load what was there you
+20:35
+store a one you return what was there so what you get back if it was already one is get a one if it was a zero you get back a zero and
+20:42
+you always leave it as a one okay and you'll we'll start seeing how this works
+20:48
+ah the point is going to be uh great synchronization will result yes you can
+20:54
+build a lock with this a much better lock than any of the ones we've seen so far okay
+20:59
+now so um sorry about the weird animation so what i want to show you before we get
+21:06
+uh to something uh is the following okay so here is a non-locking okay this is
+21:15
+version of a linked list that's pretty fun okay so what i want to do is i have this simple
+21:22
+single uh linked list single headed linked list where there's something that there's a root
+21:27
+and it points to the first item which points to the second and so on and what i want to do is i want this uh
+21:35
+list to be such that i can have thousands of threads that simultaneously try to add things
+21:41
+to this and i want to make sure it doesn't get screwed up and i can do that with a compare and
+21:46
+swap okay and the comparison without any locks okay so unlike what we've been
+21:52
+indicating up until now where you have to put a lock around shared data here's a situation where
+21:57
+because of the atomicity of the compare and swap we don't actually have to have a lock at all
+22:03
+so this is going to be faster okay and so let's take a look at this code how do you add a new object to this queue
+22:09
+i'm going to work in a loop and what i'm going to say is i'm going to grab the root value into a register load r1
+22:17
+right and then i'm going to store that root value
+22:22
+into the the next item i'm trying to add into the
+22:28
+object and then um i'm going to try to swap a pointer to
+22:33
+my object with the current root and assuming that the root hasn't
+22:38
+changed so notice it says as long as the root memory location is still equal to r1
+22:43
+swap me in as the new root otherwise i'm going to fail and do this all over again and i'm going to keep
+22:48
+looping until i succeed and of course that's not going to loop very long because
+22:54
+you know it's going to just everybody's item is going to get added to the list and so if you look here here's what
+23:01
+happens when i add a linked list right i take my object i take the current route and i store it
+23:08
+in my next pointer okay um this is not busy waiting because it's resolved very quickly
+23:14
+okay so that would not constitute busy waiting um it's uh but notice i take the route i
+23:21
+store it in my linked list my new item um excuse me well yeah i take the root which is this
+23:27
+next one i stored in my my new object so now i've got a link from the new object to the next
+23:32
+and what i want to do is i want to take a pointer to my new uh thing and put it in root but i only
+23:38
+want to do that if somebody else didn't beat me to it because if i somebody else beat me to it by adding
+23:44
+their item and then i store a pointer to my item on the route what did i just do i just threw out their item okay and so
+23:51
+that's the danger here and the way that works is what i've got here so first i load the current route
+23:57
+into register r1 i store the value of r1 into next of my new object so what does that mean that
+24:03
+means that next is of my new object is now pointing to the old
+24:09
+head of the list okay so that's been done right here now even if i fail and do this over and
+24:15
+over again nobody's harmed because i'm just storing different successors into my next item and then
+24:21
+the only thing that matters is i want to find a point in which i can change root to point at me but i can only do
+24:27
+that if somebody else hasn't changed it between my store between my load and my
+24:33
+uh compare and swap to point to something other than this next item assuming they still match i can put it
+24:38
+there all right pretty cool huh questions
+24:48
+so this is what's often called a lock free implementation and once you've got these more powerful atomic instructions there
+24:56
+are oftentimes situations where you can build things like this don't even require locks to
+25:01
+work now up till now what you would have done uh with your 162 knowledge we've given
+25:07
+you is you would build this code by grabbing a lock that sort of locked the route
+25:14
+storing the root in the next pointer and then storing the pointer to your object in the root and then you'd unlock and
+25:19
+you know well that would be consistent all the time and nobody's things would get lost instead we have this very quick code
+25:26
+that under the good circumstances where there's zero contention you basically take one pass through and never loop because you basically
+25:33
+load store compare and swap done and so it's uh one load two stores you're good
+25:40
+okay you can make these atomic operations yourself no so the question is can you make
+25:46
+atomic operations like these with disable interrupt and the answer is it wouldn't be the same thing okay because there's no disabling
+25:52
+of interrupts here what happens is this is just an instruction like just like add or multiply except it's an
+25:57
+atomic one so this is something uh much more powerful than a disable
+26:03
+interrupt because disable interrupt is like bringing a hammer uh to to um you know
+26:10
+to tap on a window not a good idea and then and the thing that you were doing with the with disabling interops
+26:16
+wouldn't work on a multi-processor as was just pointed out whereas this thing works fine on a multi-processor
+26:22
+okay all right now what can we do with test and set okay so
+26:29
+we already had a couple of folks on the chat there that we're starting to figure this out but here's what we do okay why do you
+26:35
+need to store if you've already swapped so the point here is this store this store instruction i'm assuming is what
+26:41
+you mean is the one that stores the uh the root old route into the next
+26:47
+of my new object so that store has to happen okay oh good
+26:54
+now so let's use test and set now to make a lock okay we're trying to get out of disabling interrupts and doing something
+27:01
+better all right and here we go so um here's here's my lock it's in memory again okay
+27:07
+so you can have any memory location you want i'm going to start it at zero the interface is as usual going to be acquire is you know pass in the pointer
+27:14
+to my lock release is a pointer in my lock so that's standard and acquire is going to look like this a choir is going to
+27:21
+take a pointer to the lock and it's going to do in a while loop it's going to keep looping
+27:26
+over test and set okay and the the operation testing set here's
+27:31
+atomic now why does this work
+27:36
+okay it works because i start with zero means uh free and when i execute test and set
+27:44
+one of two possibilities here either there's still a zero there in which case uh i store a one but i get
+27:50
+back a zero the while loop uh exits and i've just exited acquire
+27:56
+meaning i got the lock or somebody did that before me and i'm just going to keep spinning
+28:02
+okay and then release is very simple i just store a zero there
+28:07
+and the very next thread that manages to execute test and set is going to get back a zero from test
+28:13
+and set they're gonna store one there and they get to execute a choir okay
+28:18
+so the simple explanation of this is if the lock's free test and set reads a zero sets a lock to one so lock's now busy
+28:25
+returns a zero and so uh the while exits if the lock is busy test and set reads a one
+28:30
+sets lock to one which doesn't change anything so grab one store one everything and maybe atomic but it
+28:37
+doesn't change anything okay and it returns a one so the while loop keeps trying and then when we set the lock to zero
+28:43
+somebody gets to go okay now question
+28:48
+is this busy waiting yes this is this is awful right you wouldn't want a lock that worked like this but we're getting
+28:53
+there okay so the first thing to understand though is even though this is busy waiting and it's bad for that reason this will
+29:00
+work perfectly well in a multi-processor it'll also work perfectly well without going into the
+29:06
+kernel because notice there are no system calls or anything here we're just doing accesses to memory so while this is busy
+29:12
+weighted and not great from that standpoint we're starting something that maybe we can
+29:17
+build on okay and yes you know the question i'm busy waiting is even on the slide here right
+29:23
+the thread is busy consuming cycles while waiting and so what will happen here is the one
+29:29
+all the threads that are waiting will spin until their quanta runs out so they might spin for the next hundred
+29:34
+milliseconds they'll give up the processor the next one will spin for 100 milliseconds give up the processor eventually we'll get to the thread that
+29:40
+actually has the lock it'll get to run the critical section release and then somebody else will finally get to run so that's why busy
+29:47
+waiting is so bad because all the threads that are waiting are basically wasting cycles okay now the the one time
+29:55
+that and i'm going to tell you this the one time which this might be okay all right is if you have a
+30:00
+multiprocessor with let's say 10 cores and you have only 10 threads and
+30:06
+you know for a fact there are 10 threads then busy waiting on one core doesn't
+30:11
+impact the other ones that might be a situation okay don't try this at home folks where
+30:16
+it makes sense to synchronize that way if those 10 threads are trying to respond to locking as quickly as possible okay
+30:23
+but let's see if we can do better and the one thing about this is this is actually
+30:29
+not great for a multi-processor either we'll make a better one in a second which is every time we go through the
+30:36
+while loop this test and set is not a read it's a write right because we read and write so it's a write
+30:42
+operation which means if you have cash coherence the cache lines are bouncing back and forth between every core that
+30:50
+uh is running this code and so um if you know anything about cash coherence this is awful because you're
+30:56
+you're burning up all of your bus cycles or your network cycles moving around this lock
+31:01
+and and uh ironically you're not even changing it you're setting it to one over and over again okay all right now atomic and
+31:09
+so the comment uh on the chat which is interesting is atomic instructions on a 64 core processor sound hard
+31:15
+they're not and the reason they're not hard is uh if you have a working cache coherence
+31:21
+protocol you just pull it into your cache and you lock it so it can't be removed while you do the atomic operation and
+31:27
+then you release it in your cache and it works fine so it doesn't matter how many cores there are the cash coherence protocol if you've got one
+31:34
+that's working lets you build uh arbitrary um arbitrary atomic instructions like this
+31:41
+now busy waiting is bad so the positives for what we just gave you is the machine can receive interrupts because i didn't do
+31:46
+any interrupt disabling user code can use a lock so that's great works on a multi-processor sort of some
+31:53
+negatives are it's very inefficient as the thread's consuming cycles the waiting thread takes cycles away
+31:58
+from the thread holding the lock and so ironically the thread that's waiting is actually preventing the thread that
+32:03
+would give up the lock from making progress to give up the lock and this could be priority inversion so
+32:09
+if the busy waiting thread has higher priority than the thread holding the lock you might actually be in a place of no
+32:15
+progress now you guys don't know anything about priority scheduling yet you will in a couple of lectures
+32:20
+but um that's a priority inversion if a lower level thread holds the lock but
+32:27
+the higher level thread is forced to spin waiting for the lower level thread so now the lower level threads
+32:33
+effectively preventing the high priority thread from running that's called priority inversion and this is exactly what happened the
+32:39
+original martian rover we'll have an interesting story for that in a couple of lectures okay
+32:44
+but for semaphores and monitors uh where you start getting more sophisticated style
+32:49
+uh of synchronization um thread may wait arbitrarily long and so you may
+32:54
+end up spinning arbitrarily long so we'll get we need to do something else and any solution you give on an exam or
+33:01
+homework should avoid busy waiting um unless we explicitly tell you it's okay
+33:06
+which i don't think we will in most cases okay so let me uh give you one other thing
+33:11
+called a test intestine set just so you know this is a much better solution for multi-processors where busy waiting is
+33:18
+not a concern because you know you're consuming every core anyway and what it looks like is this okay so
+33:25
+the idea the release is the same but if you look at what we do in acquire as we spin while the lock is kept we
+33:32
+spin um on it so while it's equal to one we're just rereading notice that this doesn't really take any
+33:38
+bus traffic because you get a cached copy in your cache and then you're just spinning on it you're not doing a write and then the
+33:44
+moment it becomes zero you exit this and then you quickly try to do one test and set and then you go back to
+33:50
+spinning and so what this does is it prevents the ping-ponging effect where all of these uh nodes that aren't actually succeeding
+33:57
+in getting the lock keep writing and causing the cache line to go back and forth so that's called a test intestine set
+34:04
+okay so it fixes the ping-ponging in the cash coherence protocol but it still has a busy waiting problem
+34:11
+all right so um what can we do well if you remember what we did
+34:16
+with to do to get rid of the busy waiting if you remember what we did with disable and enable interrupts is rather
+34:22
+than the um the actual disabling and enabling representing inquiry and release instead
+34:29
+we use those to very quickly uh disable and enable
+34:35
+interrupts as part of implementing a lock okay and so let's do that so let's build uh
+34:41
+test and set locks without busy waiting okay and so we can mostly get rid of
+34:47
+busy waiting okay and this is a mostly get rid of busy waiting that would be okay um and if you notice here
+34:53
+we're going to introduce something in red there called the guard variable and it's going to be global across all the locks in our system and
+35:00
+then of course we've got mylock which was is our actual lock so if we had uh 20
+35:06
+locks we'd have 20 integers that are blue here and one guard for all of them okay and
+35:11
+that guard is the thing we're going to test and set on so acquire looks like this while testing
+35:17
+set okay so that looks like we're spin waiting except we're going to make sure that what's in
+35:23
+the uh critical section is really fast okay and so we're not going to be spin waiting very long
+35:30
+so we spin until we got the guard so now guard is one we know that no other thread is in this critical section
+35:37
+for the lock implementation and then we do what we've just seen if the lock is busy we're going to put
+35:42
+ourselves on some weight cue and go to sleep and somehow simultaneously set guard to zero hopefully that sounds familiar to
+35:49
+the somehow put ourselves to sleep and re-enable interrupts it's some similarity there right
+35:54
+otherwise if it wasn't busy we go ahead and make it busy and we release the guard to zero and we exit
+36:00
+acquire so that would be the case where we uh manage to get the lock okay
+36:06
+this is um much better than the kernel interrupt because it doesn't make a system call okay you got it now for sleep you're
+36:14
+still going to have to make a system call because right now the only threads we have that you know about are kernel threads
+36:20
+but the hope here is you know if you go to sleep you're going to be there sleeping for a period of time
+36:27
+and so that's uh that's okay because it's going to take a little time to get into the kernel but then you'll be put on a weight cue
+36:33
+okay the um the problem with uh and with releasing we're now going to
+36:40
+um grab the guard check see if anybody's on the weight queue if they are we're going to have to do
+36:45
+something to wake them up otherwise we go ahead and set the lock to free now
+36:51
+depending on your circumstances might still have a priority inversion issue but let's hold off on that for now i
+36:57
+want to i want to get to an idea on on this particular implementation okay
+37:02
+and if you notice the sleep when we go to sleep we have to somehow reset the guard variable
+37:08
+otherwise this is not going to work because if we go to sleep with guard equal to 1 and nobody else could release the lock
+37:14
+and so we'd be in trouble here okay now in the case of priority inversion issues if you're
+37:20
+worried about that you'd have a different guard variable for each priority for instance and that would take care of this issue
+37:26
+okay now um so let's compare this to the disable
+37:32
+interrupt solution right so this was our how we disabled interrupts notice that we built acquire and release
+37:38
+and uh when is guard set to one guard is set to one right here oops when uh when we
+37:46
+do the wild test and set that will set guard to one right
+37:51
+okay now so if you looked remember this was our disable interrupt solution we
+37:56
+had a a critical section that was quick and re-enable interrupts so notice that we've essentially done
+38:02
+the same style of uh you know of uh redesign here of
+38:08
+acquire and release we've essentially turned disable interrupts into the well test and set and then guard and then enable interrupts and
+38:14
+setting guard to zero so this is essentially the same code looking at it another way here
+38:21
+uh for instance here's how we used interrupts to build a choir so we had my lock we do acquire and release for the first
+38:27
+case this is so silly that we don't even have separate locks right so in this instance maybe we pass in
+38:32
+an integer pointer but it doesn't help us because there's only one disable and enable in the system
+38:38
+okay we decided that was a really bad idea and so what we did was we turned it into this code
+38:43
+where we use the disable and enable as critical section uh as locks around the simple critical
+38:49
+section that's very fast okay same idea here for test and set so here
+38:55
+the uh the basic spin weighting testing set looks like this and what we did was we took that acquire
+39:02
+release and we used that uh type of locking to build a lock that we can afford to
+39:08
+have uh held for long periods of time okay and the test and set on the guard itself
+39:14
+is going to be very fast all right questions
+39:23
+so this so this is the example the prior this is the prior example by the way so this is this is nothing new
+39:29
+but if you notice here test and set uh we do busy wait but we busy wait for a very short period
+39:35
+of time because all we're really doing is uh the person who grabs the lock is uh
+39:42
+doing some really quick um critical section and then releasing the lock
+39:47
+um and so the problem with this version that i've got in the middle is really that you don't know how long
+39:54
+the when you acquire a lock you have no idea how long the critical section is and as we start getting more sophisticated in our
+40:01
+locking we may have no idea how long that critical section is we and we don't want the system
+40:08
+to be locked up because our critical section is long okay what we want is we want to go to sleep as quickly as we can
+40:15
+if we're waiting on a lock okay and the reason you'd use the same guard
+40:21
+for all the locks is so that you didn't have to pass a unique guard into the acquiring release it would get messy as
+40:26
+an api if you did okay but if you if you felt like
+40:32
+you wanted to have several different guards you could also do that there's no reason you couldn't have multiple guards with this particular implementation
+40:41
+now let's see if we can tease this out this is all this is still in user mode everything here is in user mode so
+40:48
+that's why this is this is why this is particularly
+40:53
+helpful so what what can i do to help this uh this discussion so if you let's do the middle one for a
+40:58
+moment if you notice this is entirely at user level we're just saying we're saying well test and set on the
+41:04
+lock um we're basically spinning until we get a zero back
+41:10
+and this says we set the lock to zero back to zero in order to release the lock this is all running at user levels
+41:16
+everybody good on this okay there's no there are no system calls
+41:23
+involved in this because we're just using test and set instructions which are just like adds and subtracts and multiplies which
+41:28
+run at user level this on the right is taking this original acquire and release and instead
+41:35
+using them here's a choir and here's release around an implementation of a lock
+41:41
+that when we discover that the lock that we're using here you could say the blue one is our actual lock we can put ourselves to sleep on a
+41:49
+sleep queue and so there's going to be potentially a system call in the middle to put us to sleep but that only happens if we actually have to
+41:55
+go to sleep if we have an uncontested lock we can grab the lock really quickly and release it and not have any system calls involved
+42:03
+okay that's right so um this right so the what was said on the
+42:08
+on the ch chat is exactly correct what's good about this while this acquire implementation is we grab
+42:15
+the guard that's just to get the lock implementation and we quickly check and if the lock is taken that's the thing in
+42:22
+blue then we put ourselves to sleep on the sleep queue and then we release the guard
+42:27
+and we are now in the release of guard as part of being put on sleep and so this thing on the far right is a way to very
+42:33
+quickly take things that are trying to acquire the lock but failing put them to sleep on the actual sleep queue by diving into the kernel
+42:41
+okay so the testing set is busy waiting but it's only taken for a very short time and so the busy waiting
+42:47
+doesn't have a major impact yes okay that is exactly the way to look at the thing on the right
+42:54
+all right now uh
+43:01
+however let's go a little further with this okay i'm gonna i want to introduce you to the futex here so the idea is yes this is good but
+43:09
+in fact there's something in the middle here where we have to put things to sleep and we don't have a good interface for that
+43:14
+okay and so um if you look at uh the so-called futex
+43:21
+system call that linux has this is for fast user space mutex um there's
+43:27
+it basically tests three arguments okay a pointer to a an integer uh in in memory which
+43:34
+sought to sound familiar from what we're just doing an operation which can be for instance weight or wake
+43:40
+those are the only two we're going to look at there's a bunch of other ones that are more interesting you can do a man on futex and a value okay and that time
+43:48
+um and then the the timeout is something uh which we can add optionally where this thing will time out if it
+43:54
+waits too long so the value is just an integer okay futex stands for as you see at the top of the slide fast user space mutex
+44:03
+now what this will do okay it's an interface to kernel sleep
+44:08
+functionality but the thread puts themselves to sleep because if they call futex with a futex
+44:14
+weight okay um and the value they pass in
+44:20
+is uh equal to the value in memory then they will go to sleep on the sleep queue
+44:25
+and the only way they'll wake up is if somebody calls futex weight and wakes them up okay
+44:31
+futex is not typically exposed in lip see it's used with implementation of p threads uh so you can implement locks
+44:37
+and semaphores and monitors which we'll get to in a second so here's our first try here which is uh
+44:44
+for acquire we'll say well test and set um if we fail rather than looping in a tight loop
+44:49
+we'll just call futex and futex takes the lock pointer
+44:54
+which we know is equal to one right now that's because we failed a test and set we say we're going to wait and we what
+45:01
+we do is we say i want to be put to sleep but only if the lock is still equal to 1.
+45:07
+so if you think about that what we're saying here is i want to avoid a race condition where between the test and set
+45:14
+noticing that this was still a 1 and my calling futex somebody released the lock and
+45:21
+uh i went to sleep in the kernel but they never woke me up okay so that's exactly why we're um
+45:29
+have futex has this extra argument so notice testing said if it's a one we go we call futex with futex weight we
+45:35
+say here's the lock value and as long as it's still a one put me to sleep and if it's not still a one it'll just come right out of the
+45:42
+futex right away and you'll call while again okay and so what this does is if we're
+45:48
+lucky enough to catch a zero on the test and set we immediately exit we've got the lock otherwise this will
+45:53
+put us to sleep until somebody releases and at the point that they release they set the lock to zero
+45:58
+and then they say wake up one okay now if you think about this the
+46:04
+sleep interface by using futex there's no busy waiting whatsoever in here okay if you look at it there's no wasted
+46:10
+cycles however and the overhead for acquiring is potentially as fast as
+46:16
+a one atomic instruction there's no system call okay unfortunately every unlock has a system call
+46:22
+okay so this is not quite clever enough to have a situation where we can grab
+46:27
+things quickly but um not release them quickly okay now why not if instead a while well
+46:34
+you know uh we have to just keep looping on this until uh until we're woken up and there's a
+46:41
+zero here and keep in mind that even after we get woken up between us between us returning from
+46:49
+futex and trying to grab the lock again somebody may grab it on us and so we have to keep looping
+46:55
+just to make sure that we actually get the lock which means we actually were the ones who turned
+47:01
+a zero into a one if we were the ones that turned a zero into a one we have the lock otherwise we don't have
+47:06
+the lock okay and that's for acquire
+47:13
+now uh we could do this okay now if you think about the only objection you might have to this is what
+47:19
+i say at the bottom here is you to unlock you always have to do a system call what we'd like is we like the
+47:24
+situation with an uncontested lock where there aren't two threads that are trying to grab the lock but in general just one
+47:31
+grabs a lock and releases it we would like that to be completely at user level as fast as possible
+47:37
+and only when people actually have to go to sleep do we want to use system calls okay and so here's
+47:44
+another attempt and so if you notice what i did here is i added a new variable
+47:49
+associated with the lock called maybe there are waiters and i'll start it with false
+47:54
+and what happens here is i do while test and set and uh assume for a moment i go from
+48:00
+zero to one um and so that means i've got the lock i exit that's great when i
+48:06
+when i release i set the value back to zero that's great oh by the way that's uh this should be
+48:12
+star the lock equal to zero i'll fix that um but then i say well is the
+48:18
+uh maybe thing that's been passed in equal to uh zero well it's equal to
+48:24
+false if if so i don't do this arm and i emerge right away let me uh let me fix this right now i'm sorry
+48:31
+about that so because i know this will be very confusing enough with have without having a bug in there so i'm going to
+48:46
+say okay all right so
+48:57
+everybody see it still again okay so if you notice here as long as there's
+49:03
+only one thread grabbing the lock and releasing it we're uh we're good now does futex wake
+49:09
+wake all the threads no this this last argument which i didn't talk about uh tells you how many threads to wake up
+49:15
+so in this futex wake uh it wakes up at most one okay but
+49:20
+if you look here um you could use futex for the actual locking but that would kind of defeat the whole purpose right
+49:26
+because you'd be diving into the kernel um if now let's look at this uh situation where
+49:32
+uh we fail because we grab the lock we try to grab the lock excuse me and we
+49:37
+get a one back so now somebody else has got the lock so we want to go to sleep so what we do is we set this maybe
+49:44
+variable to true and we go to sleep and assuming that the lock is still one this will actually put
+49:49
+us to sleep okay forget this extra one for a moment later when the release happens
+49:58
+and lock it set to zero we say is the the maybe variable equal to true
+50:04
+well it is therefore we know for a fact somebody is sleeping in futex and at that point we said maybe to false
+50:10
+and we wake them up and then they'll emerge over here they'll set maybe back to true which is
+50:15
+a special race condition if there's multiple people on on the wait q in the kernel try while test and set again assuming
+50:22
+they succeed they'll exit and we'll be good to go now i don't want to go into this in great detail but you can take a look at
+50:28
+uh you should search for futex as our tricky by ulrich drepper and see a little bit of how to optimize
+50:33
+this however i'm going to even blow your mind a little bit more because testing said is just the wrong thing to
+50:39
+use here much better is more atomics okay and that is the lock here is not going to have two
+50:46
+states it's going to have three if you think about what i just showed you here it's kind of like three states right there's
+50:52
+not locked with maybe waiters false there's locked with maybe waiters false or true um
+50:59
+those are kind of three or four options in there and in fact what we really want is three options
+51:05
+which you'll see from that that paper if you look at it unlocked which nobody has to lock locked
+51:11
+which is one thread's got the lock and nobody's in the kernel and contested which says somebody might be in the kernel
+51:17
+and if we can do the right thing with this we'd like to only call the the wake up if we if we know for a fact
+51:23
+somebody might be in the kernel and so what this code does and i'm going to leave this to the uh
+51:28
+to the reader for later but the first thing it tries to do is it tries to compare and swap
+51:34
+uh if it's unlocked we get locked back uh or we put a lock there and we
+51:39
+immediately return and we win otherwise we swap in this second state of contested
+51:45
+and as long as the thing's still unlocked we go to sleep and every time we wake up we try to swap in contested
+51:50
+and look for unlocked otherwise uh we'll just keep sleeping and when we go to wake up
+51:57
+only if uh the value there is contested do we wake things up so i don't want to go through this and
+52:02
+greet detail but the interface here is really clean because there's only one integer that's got three enum values
+52:09
+uh the lock is grabbed cleanly by either the compare and swap or the first swap
+52:15
+so where do the atomic operations come into play they basically turn a zero
+52:20
+into either locked or contested and there's no overhead if uncontested so as long as you've got
+52:26
+a thread that grabs a lock release a lock grabs a lock release a lock it can do that entirely at user level at high
+52:31
+speed with no kernel calls okay and you can build semaphores in a
+52:37
+similar similar way all right and so uh that's an exercise
+52:43
+for the for the class reader now and that that other paper i uh other web
+52:51
+description i told you about the blog basically talks about the three states all right now uh the question of will
+52:58
+this be on the midterm there might be something on atomics on the midterm that uh whether you'll have something that's complicated in the midterms hard to say
+53:06
+okay so where are we going with synchronization we've now got i think a really good understanding of uh why loads in stores
+53:12
+by themselves aren't enough uh we talked about disabling interrupts as a locking mechanism
+53:18
+uh really only works on one processor works great in the kernel for certain search situations we'll be using that a
+53:24
+lot as we go on we talked about test and set i hope you're all starting to get a flavor for how test and set works
+53:31
+and we need to provide primitives at user level that allow us to
+53:39
+do better synchronization so we've already built a bunch of locks and you could imagine semaphores built
+53:45
+very similarly using locks but i want to move on to a better
+53:50
+primitive than locks and semaphores now if you remember the thing about semaphores which you've used them so you
+53:56
+should be very familiar with them now is their kind of generalized lock which has
+54:01
+which is a non-negative integer and supports the following operations one initializing at the very beginning with
+54:06
+a value two a down operation or a p operation which basically atomically decrements
+54:14
+waits for the semaphore b to become positive um and then decrements tries to
+54:19
+decrement by one so it'll never go below zero all right um so this atomic operation
+54:25
+that if the semaphore is bigger than zero it decrements it by one otherwise it weights and that weight's not a busy weight it's a sleeping weight
+54:32
+and then up or v increments the semaphore and if somebody was waiting they'll get woken up
+54:38
+okay so that's the semaphore uh that everybody has been using okay and familiar with
+54:44
+with project one and technically examining the value after initialization is not allowed
+54:51
+okay so that's not part of the official interface but if you were to to google um the the posix semaphores
+54:58
+you'd find that they actually provide that uh as an option but it's kind of outside the semaphore
+55:04
+okay now um we then we then sort of came up with a
+55:10
+bounded buffer uh solution using semaphores okay and and basically what we said was
+55:16
+we really want one semaphore per constraint so if you remember it's simple to make a
+55:21
+lock or mutex out of a semaphore by setting it initially to one and then the full and empty buffers
+55:28
+basically represent uh how many cokes in this
+55:33
+the coke machine example uh could be added um and how many cokes are still there to
+55:38
+be taken all right and that led us to this uh code last time which i don't want to spend
+55:44
+any more time on but basically we start the full slots equal to zero because there's no coke in it we set empty slots equal to the number
+55:51
+of uh cokes the machine can take okay the mutex is equal to one because it's a lock if you remember
+55:57
+the mutex serves as a critical section to make sure that in q and dq don't uh get messed up and then we
+56:05
+basically we use a 74v to increment full slots thereby waking up consumer if they've been waiting for a
+56:11
+coke to get in the machine and then we increment empty slots to wake up the producer if it's got an extra coke that it's been
+56:18
+trying to put in the machine now this code works hopefully you've
+56:25
+digested it from last time and actually i had this even in my extra lecture
+56:32
+it's good it's a huge step from having just locked so if you go back to last lecture you'll see that
+56:37
+we looked at if you tried to build a bounded buffer and you only had locks it's a mess okay so this is a little better a little
+56:44
+better um but the problem is the semaphore here has two purposes one is a mutex and one is a
+56:49
+scheduling constraint and if you remember if we swapped like if we swapped the p
+56:54
+operations here uh in the producer we could get deadlocks and and it's very easy to yeah you can build
+57:01
+this kind of code but how do you know it's correct all right and so we'd like something better and some something better is we
+57:07
+use locks for mutual exclusion because that's what we want them for and something called a condition
+57:12
+variable for scheduling constraints so a monitor is a lock and zero or more
+57:18
+usually one or more condition variables okay and it's for meaning maintaining concurrent access to shared
+57:24
+data and it basically has some languages like java actually have this natively
+57:30
+okay other languages like c you use a library with p threads it has condition variables as a library
+57:38
+option okay and a monitor is really a paradigm for concurrent programming so if you get
+57:45
+a handle on how to do the monitor pattern you'll find you can do some very complicated
+57:51
+synchronization pretty easy okay once you get the hang of it okay so what's a condition variable so a
+57:58
+condition variable is a cue that you can sleep on that a thread can sleep on when the conditions
+58:04
+aren't right to proceed and that condition is going to be something you sleep on with the lock
+58:11
+held so you're only going to use a condition variable to sleep inside of a critical section so i want to stop for a moment okay
+58:19
+because that is weird i hope for everybody the only way that you're supposed to use
+58:25
+a condition variable is by going to sleep inside a critical section
+58:30
+when you've determined that the conditions aren't right for proceeding and i will give you examples of how this is but i wanted to highlight that up till
+58:38
+now sleeping while holding a lock was just a very bad idea because you deadlocked the
+58:43
+system condition variables are made for that they're supposed to be used that way and in fact that's how you make sure that
+58:49
+you have the right constraints and that your synchronization works okay so there's some operation standard
+58:55
+operations like weight for a condition variable that's how you go to sleep waiting there's a signal
+59:01
+which is how somebody wakes you up and a broadcast which says take everybody who's sleeping and wake them up and so you could think
+59:07
+of condition variables are like generalizations of the weight queue that's normally inside the kernel but
+59:13
+we're bringing it out to user level for you to use okay so this is an api and the rule is
+59:19
+you have to hold the lock when doing any condition variable operations i'm going to say that again you have to
+59:25
+hold the lock okay so we think about a monitor
+59:31
+a monitor being a pattern or a way of programming controls actions to some shared data
+59:37
+so there is a cue of waiting uh threads okay those are the ones that
+59:43
+are sleeping just like we had in the kernel and a lock that controls
+59:48
+entry and then there's a bunch of condition variables potentially
+59:54
+that are actual threads waiting on conditions so that lock the entry is just a regular lock queue
+1:00:01
+and so anybody who's trying to acquire the lock might be put to sleep waiting for the lock the condition variables are this more
+1:00:07
+general thing of threads that have already entered the monitor but are now waiting
+1:00:13
+okay and i think the best way to get going on this is a simple example i want to we've just looking at the
+1:00:19
+double-sided uh uh buffer example with the coke machine where there's a constraint on
+1:00:25
+the size of the buffer we're going to start we'll get there in just a second but let's start with a synchronized buffer
+1:00:31
+that's a is an infinite buffer okay so what an infinite buffer means is we never it never gets too big
+1:00:37
+we don't worry about the size but if a consumer ever comes along and there's nothing
+1:00:42
+to uh take out of the buffer we want the consumer to go to sleep okay so everybody with me so this is
+1:00:48
+like half of the coke machine example okay this is like half of the coke machine the
+1:00:54
+consumer have and if you notice what do i have here i have a lock
+1:00:59
+i'm going to call buff lock i've got a condition variable i'm going to call buff cv and then i've got a queue which is
+1:01:05
+you know some sort of linked list or doubly linked list or whatever uh that we're using okay and the
+1:01:12
+producer since we don't have to worry about overflowing the queue remember this is half of the
+1:01:17
+the uh coke machine example all we do is we acquire the lock we enqueue the item okay so we put it on
+1:01:25
+the queue why can we do that we have the lock so we don't have to worry about different threads trying to mess with the queue at
+1:01:30
+the same time we've grabbed the lock and then what we do is because we've acquired the lock we can now do
+1:01:36
+condition variable operations and the only operation we're doing is we're going to signal to say hey i
+1:01:43
+just put something on the queue so if you happen to be sleeping there you might want to look okay that's a signal and then i release
+1:01:50
+the lock so the producer here is pretty simple right acquire the lock and cue stuff signal anybody who happens
+1:01:56
+to be waiting for coke because i just put some there and then release it okay this is exactly notify in java yes
+1:02:05
+okay great hold that thought okay um the consumer
+1:02:12
+is the more interesting part now okay so i wanna i want you to look here we acquired the lock and now i'm doing
+1:02:18
+something very strange here right i'm saying while the queue is empty
+1:02:25
+go to sleep condition weight i have to give the condition variable and the lock
+1:02:32
+okay so i have to i have to say put me to sleep on this condition variable and here's the associated lock
+1:02:38
+can anybody figure out why i have to say what the associated lock is when i go to sleep
+1:02:48
+great that's exactly right because when i go to sleep somebody better release it for me okay
+1:02:55
+now i'm we're going to understand that so at one level i want your brains to
+1:03:01
+appreciate that the reason we give a lock is so that when we go to sleep things get unlocked so what i'm proposing you is not
+1:03:11
+violating the laws of physics or programming in any way but what i want you to do is you're
+1:03:16
+going to push that knowledge aside and i want you to get into the paradigm now so what happens differently here in the
+1:03:24
+paradigm is that uh we're not checking for a full cue remember this is only a half
+1:03:30
+half of the bounded buffer without the bounded part um so we acquire the lock and what we say
+1:03:36
+is because we have the lock we can check things like what's the size of the queue we don't have to worry
+1:03:42
+that by the time we if we check the queue and it's empty and we go to do something we don't have to worry that it's going to change on us why because
+1:03:49
+the lock is taken okay so we have the lock so we can happily check conditions we can do
+1:03:55
+anything we want and they won't change on us until we release the lock and that includes going to
+1:04:01
+sleep so from the standpoint of you as the programmer here have to think i have the lock i went to sleep okay
+1:04:06
+when i get woken up i still have the lock that's the way you got to think about
+1:04:12
+this okay i'll get to the while loop in a second why do we have the while loop well
+1:04:17
+because even when we get woken up we may not still have the condition satisfied so we have to check it again and i'll say why in a moment
+1:04:24
+okay but the uh the idea is i grab the lock i can check
+1:04:30
+conditions i can go to sleep on conditions i can wake up i can recheck the conditions but i always have the lock
+1:04:35
+between acquiring it and releasing it that's the way you want to get to thinking about monitors even though we all know the laws of
+1:04:42
+physics aren't violated because the lock is released underneath the covers for us
+1:04:47
+but for now uh i check the queue i go to sleep if there's nothing there
+1:04:53
+and if somebody signals me then i wake up and i check the queue again okay and if i find that it's no longer
+1:05:00
+empty i know because i have the lock that i can go down and dequeue something there
+1:05:05
+it's not empty because i just checked it right and then i i released the lock okay and yes the
+1:05:11
+reason why we have to do the while loop is exactly because uh somebody could come in there between
+1:05:17
+us getting woken up and us you know operating system
+1:05:22
+reacquiring the lock for us somebody else could get in there and grab the item on the cube so we always
+1:05:27
+have to check okay now part of this while loop thing i want to
+1:05:34
+i want to talk about because this is important so there's two different types of monitors a mesa monitor
+1:05:40
+and a monitor okay the mesa monitor uh was designed was named after the mesa
+1:05:45
+operating system from xerox xerox park the horror monitor was the was named after a mathematician who developed it
+1:05:52
+and if you look we've all been asking ourselves i saw several questions why the while loop why did we say while is
+1:05:58
+empty weight then dq and the question which i'm sure was in your mind is why not say
+1:06:03
+if is empty wait and then come out and the answer is between finding out that it's empty uh between
+1:06:11
+excuse me waking up and actually getting a chance to dequeue it's possible for somebody to get in
+1:06:17
+there now remember the way to think about this code is i already have the lock so if i
+1:06:22
+emerge from conditional weight i know for a fact that i have the lock so the only point
+1:06:28
+when somebody could get in there is between somebody signaling me and me being put on the ready queue
+1:06:33
+and me actually starting to execute somebody might have gotten in there and grabbed it for us okay
+1:06:39
+but that's actually a distinction between mesa and horse scheduling okay so if you look uh xerox parks mesa
+1:06:47
+operating system which i think i even have a paper on if you're curious i think i put it up on the um on the reading
+1:06:52
+list is what most operating systems use and that's the situation where between being put on the ready queue
+1:06:58
+and that's finally starting to run somebody grabbed it for us versus the horse style which is named after a british logician
+1:07:05
+much more complicated okay so let me start with the second case in the second case the signaler actually
+1:07:10
+gives up the lock and the cpu to the waiter and the waiter runs immediately so the way you look at this is
+1:07:18
+here i am on the signaler i acquire the lock i signal the signal immediately
+1:07:24
+gives the lock and the cpu to the one who's waiting and they now can do anything they want
+1:07:30
+because they know that no conditions have changed between the signaling and them running and then when they finally release they
+1:07:36
+give the lock back to the original signaler and they get to go okay it seems like great semantics
+1:07:45
+it's easy to think about maybe but um the problem is it's messy from a from an
+1:07:50
+implementation standpoint and it's actually really bad from a cash standpoint because you got this guy over here on the left who's happily running
+1:07:56
+doing all sorts of stuff and just because he decided to signal somebody uh he loses the cpu and all of his cash
+1:08:04
+state okay so this seems um like maybe it's not great
+1:08:09
+from a performance standpoint okay forces a whole bunch of contact switching
+1:08:14
+mesa on the other hand says the signaler keeps the lock and the waiter is placed on the ready queue so here what happens is when we signal
+1:08:22
+all we do is we put the uh the waiter on the ready queue and we keep going and we release the lock and
+1:08:27
+whatever sometime later the timer goes off the scheduler runs and we wake up and uh we've been on the
+1:08:34
+ready queue all this time and we go back and check our condition okay and so practically we have to check
+1:08:39
+the condition again just to make sure nothing's changed from the point at which we were signaled to
+1:08:44
+now okay so most real operating systems all have this mesa scheduling
+1:08:51
+more efficient easier to implement better for the cash state all right
+1:08:58
+questions
+1:09:05
+now uh let's do our our fully bounded circular buffer since
+1:09:11
+it's been asked about a couple of times so the only real non downside of this is it's non-deterministic that's correct
+1:09:17
+um but in fact the performance uh advantages here are uh far outweigh any of the non-determinism
+1:09:24
+uh because you don't want to have a situation where non-determinism gives you an incorrect result because you're going to
+1:09:29
+design things correctly correct now uh there's too many other sources of
+1:09:35
+non-determinism so uh that one's not worth removing so if you look uh
+1:09:40
+for the circular buffer we're gonna have one lock and two uh condition variables one for sort of
+1:09:46
+the uh the buffer being too full and one for the buffer being too empty and of course these condition variables
+1:09:52
+don't have anybody waiting on them and so now the producer is going to acquire the lock and it's going to say while the buffer is full
+1:09:58
+weight on the producer condition variable and when that is no
+1:10:04
+longer full then we enqueue the item and we signal the consumer
+1:10:10
+okay and in the case of the consumer we sort of say well while the buffer is
+1:10:15
+empty we wait on the consumer condition variable and when that's done we dq and we signal
+1:10:20
+the producer so if you were to look at this uh this is essentially mirrors
+1:10:28
+what we did for uh the 74 version of this but it's much cleaner because we're waiting
+1:10:34
+on uh we're waiting on condition variables we're doing so inside of a lock so we
+1:10:41
+don't have to worry about any of the things we look at changing because somebody else is messing with us whenever we run
+1:10:47
+all of the code the while loop the buffer full check the condition weight all of that stuff is all running
+1:10:52
+with us holding the lock okay now
+1:11:01
+so what the thread does when it's waiting is it's sleeping it's not busy waiting okay so condition variables
+1:11:07
+are interfaced properly with the operating system they'll put you to sleep and by the way you can imagine you can
+1:11:12
+build conditioned variables using futexes
+1:11:17
+okay now why the while loop mesa semantics
+1:11:22
+most operating systems when the thread is woken up by signal it's simply put on the ready queue may or may not reacquire the lock
+1:11:28
+immediately what about reacquiring the lock well because of the way you think about this the semantics are i never
+1:11:35
+run code without holding the lock if i had the lock first so i grab the lock i go to sleep yes i'll release the lock
+1:11:42
+temporarily under the covers but i'm not running and before i get to run again the lock will be reacquired
+1:11:48
+by the system before i return from condition weight okay so i always have the lock
+1:11:55
+okay um ah how are they both in the critical
+1:12:01
+section if they're sharing the lock so the answer is they're not both running in the critical section
+1:12:07
+one of them sleeping the other one's running okay uh so what actually happened let's
+1:12:15
+say the producer is sleeping on the conditional weight here the consumer now says well while the buffer
+1:12:21
+is empty uh which it um it's not there's something there so uh
+1:12:28
+because the buffer is full i go to dq and then i signal the producer so notice that i'm running i have the lock
+1:12:34
+this guy is not running he's sleeping so the lock is only really owned by me okay um eventually i'm gonna signal
+1:12:41
+still i own the lock i'm gonna release the lock now i don't have the lock i'm gonna keep going later the scheduler is gonna kick in um
+1:12:47
+and the first thing that is going to happen when i get pulled off the ready queue is the implementation for conditional weight will reacquire
+1:12:54
+the lock before it emerges from conditional weight so you could almost think that i was sleeping on the condition variable
+1:13:01
+and then i'm sleeping on the lock and then i emerge
+1:13:06
+okay but i don't want you to think uh and that's because condition weight
+1:13:14
+gives up the lock under the covers without telling you okay and then it grabs the lock without telling you
+1:13:21
+that's why this and it's this that makes it much simpler and yes it actually sleeps okay and it may or may not acquire the
+1:13:28
+lock immediately but any code that you run has the lock now i want to start on this a little bit
+1:13:33
+because i want to get you guys an idea that monitors are much more powerful
+1:13:38
+than what i just showed you and that's why they're so cool okay so let's talk about the reader's writer's problem with a database
+1:13:45
+so a database you want to have many readers and one writer and you can't have those two mixed so when you're
+1:13:50
+writing there can't be any readers and when there may be many readers but there can't be a writer
+1:13:55
+okay it does actually sleep in conditional weight yes so there are two classes of users here
+1:14:02
+readers and writers and using a single lock on the database is that sufficient
+1:14:08
+to get us the semantics we want if we grab we lock the database between before we do our read or a write does
+1:14:15
+that give us the best behavior anybody
+1:14:24
+and why does not give us the best behavior
+1:14:32
+homework one flashbacks yeah because you can't have more than one reader that way so
+1:14:38
+what we're going to do is we're going to come up with a solution using monitors that lets us have
+1:14:44
+multiple readers and one writer okay and so the correctness constraints for this problem our readers can access
+1:14:50
+the database when there are no writers writers can access the database when there's no readers or writers because we can only have one writer at a time
+1:14:57
+and only one thread can manipulate state variables at a time now hold your breath for a second
+1:15:04
+don't do it too long so you turn purple but i'm going to show you the state variables that are going to let us do this okay so the reader is
+1:15:11
+going to wait until there's no writers it's going to access the database and then check out which is going to wake up
+1:15:17
+a waiting writer if there are any and the writer is going to wait until there are no active readers or writers
+1:15:23
+access the database and wake up readers or writers okay and we have these four state variables
+1:15:29
+and two condition variables now this sounds bad because it's complicated but it's not okay very simply
+1:15:36
+the four variables are as follows how many active readers are there that's how many uh readers are actually reading the
+1:15:42
+database how many readers are waiting okay that would be the number of readers that are not allowed into the database because
+1:15:49
+of a writer similarly the number of active writers is the number of writers that can be in
+1:15:55
+there if you think about that our constraints say that aw can only be zero or one and the number of waiting writers is the
+1:16:01
+number of writers trying to get in there and then we're going to have two condition variables to sleep on
+1:16:08
+and if you look at the code for a reader what you're going to do is you're first going to check yourself into the system
+1:16:13
+so all monitors you start by acquiring the lock and now we're going to check conditions now what's cool about this is
+1:16:20
+we acquired the lock so no other thread can get in there which means i can do arbitrarily interesting
+1:16:26
+checks and my check as a reader is if there are any active writers or any waiting writers
+1:16:32
+i have to go to sleep because as a reader i'm not allowed in the system because if there's an active writer clearly i can't read and if there's a
+1:16:38
+waiting writer then that means there must be an active writer and that waiting writer is going to get to go next and so
+1:16:44
+as long as there are any writers in the system at all this solution is going to increment the number of waiting writers waiting writer plus plus
+1:16:52
+going to sleep on the okay to read and then when i wake up from that i'm
+1:16:57
+going to decrement waiting writers and try again okay and i'm going to keep looping in here until there are no writers of any sort
+1:17:04
+in the system okay and then
+1:17:09
+basically uh when i've exited this i know that there are no active writers
+1:17:15
+or waiting writers and so now there's one active reader namely me
+1:17:20
+okay and i release the lock okay and i do the actual database
+1:17:27
+access okay wr is a waiting reader okay and then when i'm done accessing
+1:17:33
+the database at this point i grab the lock again i check out by decrementing the number
+1:17:38
+of active readers because i'm no longer active i'm not in the database anymore okay and
+1:17:44
+if uh at that point there are no active readers but there is a waiting writer then what i'm going to do is i'm going
+1:17:50
+to signal the waiting writer to wake up okay and i'm going to release the lock now notice what's interesting here
+1:17:57
+is if active readers are not zero then i know that some other reader will
+1:18:02
+come on and wake up waiting writers and if active readers are zero and there
+1:18:09
+are no waiting writers then there isn't going to be anybody in the system to worry about or there's an active reader or active
+1:18:14
+writer who will wake us up so we'll go through this more i'm going to actually if you'll bear with me talk this through
+1:18:20
+a little more so i don't leave you in a totally confused state but there's a couple of things i want uh to thank you to think about so first
+1:18:28
+and foremost rights are prioritized over reads in the way that it's been done okay and
+1:18:35
+the reason the writers are prioritized over the reads is because well
+1:18:40
+is that a good idea well standard data shows that they're far more readers than writers and that writers
+1:18:47
+tend to happen quickly and you would like all of their rights to be reflected in the readers as quickly as possible
+1:18:54
+so a writers are not they're rare and b we would like their state to update so we give priority to writers
+1:19:00
+over readers only for this example that's not to say that every version of this might be the right thing
+1:19:06
+okay um the other thing to notice is this is a pattern grab the lock check conditions are the conditions
+1:19:14
+right uh for me to go if there are writers in the system the conditions aren't right right now
+1:19:19
+at that point i update information to let other people know that i'm in the system waiting and then i go to sleep
+1:19:26
+and i try again and then when i'm ready oh the conditions are now right i increment the fact that i'm an active
+1:19:32
+reader i release the lock and notice that i've actually released the lock before i go into the database
+1:19:40
+okay and you might ask you know why release the lock here can anybody tell me
+1:19:54
+great exactly right so another reader can come along so notice uh this is like metal locking
+1:20:01
+okay this is not locking this is meta locking because the lock is protecting my
+1:20:07
+invariance on entry into the system it's not locking the database
+1:20:13
+it's checking whether my constraints are right to allow me into the database that's different thing that's why i
+1:20:19
+release the lock before i even do the database because my entry code is checking conditions
+1:20:25
+okay and my exit code will wake up anybody who needs to be woken up
+1:20:31
+okay and this is gonna exactly allow multiple readers okay great because the next reader will come along
+1:20:37
+and go through the same thing notice that there are no no writers in the system and get to go
+1:20:43
+forward now what we know about the right side is it better be the case that if there's a reader in the system there'll be no possibility for a right
+1:20:50
+writer to start right that would be bad so the writer using the same pattern is going to acquire the lock they're going to say
+1:20:56
+well if there are any active writers or there's an active reader either of those situations kill it for a
+1:21:03
+new writer okay it kills it for the new writer because a new writer
+1:21:08
+can't write if there's either an active writer or an active reader so they got to immediately go to sleep
+1:21:13
+so our condition for entry is different in this case if there's either an active writer or an active reader
+1:21:19
+then what we're going to do is we're going to say oop conditions aren't right i'm going to increment the number of
+1:21:24
+waiting writers i go to sleep when i get woken up i can decrement the number of waiting writers because i'm
+1:21:30
+not waiting anymore and go and check my condition again okay and rights must wait until all of the
+1:21:37
+running readers are dead yes okay and at the point when i finally have no active writer or active reader then i
+1:21:44
+become an active reader i release the lock just like i did with reads and i do the database access
+1:21:51
+okay now why is it an issue if there's active active readers for a writer to go forward well the readers are doing
+1:21:58
+something with the database that uh may look at many different fields and a writer's gonna go in there and start
+1:22:04
+screwing that up by changing the consistency so the assumption here has to be that the writer is gonna touch
+1:22:09
+things that are going to screw up the reader it's not the case that the reader's just going to look at one thing the reader is looking at
+1:22:14
+a full database record or what have you okay so in this particular set of cons it's kind
+1:22:20
+of like cash coherency but bigger okay you could imagine that records may have many
+1:22:26
+fields in them and if the fields aren't consistent uh then the reader is going to have problems and so a writer shouldn't come
+1:22:32
+along and change anything until there are no readers left okay and so the exit on the right side
+1:22:38
+is going to be similar we're going to grab the lock we're going to decrement we're no longer an active writer
+1:22:43
+um and then we have an interesting exit here like if there's a waiting uh writer then we're going to wake
+1:22:49
+somebody up okay otherwise uh if there's any there are no waiting writers but there
+1:22:55
+are waiting readers we're gonna broadcast so notice the difference i wake up one writer but i potentially wake up all the
+1:23:01
+readers and then i release the lock okay
+1:23:06
+now interestingly enough here let's i normally i don't do this at this point
+1:23:12
+in the lecture but what would happen if there were many waiting writers and we broadcasted to all of them to wake up do
+1:23:19
+we get bad behavior by having more than one writer suddenly using the database
+1:23:29
+well let's think this through notice what happens when a when a writer wakes up from condition
+1:23:34
+weight the first thing that happens before they come out is they grab the lock
+1:23:40
+so only one of those many riders who woke up got the lock and got to emerge from condition weight
+1:23:46
+they're the ones that decrement the number of waiting writers go through the loop notice that there
+1:23:52
+are no longer any active readers or active writers and get to release the lock after incrementing active writers
+1:23:59
+all the other ones then wake up and turn but at that point they're gonna look
+1:24:04
+through and they're gonna say oh active writers is now one you know greater than zero so
+1:24:10
+they'll go immediately back to sleep so even if we mistakenly broadcast
+1:24:16
+and wake up all of the writers only one of them would get through now that's a great question what if they're
+1:24:22
+interleaved and the answer is why can't they possibly be interleaved
+1:24:32
+what's the paradigm here because of the lock right i forget for a moment that uh
+1:24:38
+we go to sleep and leave out locks okay put that aside in your brain what you need to think now is
+1:24:45
+all of the code between acquire and release has the lock there can be no interleaving inside
+1:24:50
+between acquire and release therefore when i'm checking conditions and changing waiting writers and all i'm
+1:24:56
+reading writers all of that stuff there's only one thread doing that at a time because it has the lock and therefore this
+1:25:02
+consistency there's no interleaving there in that header code as soon as i release the lock
+1:25:08
+then there could be interleaving but that interleaving is is set up to only allow multiple readers or a
+1:25:13
+single writer okay well broadcast down here the only reason only one of them wakes up is
+1:25:20
+it's not actually that only one of them wakes up they all wake up but only one of them finds that the conditions are right for
+1:25:25
+it to run it gets to run the rest of them put themselves back to sleep again
+1:25:31
+okay and there's no priorities here just the one that got the lock first gets to notice uh that it's ready to go
+1:25:39
+okay all right
+1:25:45
+okay why broadcast instead of signal well in that case we want multiple readers and if you look at the reader case if there are no writers then all the
+1:25:51
+readers get to go all right why get priority to writers well we gave
+1:25:57
+we talked about that earlier now what i'm not going to do now because we we've run out of time but we'll do it
+1:26:03
+next time is it's fun to look at a simulation where you can actually see these variables go up and it might help you a
+1:26:08
+little bit but i'm gonna um i'm gonna let you guys go for now i'm sorry we've gone over a little bit but
+1:26:14
+uh we've done a lot today this was a big lecture so i apologize for all the topics here we've been talking about
+1:26:20
+atomic operations is something that runs to completion or not at all but we've now
+1:26:25
+moved it to be looking at uh instructions so we talked about
+1:26:31
+hardware atomicity primitives okay disabling interrupts test and set swap compare and swap these are all
+1:26:37
+atomicities okay we showed several constructions of locks we've looked at
+1:26:43
+ways of using disabling of interrupts looked at ways of not having busy waiting and not tying up resources
+1:26:49
+and ultimately what we did is we separated the lock variable from hardware mechanisms to protect
+1:26:55
+uh the implementation of the lock okay the final the other thing is we talked
+1:27:00
+about semaphores again as being good but maybe too complicated and so we started introducing monitors
+1:27:06
+here which is a lock plus one or more condition variables and uh monitors are really representing
+1:27:12
+the logic of your program and next time we'll we'll talk about the reader's writers a little bit more and show you
+1:27:18
+um walk through an actual simulation so you can see all those different variables changing okay now um
+1:27:26
+now the question about uh on the on the uh chat here which i would be happy to answer people are welcome to go if they
+1:27:32
+like but if one thread signals or broadcast does the scheduler have to wait until the thread releases the lock before it wakes up
+1:27:39
+no because we have mesa scheduling what happens uh is the broadcast or signal
+1:27:45
+merely takes threads and puts them back on the ready queue that's all it does it doesn't have to wait for anything okay just puts them on
+1:27:52
+the ready queue and then it returns running okay
+1:27:58
+and uh well um and then when the thread wakes up from the ready queue at that
+1:28:03
+point it tries to reacquire the lock inside the implementation and it might get put immediately to sleep again because the lock's not
+1:28:09
+available and all of those things that have been woken up will go through one at a time all right and yes we'll talk a bit about uh
+1:28:16
+implementation of monitors um if you like but i want to let you guys go i hope you have a great weekend
+1:28:22
+and uh we'll see you on monday ciao
+1:28:30
+you

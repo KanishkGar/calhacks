@@ -1,0 +1,1702 @@
+0:03
+welcome back everybody uh to cs162 we are uh on lecture 19 talking about file
+0:10
+systems and uh hard to believe but uh we're on the the final few lectures of the class
+0:18
+i think we're ending potentially on lecture 26 so getting close there
+0:25
+if you remember from last time we were talking about devices and among other things we talked about
+0:31
+spinning storage and gave you some amazing stats about
+0:37
+modern disk drives i'll show you a couple of these in a moment but basically the way to think about a
+0:43
+disk drive is it's a series of platters that are uh double-sided so there's storage on both sides
+0:49
+and uh there's a single head uh assembly typically with a um a um an actual read write
+0:56
+arm on both both sides for one for each platter and that head moves in and out as a
+1:02
+group and given the current position of the head if you let the platters spin which is what they
+1:08
+do it traces out a path and on a single surface we call that a track and if we take all of the
+1:14
+tracks that are in uh traced out simultaneously by the head we end up with
+1:20
+a cylinder all right and we talked about that and the in a simple model for measuring
+1:27
+how long it takes to get something off of the disk includes at least these three items seek time rotational latency and transfer
+1:33
+time and uh the seek time is the time basically to move the head in or out
+1:39
+and that's something of order of four milliseconds these days the rotational latency is the time for
+1:45
+uh the resulting sector that holds your data to rotate under the head and then
+1:51
+finally the transfer time is the time to actually pull a block of data off uh off the disk
+1:57
+now there's a good question here about is there only ever one head now just to be clear usually the head is
+2:04
+the thing touching the surface there's a head assembly and usually there's only one of them and
+2:09
+the reason for that even though it seems like it would make sense to be able to independently read the different platters is that
+2:16
+discs are a commodity item and that would be way too expensive and the head is one of the most expensive parts of the assembly
+2:22
+so a complete model of how long it takes to pull something on the disk or write something
+2:28
+to the disk is that a request spend some time in a queue we'll say a lot more about this today
+2:33
+and then it goes through the controller and then once it's in the controller then it gets fed out to the actual
+2:40
+physical disk at which point we have the seek plus rotational plus transfer time and remember by the way the rotational
+2:46
+latency probabilistically we say it's half of rotation because on average it takes a half a rotation to get the data
+2:53
+underneath the head any other questions here
+3:00
+okay we showed you a picture or two of the inside of a disc
+3:06
+last time as well so if you missed that lecture you can go back and take a look um here were some typical numbers so um
+3:12
+i pulled out uh commodity seagate three and a half inch discs are now up to 18 terabytes nine platters
+3:22
+more than a terabit per square inch on each surface so that's pretty amazing
+3:27
+we have perpendicular recording domains and so the the magnetization that represents a
+3:34
+one or zero actually goes into the surface typically there's helium uh inside there
+3:39
+to help reduce the friction of the the disk spinning around um the seek time is typically in a four to six
+3:46
+millisecond range um although a good operating system with
+3:52
+uh good locality will get this down to a third of that time on average this particular time that's uh specked
+3:58
+out is the average time to go from any track to any other track all right the rotational latency for uh
+4:05
+laptop or desktop disks is in the 3600 to 7200 rpm which is
+4:10
+somewhere between six milliseconds per rotation or eight milliseconds for rotation for the faster
+4:16
+one server disks can get to be fifteen thousand rpm um and so the latency is is less
+4:22
+uh controller time depends on the controller hardware transfer time typically 50 to 250 mega
+4:29
+bytes per second notice the capital b um and it depends on a lot of things like
+4:35
+what size are you transferring so sectors which are the minimum uh chunk of data that can go on and off
+4:41
+the disk can be um 512 bytes or up to uh four kilobytes on modern disks
+4:47
+rotational speed of course we just said can vary from 3600 to 15 000 rpm
+4:52
+the density of bits per track the diameter and also where you are so if you're on the outside um the disc
+4:59
+is surface is going by the heads faster than on the inside and so you can read the bits quicker on the outside um okay
+5:07
+so pretty amazing um the other thing that we had talked about
+5:12
+was we were starting to talk about the overall performance for an i o path and that performance really goes from
+5:19
+the user through the queue through the controller through the i o device and uh there could be many
+5:24
+metrics that you might worry about like response time which is the time from when you submit a request to when you
+5:30
+get the response back throughput which could be the time how many of these requests per unit time can
+5:36
+you get through the system things that contribute to latency are the software paths which are green here
+5:44
+which can be loosely modeled by cues throughout the operating system
+5:49
+are the are hard to characterize in general so we're going to have to come up with sort of a probabilistic way of
+5:54
+thinking about those the controller and the device itself that behavior is a little more
+6:00
+easily characterized and depends on the the actual device itself but the queuing adds some really
+6:06
+interesting behavior here so there's this non-linear curve that starts out with a
+6:14
+fairly low change in response time with respect to throughput
+6:19
+and then as you get higher and closer to the 100 percent mark which is really the point at which
+6:24
+your utilization is uh the maximum the disk can handle this response time kind of goes through the
+6:31
+roof and uh we'll see a little bit about where that comes from in this lecture
+6:37
+okay so now to pick up where we left off last time unless anybody had some other
+6:43
+uh device related questions we talked a lot about
+6:49
+ssds as well as spinning storage last time
+6:55
+so um so let's start talking a little bit about performance of a device in general and
+7:01
+we're going to call this a server so for instance here this yellow i o device would be a server or the
+7:07
+combination a controller an i o device would be a server in this particular view of the world and
+7:12
+so if we assume that we have uh some amount of time call
+7:18
+it l that represents a complete uh service of something then we could have
+7:24
+several of these one after another and assuming that the device takes time
+7:30
+l to service a request and we put them right after each other so there's really no
+7:35
+spacing between submitting the next request after the first one's done we can think of this as
+7:40
+a deterministic server where the deterministic part is that it's always of time
+7:46
+l and um the maximum number of uh service requests per unit time is
+7:52
+just one over l okay because that's kind of the the best we could do if we put them end to end
+7:58
+as tightly as possible and just to give you some numbers for instance if l is 10 milliseconds then the bandwidth
+8:04
+of number of l's we can handle is about a hundred operations per second that's just one
+8:10
+over ten milliseconds um on the other hand if l is two years then the bandwidth might be 2.5
+8:16
+ops per year et cetera okay now this applies this idea applies to a
+8:24
+processor a disk drive a person a ta what have you it applies to getting burgers at
+8:30
+mcdonald's you know each one of these is the amount of time it takes to get a burger and you know you can compute the maximum
+8:36
+number of burgers that can be pulled out of mcdonald's for instance okay we'll get we'll get back to
+8:42
+mcdonald's in a moment um so the we could take that l which is
+8:47
+a total operation and we could divide it into a series of parts like say three equal parts and
+8:54
+then um we could imagine that those three equal parts are actually handled by
+8:59
+three different stages of some device or some pipeline what have you so this should
+9:04
+sound a little bit like 61c and so in that instance here is our l which is spread over these
+9:11
+three things but since we're pipelining now notice what happens we have uh the blue part
+9:16
+the gray part and the green part and so um after you finish the blue part
+9:22
+of the first request and it's on to the gray part of the first request then we can get the blue part of the second request and so
+9:27
+on okay and that's going to overall allow us to do more things per unit of time so
+9:32
+it's going to up our throughput okay and so for instance uh if you have a pipeline server like this
+9:38
+with k stages and the task the total task length is l then we actually end up with time l
+9:44
+over k per stage and the rate is k over l so again we had at l equal 10 milliseconds but now if we
+9:51
+can divide it into say four pieces um then the bandwidth might be 400 ops per second
+9:56
+or if l is two years and k is two then our bandwidth would be one op per year
+10:01
+okay and so this is just noticing the fact that when we pipeline we can get more items per unit time
+10:08
+shoved down that pipeline and of course all of the things that uh
+10:14
+we talked about in 61c in that if these are not all equally if all of these pieces aren't equally
+10:20
+the same size then you're going to get bottlenecked by the uh the small one okay and so that's
+10:27
+going to be a problem um and so let's or actually excuse me bottleneck by the large one the one that
+10:33
+has takes the most time okay now example system pipelines are
+10:39
+everywhere so in 61c you basically talked about the processor pipeline here you could imagine that for instance
+10:46
+you have a bunch of user processes they make a syscall they put things into the file system cues them up that's a
+10:52
+pipeline doing file operations that then leads to
+10:58
+disk operations which then lead to disk motion okay or in communication
+11:04
+typically you've got a whole bunch of cues throughout the network and um those cues all work for each other and you have a lot of routers and
+11:11
+the routers are all working in parallel and so ideally if you're communicating say between berkeley and beijing
+11:17
+you have a nice clean path with a lot of packets in the pipeline from point a to
+11:22
+point b and they're all moving their way along okay we'll talk about that level of pipelining when we talk more about
+11:28
+networking in a week or so so anything with cues between an
+11:33
+operational process behaves roughly pipeline like and so that analysis we were talking about
+11:39
+applies now the important difference here is that initiations are decoupled from processing so that
+11:45
+means that um the reason i put a cue here in the first place is so that the thing producing uh the
+11:51
+requests is decoupled from the thing servicing the requests and this is extremely important in
+11:58
+general because request production is often very bursty okay and this is certainly true with
+12:05
+file system calls it's certainly true with the network it's certainly true with a number of other things and so really we're going to want to be
+12:12
+putting these cues in here to observe those bursts and that synchronous and deterministic
+12:18
+model that i you know roughly gave you here is is not reality okay the reality is
+12:24
+that we're going to have burstiness and so a lot of things are going to arrive quickly not at a regular rate
+12:32
+okay so another thing we can do which we haven't talked about is we can increase our parallelism not by
+12:39
+pipelining but rather by putting a bunch of servers in so uh that has a similar effect so in the case of uh
+12:46
+these requests taking time l and not being able to be split up if we put say three or four n different
+12:53
+servers k different servers excuse me here then we can get k times uh the number of
+12:58
+things operating simultaneously and so notice we get exactly the same numbers here latency is 10 milliseconds
+13:04
+k is four we have four different servers then we could get 400 ops per second etc
+13:10
+okay so there are uh the op there is the option to
+13:15
+up your bandwidth by adding more servers or up your bandwidth by pipelining those
+13:21
+two things are kind of duals of each other and depends on circumstances as to which
+13:27
+ones are good now so parallelism
+13:33
+clearly comes into play for instance here when we have lots of individual disk drives it'd be great if certain things can be
+13:41
+done in parallel and uh in a lecture or so actually a couple lectures from
+13:48
+now we're going to talk about things like putting a log in to give us um
+13:54
+better perform to give us better durability when things crash and it'd be great if we could have a separate disk drive to
+14:00
+handle the log independent of the file system that'll give us higher performance clearly there's a huge amount of
+14:06
+parallelism in the network and in the cloud and so when you submit a bunch of people
+14:12
+submit queries they go throughout the network they go to different parts of the cloud and therefore there's a huge amount of
+14:17
+parallelism as well and that leads to all sorts of interesting behavior and we'll talk
+14:23
+about network systems uh in some detail in the last few lectures
+14:32
+so let's put together a little bit of a simple performance model so here we have a hose okay
+14:40
+and we have the latency l which is the time for operation so how long does it take to flow all the
+14:46
+way through the system that's l so the latency is from the point where a little particle of water comes at the top
+14:52
+until it goes through several times and comes out the bottom that's l bandwidth is sort of how many ops per
+14:58
+second come into that hose or out of this pipe and that would be operations per second
+15:04
+um for instance uh or gallons per minute etc etc and if b is two gallons per second
+15:11
+and l is three seconds then how much water is in this system in the in the actual hose can anybody
+15:18
+figure that out yep six gallons right why because two
+15:24
+times three is six and you know you're over the time that you've got those three seconds you
+15:31
+keep dumping water in and so over that three seconds you get two times three seconds worth of
+15:37
+water in the hose okay and so that's a pretty simple analogy hopefully
+15:42
+everybody's got that's and that turns out it's going to be something called little's law which is
+15:48
+going to be helpful for us to be able to get okay you know we can also so here we're talking about kind of
+15:54
+uh water which is uh you know dividable into as many little
+16:00
+pieces as you like we could also talk about um chunks of work
+16:05
+so here's a case where each one of these little circles represents uh some fixed amount of work
+16:12
+and so l is the time for us to get through the whole system now and if the bandwidth is two operations
+16:19
+per second are coming into this system and l is three seconds once again we'll have six operations one
+16:25
+two three four five six in the system at any given time okay same idea but now we're looking at
+16:32
+things that are quantized uh rather than continuous flow like water
+16:38
+okay so none of this is rocket science so far okay so this is not intended to be complicated
+16:43
+but it's just intended to give you a way to think about some of these flow uh ways of looking at
+16:49
+things okay now little's law is a way to define that
+16:55
+okay and so little's law talks about a system which is this cloud arrivals come in at a certain rate and
+17:02
+now instead of bandwidth which is sort of maybe a more normal thing for uh you all to think about we're gonna
+17:09
+talk about uh lambda which is a rate of things arriving okay and so just think of this as a different symbol for b
+17:16
+there's a length of time you're in the system and there's the number of things that are in the system
+17:21
+at any time so things come in they're in the system they depart okay
+17:28
+and in any stable system stable meaning that n doesn't grow without bound and it doesn't shrink down to zero
+17:35
+on average the arrival rate and the departure rate are equal to each other okay so lambda
+17:41
+is arrivals per unit time departures are departures per unit time on average the same number of things
+17:48
+come in as go out so that this is a this is a stable system and when we talk
+17:53
+about this probabilistically what we're saying is on average n is stable it's neither growing or departing
+18:00
+and so we're we're not limiting ourselves to deterministic systems where n is always exactly the same amount but
+18:07
+on average it's stable okay and so little's law basically says that the number of things
+18:12
+in a system is equal to the bandwidth times the latency or n is equal to lambda times l
+18:19
+okay and this is uh universally applicable no matter what the probability distributions of
+18:26
+of lambda r you can use this and no matter what the
+18:31
+distributions of l's are so maybe not everything takes l time to go through the system
+18:36
+then uh you can multiply it out and figure out how many jobs there are and sometimes i go through a full proof
+18:42
+of this uh probabilistically i decided not to do that tonight but um if you look at my slides from last
+18:48
+year you can see our last term you can see um see that proof
+18:54
+it now the the way to think about this is a you could look at the hose analogy
+18:59
+that i just showed you right the other is this is i like to think of this as the mcdonald's uh law okay and so imagine that what
+19:06
+happens is a huge bus of uh people shows up at a mcdonald's they all get out
+19:12
+and um and they form a line okay and so the bus causes a certain
+19:19
+rate of people to come in that's lambda and there's a certain line that goes in the door and to the front counter
+19:26
+okay and if you uh hit the door if you come to the door and you look and you see so many people
+19:32
+are in front of you and you wait in line you wait in line you wait in line and on average the same
+19:39
+number of people are coming after you if you looked from the door in and then
+19:44
+you got to the counter and you turned around and you looked back there ought to be the same number of people there because it's a stable
+19:50
+system and so the way to think of that is you take the speed at which they're coming through the door times how long you waited and that tells
+19:56
+you how many people ought to be in the line all right and that's so that's the the mcdonald's uh
+20:02
+you know big mac equation here little's law all right questions
+20:14
+okay so the thing about this law is you can apply this to any number of things you can draw a box around it call
+20:19
+something a system it could be the cues it could be the processing stages it could be whatever
+20:25
+you choose to draw your box around or your cloud around um arrivals times average latency
+20:32
+average arrival time speed times latency gives you the average number of jobs through the system
+20:37
+l is the time it takes from when an arrival comes to the system to when it
+20:42
+departs okay so again in the in the mcdonald's analogy
+20:48
+you you hit you come to the door you look and from the point at the door until you
+20:53
+get to the counter that's l all right and if you turn around and look back n is the number of people behind you and
+21:00
+it's the same hopefully as the number of people that were in front of you when you got to the door okay good
+21:08
+now notice l has something to do with how happy we are or how annoyed we are right if l is
+21:13
+really long and it took us a really long time to get our hamburger we might be annoyed um if l is short we
+21:19
+might be happy and so l is that service time or that uh that we're interested in how
+21:26
+long did it actually take for us from the point at which we submitted our request to when we
+21:31
+got our hamburger or we got our disc uh satisfied that's l okay and we're kind of
+21:37
+interested in keeping l as short as possible obviously all right any other questions
+21:46
+ah why should we expect the system to be stable stable that's a good question the reason we
+21:51
+expect the system to be stable is because if it's not stable the the math is much messier
+21:57
+but in in reality so there is a queuing theory which we're going to talk about which has to do with stable systems
+22:04
+and in a stable system if you can come up with lambda
+22:10
+and departure and a service rate which we'll talk about and you can then compute assuming that
+22:16
+things are arriving at a rate lambda you can compute something about l okay if you're talking about what
+22:23
+happens when the system first turns on and starts up or maybe the buses stop arriving
+22:28
+at five at night and the system drains those transient analyses are much more
+22:34
+complicated and that's a that's a different queueing theory class okay so that's complicated
+22:40
+um so this has to do uh yeah so this is related to e120 system stability
+22:47
+okay bounded input leads to bounded output um but obviously the other thing that's of
+22:52
+issue here is um the the type of queuing we're going to
+22:57
+talk about we're going to not put a bound on the cues to start with because the math is a lot simpler okay
+23:04
+so if you want to have some really interesting discussion about queuing theory there are several classes
+23:09
+in on the ee side that can do it much more deep deeply what i want to do is give you enough to get back to the envelope
+23:16
+calculations all right so
+23:22
+all right now um let's talk briefly for administrivia
+23:30
+midterm two we're still grading it um seems like people thought it was long but maybe easier than midterm one
+23:36
+i hope so we mostly had people uh complying with the uh screen sharing
+23:43
+um if you didn't we'll probably be getting back to you because that was definitely a requirement
+23:49
+but uh we're hoping i think to have the grading done by the end of the week maybe sooner um i know that they're well
+23:56
+on the way to being to uh being through the grading so that'll be good um
+24:02
+the other thing is i didn't put this on the administrivia but there is a survey out for midterm surveys so please
+24:08
+uh give us your thoughts on how the course is going we're roughly a third of the way through i mean two-thirds of the way through so
+24:14
+uh let us know and we'll see what we can do to help make the end of the class easy as easy
+24:22
+and pleasant as it was at the beginning of the class all right
+24:27
+the other thing of course that's really important is tomorrow vote if you have the chance okay
+24:34
+it's one of the most important things you can do if you're allowed don't miss the opportunity i know it
+24:40
+sounds silly but people often say that if you don't vote you don't get a chance to
+24:45
+complain about how bad things are i would say that's true and this my comment here has nothing to
+24:51
+do with what you vote for or who you vote for that's totally up to you but it's important that if you have the option to exercise
+24:58
+your chance to vote so uh tomorrow is it and uh and then we get to see
+25:06
+i'm not sure what's gonna happen tomorrow i'm a little uh worried about it hopefully things will
+25:11
+go smoothly we'll find out and yes take care of your mental health as the
+25:16
+results come in all right share them share the results with somebody else
+25:23
+all right i know that people are talking about actually having vote watching parties this time so they're
+25:29
+not by themselves when the results come in i know that's going to be in my household
+25:37
+okay i don't really have any other administrivia for folks tonight unless there were any questions our last
+25:45
+midterm is uh coming up in the beginning of december so we have
+25:52
+a tiny bit of breathing room
+26:00
+and uh project two is almost done
+26:09
+okay all righty
+26:17
+yeah i got the correction all right moving forward so let's talk about uh a simple performance model so um
+26:25
+again we have request rate lambda coming in now we're going with the uh cueing theory terminology we have a
+26:31
+queuing delay which is how long things are in the queue and then the
+26:37
+operation time t which is the time to get uh something satisfied and then um we can consider
+26:45
+the queuing delay plus the operation time as l that's one of our options there are many other ways to draw
+26:51
+l uh to to and um really what we've done here is we put the cloud around
+26:56
+uh around both the queue and the server in this case and so this uh the spinning wheel could be an example of the disk
+27:02
+for instance okay and the maximum service rate which is uh how many items we can get
+27:11
+through here per unit time is a property basically of the system as a whole which is the bottleneck
+27:16
+and so one of the things that we may need to look at to figure out what's the maximum rate we can serve
+27:22
+things is what is the bottleneck okay and then once we know what the
+27:27
+maximum rate that we could come up with which by the way if you have a bottleneck that
+27:33
+slows things down the um mu max is going to be lower than it would be otherwise right so
+27:39
+bottlenecks tend to lower your your maximum rate we could talk about a utilization row
+27:45
+which is lambda over umax so if you think about this this is really just saying if i have a maximum utilization rate
+27:53
+and i have lambda coming in i um rho is a number that varies from zero to
+27:58
+one which says sort of what total fraction of my maximum service can i
+28:06
+handle or am i trying to handle right now okay so if if lambda's bigger
+28:15
+then mu then i got a problem okay so this utilization here is a number that has to be less than one
+28:21
+so this is the correct ordering for the question in the chat okay now if you think about it why is
+28:26
+that so lambda might be something like one hamburger per second mew might be
+28:32
+a maximum of two hamburgers per second that would be the utilization is half of the hamburger production uh
+28:40
+possibilities there all right good now if what happens if
+28:45
+uh row is bigger than one
+28:57
+yeah requests start piling up right so um in fact row bigger than one
+29:04
+in a steady state environment is really an unbounded and undefined situation
+29:11
+okay so what we're dealing with in this uh analysis that we're talking about here is is the
+29:16
+utilization is never allowed to be greater than one in fact the um the queuing theory uh
+29:22
+equations that we're going to look at in a little bit have this behavior that they blow up when row gets to one so as rho gets
+29:28
+closer and closer to one the the q is going to get bigger and bigger the latency is going to get bigger and
+29:35
+bigger okay everybody with me on that
+29:40
+good now how does service rate vary with the
+29:46
+request rate so if you look here um
+29:53
+umax mu max is basically the maximum number of items per unit time that i can handle
+29:59
+but if i ask for less i'm not going to i'm not going to handle as many right so let's just think assume for a moment
+30:05
+that again mu max is two hamburgers per second and i only ask for one hamburger
+30:11
+per second i'll look up on this graph and what i'll see is oh i'm only asking for one hamburger a second so the actual service
+30:18
+rate that i go for is going to be one hamburger per second okay because i'm not i'm not making use of all my capacity of course
+30:26
+as i get up to two hamburgers per second if that's the maximum that i can get out of the system
+30:31
+what happens if i ask for three hamburgers per second well that's in the point at which things are starting to build up and i'm certainly
+30:37
+not going to get any more than two hamburgers a second okay so this uh this break point here
+30:43
+represents a very crude model of what happens when you ask for more than you can get and in reality if you were to actually
+30:50
+look at what the service rate is it's going to be some smooth function of this to the point that we're
+30:56
+probably never going to quite get the full maximum because of various overheads in the
+31:02
+system and we could try requesting much more than
+31:07
+the umax but we're going to just build up our queues and we're not going to get any more out of the system okay everybody with me now
+31:17
+so a couple of related questions might be so here we have our queuing delay and our service rate for instance
+31:22
+what determines mu max and what about internal cues so when i
+31:28
+said queuing delay here d i sort of implied it was one q but there might be lots of cues in the
+31:34
+system okay and so one of the things we need
+31:39
+to figure out mu max is we need to do a bottleneck analysis and so if we take a look at a
+31:47
+pipeline situation that we were talking about earlier remember we had each request requires a blue a gray and
+31:54
+a green what that could look like in our overall system is there's a blue server a gray server and
+32:00
+a green server they each have cues and they feed into each other okay so this is our pipeline and it's possible
+32:10
+if we look at this if they're all of equal time so these are all equal weight then we
+32:16
+could come up with a service rate that represents one over you know what one of these little chunks
+32:21
+are which is let's say l over three or something now unfortunately uh it may be that each
+32:28
+of these stages aren't equally balanced and so somebody has the slower mu max okay and they're
+32:34
+going to end up limiting the rate so if you have mu max for instance the third one which is green is the slow
+32:41
+one then what's going to happen is the cues behind it and everything else behind it are going to build up
+32:47
+and so you could view this really as a full system with one cue
+32:53
+representing everything behind it and a service rate of mumax
+32:58
+number three and that's the system we're going to analyze okay and so that's the bottleneck analysis where you figure out what the
+33:04
+bottleneck is now if the gray one where the bottleneck what's going to happen is things are going to come out of here
+33:11
+slower than they can be handled and so these cues aren't this queue isn't going to build up the cues behind it will okay and so the
+33:18
+bottleneck analysis you have to figure out what the bottleneck is and use that to figure out what mu max is
+33:24
+all right and so really once we found the bottleneck we can think of this in this other simpler way okay so each
+33:31
+stage has its own q and maximum service rate once we've decided the green one is the
+33:36
+slow one then the bottleneck stage basically dictates the maximum service max and we'll look at this as a
+33:42
+single queue with a server that has mu max number three
+33:48
+all right questions now
+33:56
+so for instance let's look at something that you uh we talked about earlier in the term here we have a bunch of threads suppose there
+34:03
+are p of them and they're all trying to grab a lock and that lock has some
+34:11
+service time which maybe requires going into the kernel and doing something coming back out and
+34:17
+so what happens is the locking ends up serializing us on the locking
+34:22
+mechanism okay
+34:28
+so um there's a question here let me back up here for a second so i didn't say in this uh example
+34:35
+that these are necessarily greater than lambda all i said is that
+34:40
+mu max 3 is slower than mu max 2 and mu max 1.
+34:47
+hopefully that's hopefully that was clear so we're basically we're coming up with the service side of
+34:53
+this situation not the request side the request side is still lambda
+34:59
+okay now if it turns out that lambda is greater than mu max three then we're in trouble
+35:04
+okay so that's maybe that's why you were thinking thinking that all right so um
+35:11
+so back to this example so um this is kind of an amdahl's law thing right so we got all this parallelism but the
+35:17
+uh the serial part is causing us trouble um the other way to look at this is basically
+35:23
+that we have x seconds in the critical section and so we have p threads times x seconds
+35:28
+the rate is 1 over x ops per second it doesn't matter how many cores we've got so this could be a
+35:33
+52 core multi-core processor doesn't matter because all of these
+35:40
+threads are drawn to a halt while they're trying to grab this lock and so that's why it's an amdahl's law kind of thing but my rate is one over x
+35:47
+ops per second okay so this is certainly an example we can think about here mu max is one over x in this case
+35:54
+okay and the threads get queued up there and um if we have more threads coming in
+36:00
+then uh at a rate faster than one over x then we know that the q is going to build up without bound and
+36:06
+we're never going to make it okay so that that analysis is is uh one that's
+36:11
+hopefully familiar from earlier in the term
+36:16
+but uh you know we're gonna move this on we're gonna talk about devices as well so the other question we've been looking
+36:23
+at here is so mu max is the service rate of the bottleneck stage and so we can think of as i said that we
+36:30
+really only have a single mumax server and a queue and that basically is a good model for a
+36:37
+bunch of queues but by modeling over the only the um bottleneck stage okay so the tank here represents the
+36:46
+queue of the bottleneck stage including cues of all the previous stages
+36:51
+in case of back pressure basically what happens is when cues build up they sort of
+36:56
+back up to the previous and the previous and the previous and if you were to take all of those cues behind the bottleneck
+37:03
+queue that's kind of what this tank is representing okay that's the big q
+37:09
+now it's useful to apply this model to all sorts of things we can apply it to the bottleneck stage we can apply it to the entire system up to and including
+37:16
+the bottleneck stage or the entire system there's many different ways of drawing boxes
+37:22
+and saying well what's the cue in this scenario what's the bottleneck stage okay so why do the so the cues behind
+37:28
+the bottleneck stage um are gonna back up because uh the bottleneck stage well it depends
+37:36
+okay the question is let me let me um restate the question here so why do the queues
+37:41
+behind the bottleneck stage q backup two the answer is they do that
+37:46
+only if the queues are finite in size and so behind the bottleneck stage when that queue fills up it's
+37:53
+going to prevent anything further from coming out with any of the previous servers which are then going to back up and so on
+37:59
+okay so that would be true if each queue had a maximum capacity okay
+38:06
+which in reality they usually do um and so let's talk about latency for a second so
+38:12
+the total latency is queuing time plus service time so for the this is again the mcdonald's analogy
+38:18
+right here's the front door okay which you go through the queue you get to the debt the uh
+38:23
+checkout counter you get your hamburger uh however long that takes the process and you exit
+38:28
+that's the total latency or service time okay and the service time depends on all
+38:33
+sorts of the underlying operations so if we're processing and this is a cpu stage it could depend on
+38:39
+how much computations involved if it's an io stage it could depend on the characteristics of the hardware like if
+38:46
+it's a disk it could depend on you know the seek time plus rotational latency
+38:51
+uh plus the uh bandwidth coming off the disk okay so there are many different types
+38:57
+of servers we could worry about here they all they all roughly equivalent to this model and so what about this
+39:03
+queuing time so we still haven't figured out how long are things in the queue now if we were to ignore the previous
+39:10
+discussion about cues backing up and instead allow this queue to be arbitrarily large then uh
+39:18
+it's kind of an interesting question of how big is the queue on average how many items are in the queue and
+39:24
+that's something where we need to pull in some cueing theory now the cueing theory um i'm going to give you in this class
+39:32
+is going to be something that you can just apply it isn't going to be um i'm not going to
+39:37
+really derive it although there are some references that i'm going to give you at the end which show the derivations and they're pretty straightforward
+39:43
+because this is a simple queuing theory but um so let's take a look at our
+39:48
+systems performance model we have now so we have lambda is uh items per unit time coming in we have
+39:53
+queueing delay which is the time you sit in the queue we have operational time which is the
+39:59
+time to actually do the operation or service time and then we have the service rate u mu excuse me and mu max is going to be
+40:07
+the one that we're really talking about because that's the bottleneck okay and again utilization is rho equals
+40:14
+lambda over mu max and we've already said that rho better not get to be bigger than one or we have some serious problems
+40:20
+and in fact in the model you'll see in a bit if rho equals one we also have sort of
+40:26
+infinite latency so that's really big okay
+40:32
+so when will the queue start to fill well the queue is going to start to fill when uh we're busy servicing something
+40:38
+and something else comes in right so some questions about queuing we
+40:44
+could say well what happens when the request rate exceeds the maximum service rate we already did that that's q is going to fill up short bursts can
+40:51
+be absorbed by the q if on average lambda is less than uh mu
+40:57
+okay and so we don't actually require that lambda is always um is always
+41:06
+smaller than mu max what we say is on average lambda is less than on average mu max okay so mu max
+41:13
+actually we can start talking about a probabilistic service time in fact we will in a bit and a probabilistic entry time or entry
+41:21
+speed and those two things entry rate service rate uh can be probabilistic
+41:28
+averages and as long as the average lambda is less than the average mu then we're good okay and it's only if
+41:35
+we have prolonged lambda greater than mu that we have problems okay
+41:44
+so let's talk about a simple deterministic world here so a deterministic world
+41:49
+uh which unfortunately we don't live in these days is as follows we have a q for arrivals
+41:56
+come into the queue and we have t sub q items perhaps in the in the
+42:03
+total excuse me we have a total of t sub q time in the q and then we have the service time t sub
+42:09
+s and here's some numbers over the left you can see here so um let's suppose in the deterministic
+42:14
+world somebody comes in every t sub a every t sub a
+42:19
+without fail and with no probabilistic variation so now we can say that lambda which is the rate that people are coming
+42:26
+in is one over t sub a and the service time t sub s mu is uh well it's k over t sub s if
+42:33
+there's k servers there okay and then finally the total queuing time l is equal to uh t sub q
+42:41
+plus t sub s so if i want to say what's my total time to get my hamburger
+42:46
+it's the time in the queue plus the time to be served and that's how long i'm in the mcdonald's okay
+42:54
+now if we take a look here what do we got so if we have um an item comes in every t sub a
+43:02
+okay so this is uh when this is what mcdonald's looks like uh like maybe 2 30 or something right in
+43:08
+the afternoon when nobody's coming in so a new person comes in every t sub a
+43:14
+it takes you um you spend a very short time in the queue in fact you're probably
+43:19
+it's the time to walk from the door to the counter and then it takes some service time to get your hamburger and notice
+43:25
+that um the important thing here is this service time which tells me what my service rate is
+43:32
+one over my maximum service rate one over t sub s is shorter than t sub a
+43:37
+so we're making sure that the time it takes to get the hamburger uh you're completely done by the time
+43:44
+the next one's ready to go okay otherwise you start building up the cue
+43:50
+okay and so and since we're pipelining so the time sitting in the q versus the service time
+43:56
+that's okay as long as t sub s over t sub a is less than one in this instance okay
+44:04
+and this is totally deterministic there's no probabilities here at all and so in a deterministic world
+44:12
+we have rho which is the utilization basically
+44:18
+goes from zero to one okay which is lambda over mu which is t s over t sub a
+44:23
+okay looking back here notice t sub s over t sub a is going to be our utilization okay
+44:30
+and if we look here that um if our utilization is from zero to one
+44:36
+our delivered throughput which is the maximum we can get against one is goes from zero
+44:42
+to one so what do i mean by that so our delivered throughput our maximum throughput here
+44:48
+is uh one item every t sub s okay and so if we shove a new item in
+44:54
+every t sub s we would end up with a delivered throughput of one and a utilization of one and so at this
+45:02
+point here this is the point in which everything's coming in at the maximum rate it can without building up the queue
+45:08
+okay and then we've got our saturation we saw you earlier and the point at which your utilization gets bigger than one now you're building your queue up
+45:15
+and basically people are out the door and down the street and around the block okay
+45:21
+and in this deterministic world what happens is if you look at cueing delay as a
+45:26
+function of time uh if you um basically
+45:32
+build things up to too large then uh the amount of time it takes is
+45:39
+uh this should be actually utilization on this access sorry about that you build things up once you get past
+45:44
+the large queuing delay then you basically start growing without bound as to how long it takes to get your hamburger
+45:50
+now let's look at what happens with bursts okay so the nice thing about deterministic is it's very easy
+45:56
+to understand right you can clearly see that once you get too many of these t sub s's coming in so
+46:03
+that you're they're coming in faster than this um then the rate excuse me you have too many items coming
+46:09
+in so that they're coming in faster than the rate then you've got a problem and you can no longer satisfy
+46:16
+your um without building up your cue okay so if we look in a bursty world we
+46:23
+got a different problem okay so in the bursty world notice the arrivals are coming in servers is handling things
+46:30
+but now the time between arrivals is going to be random okay and so there's going to be a
+46:36
+random variable and so people are going to arrive you know in a second and then in three seconds
+46:42
+and then in two seconds there's gonna be variation of how long they wait and now things look a little different
+46:47
+okay so look what happens here somebody arrives they get through the queue and now the
+46:52
+hamburger is being cooked up and they're they're uh you know they're waiting for the hamburger but meanwhile somebody else
+46:59
+comes in and now they came in uh
+47:05
+at this point okay and right after the blue one came in so the blue one's being served
+47:10
+the white one came in and now the white one can't be served why is that well because the blue one's being served so all of this time from when the white one
+47:17
+came in to when uh the blue one is done the white one's waiting and meanwhile an orange one came in now
+47:23
+the orange one's waiting and a light blue one came in and now the light blue one's waiting and they're all waiting for the original person to get
+47:30
+their hamburger okay and now once the original person gets their hamburger now the white one gets their hamburger
+47:36
+okay and that's going to take in a time to make hamburger and then finally the orange one gets and then the blue one gets their
+47:41
+hamburger and there might be some uh space here where nobody's coming in and
+47:48
+then we might start over again and notice in this scenario the average number of
+47:53
+uh customers per unit time could be exactly the same as the deterministic one
+48:00
+except we have some burstiness where a bunch of them come in and then we have uh empty spots where nobody comes in and
+48:06
+if you notice what happens here the blue uh person is very happy because they get their hamburger in their normal time
+48:12
+but white is not so happy because white waits from the point they came in until a much longer period to get their
+48:18
+hamburger because they're sitting in the queue orange is even worse right orange comes in and they have to wait until here to
+48:24
+get their hamburger and light blue has to wait until there to get their hamburger so light blue
+48:29
+is really waiting a long time okay and so just the addition of burstiness
+48:34
+even if with the same average time t sub a okay average we end up with uh
+48:43
+a hugely increased waiting time okay questions
+48:50
+just randomness on the input
+48:57
+okay so everybody see everybody see how it is that white here comes right away after
+49:04
+the la the blue one came in but now they're sitting in the queue all this time and then they get to be served and then
+49:10
+they're done and so white is basically waiting from the point they come in the door to here
+49:16
+before they have their hamburger and blue just waited a short time
+49:25
+so the average waiting time is much longer than in the deterministic case yes even though the average person per unit
+49:33
+time even though lambda is the same in the two cases
+49:38
+when there's burstiness the arrivals there the average waiting time goes up
+49:45
+okay yes pretty strange right so randomness
+49:51
+causes all sorts of weirdness okay now of course the other thing is
+49:58
+we'll talk about average waiting time which is really you know blues time from
+50:03
+the moment they came into when they have their hamburger versus whites until they have their hamburger versus orange they have their hamburger
+50:09
+averaged over the whole system that's going to be a number that we're going to compute in a in a moment
+50:15
+all right now so requests arrive in a burst so the
+50:22
+queue actually is is fills up whereas in this previous case in the deterministic case with all of
+50:29
+the parameters the same there's never anybody in the queue right somebody comes in they they their queue is really kind of
+50:36
+a null queue because they have to walk to the counter they get their hamburger there's never anybody waiting ever okay
+50:42
+so that's a case where the cube basically is is not if it's not filling up at all whereas in the bursty case we actually
+50:49
+fill up the queue here you can look at the queue basically has uh depth three at this point when the
+50:57
+when the light blue one person has come in you now have white orange and light blue sitting in line and now you only have
+51:03
+orange and blue and now you have blue and now you have nobody okay good i don't want to belabor that
+51:09
+point so same average arrival time but almost all the requests experience
+51:15
+large and large queuing delays even though the average utilization's low so on average we're not necessarily
+51:21
+using uh all of our hamburger time that we could but
+51:26
+people coming in in bursts means they end up waiting in line and you know if you think about this this is really your
+51:33
+common experience coming in when everybody shows up at noon uh at a pete's coffee
+51:39
+you have that queuing problem right and the queuing problem is because of the burstiness of the arrival
+51:46
+now how do you model burstiness of arrival so the time between arrivals is now a random variable
+51:53
+and there is a lot of uh elegant math that we're not going to go into in great detail but one of my favorites
+51:59
+is the thing uh called a memoryless distribution okay and so this is um the uh what is the probability
+52:08
+that the time between now between the uh the first guy that arrived and the
+52:13
+next guy that arrived is a given value and it has an exponential curve that looks like this
+52:19
+in fact the probability distribution is uh is lambda e to the minus lambda x
+52:24
+and that's what i plotted here okay lambda in this instance is the arrival rate
+52:31
+okay and this shows you the probability distribution of how long it takes
+52:38
+to uh between the first guy and the second guy and the question is why do they call
+52:44
+this memoryless well the reason they call this memory list is if you remember your probability if i were
+52:49
+to say well i've already been waiting for two units of time what's my conditional
+52:55
+probability given i've already waited for two so i cut off the first two and i rescale everything and what you see is it's
+53:00
+exactly the same curve so the reason they call that memory list is the amount of time that you've waited
+53:05
+says absolutely nothing about how long you're gonna wait uh and that's uh just like buses in
+53:10
+berkeley right you've waited you've waited for an hour and that tells you nothing about what how much more
+53:16
+time you're going to wait because it's a memoryless distribution all right and so the mean inter-arrival
+53:21
+time which is the amount of time between each arrival is one over lambda okay
+53:30
+there's lots of short arrival intervals okay and there's uh many
+53:36
+there's a lot of short ones and there's a few really long ones and the tail is really long okay so i understand the buses in socal
+53:43
+are better or worse than in berkeley what's the implication there
+53:49
+worse so soquel buses are dead well all right i guess i guess in the
+53:55
+memoryless model we're assuming that the bus will eventually come it may be days later but at least it'll show up
+54:00
+um so anyway so this here's what's cool about memoryless distributions if you don't know anything about
+54:09
+the probability distribution for arrivals but you know uh that there's a a bunch
+54:16
+of factors that all feed together to generate the random variable then you
+54:22
+can you can often model it as a memoryless uh distribution without knowing anything else
+54:27
+okay so for instance if you have uh a bunch of here's how we use it often
+54:33
+you have a bunch of processes that are all making disk requests and they're all random about it but they're not correlated in any way
+54:39
+and they all submit at random times and what have you but you know if you look overall at the the
+54:45
+rate at which requests are submitted there's a rate there so many requests per second
+54:51
+then you could figure out what that request per second is and then model it
+54:57
+as a memoryless distribution and it gets you somewhere it may or may not be perfect but at least it's a start
+55:03
+okay and so people often use memoryless distributions to model input distributions when the
+55:10
+only thing they have is the rate of arrival okay
+55:16
+but notice the thing to realize is that lots of short uh burstiness at for short events and then some really
+55:23
+long ones the long tails okay and um so the simple performance model here
+55:29
+the q um we have a lambda in the rate out and the q basically grows
+55:34
+at rate mu minus lambda if you think about it that makes sense because we have a rate in and a rate out
+55:40
+and when the rate in is faster than the rate out then the q is growing on average mu minus lambda
+55:45
+okay all right now let's very quickly uh remind you of some
+55:51
+things and then we'll put up the queueing result so um one thing to remember is uh if we have a distribution of
+55:59
+service times so think of this as the disc how long does it take to get something on the disk
+56:04
+we can talk about a couple of things so there's the average or mean right that's the sum of uh the various
+56:12
+um items at t times t and that's the mean okay probability and
+56:18
+that's the center point and you can think of this as exams right and then there's the variance or the standard deviation
+56:24
+squared okay and that represents the um the amount of time or the how far off the
+56:33
+distribution goes from the mean so you could have a peak where everything's the mean then the standard deviation be zero
+56:39
+otherwise it tells you about the spread okay okay and those two items hopefully are
+56:44
+very familiar with you from exams and everything right what's the average of the exam what's the standard deviation
+56:50
+this thing about uh sigma squared standard deviation squared is called the variance that's a little easier to compute so
+56:56
+usually you compute the standard the sigma squared and then you take the square root to get the mean let's get the standard deviation and
+57:03
+then the um squared coefficient of variance is an interesting one which i'm sure you probably have never seen
+57:08
+and that's where you take the variance divided by the mean squared and that's a unitless number
+57:16
+all right and the thing that's funny about c is you can learn a lot no matter how complicated this
+57:22
+distribution is you can learn a lot about it based on c without knowing anything else
+57:27
+okay now let me pause here for a moment because i'm assuming this is mostly review for
+57:33
+you guys but are there any questions on this simple thing right so if you look at
+57:38
+what's on the x-axis is how long you're waiting for the bus
+57:43
+for instance each of these little uh slices underneath is a probability that
+57:48
+you're going to wait this amount of time this amount of time this amount of time this amount of time and there's a way to compute the mean
+57:55
+which is here uh and the way to keep the compute the standard deviation and that tells you both what's the
+58:01
+average amount of time you wait and what's the um spread okay and the key thing about memoryless distributions
+58:08
+is that their exponential shape okay means that you don't learn anything
+58:13
+after you know how long you've waited okay p of t is the probability that you wait time t
+58:19
+so if you were to look at this as a curve that everything sums to one then p of pick a t like here's t
+58:25
+this is that you've waited two hours the error the area under that curve kind of is p
+58:32
+of t or the or the height of that curve is p of t does that help
+58:39
+okay so um you take an integral in the continuous case and you'd use that these things that are shown as sums
+58:46
+would be integrals in the continuous case yes exactly correct
+58:51
+now this memoryless distribution actually it turns out c in that case is one okay
+58:59
+because uh the variance and the square of the mean are equal to each other and
+59:04
+c is one so often times when you see a c of one you uh you actually end up with something
+59:09
+that's behaving like a memoryless distribution even all the other weird things that don't look like this curve
+59:16
+and have a c of one will often times behave in a queuing standpoint as if it were memoryless which is kind of
+59:22
+interesting um the past in when c is one the past says nothing about the future
+59:27
+uh when there's no variance which is deterministic c is zero why is that well that's because the variance is zero
+59:34
+and therefore c is zero there's another thing is if you have sql 1.5 for instance typical disks
+59:40
+have a c equal 1.5 for instance that's a a situation where the variance is a
+59:47
+little wider than memoryless and so you end up with a slightly different distribution but
+59:54
+that's typically what people see on disks okay so to finish this off
+1:00:00
+now um if you think about queuing theory we've been leading up to this anyway but you can imagine a queuing system where
+1:00:06
+you draw a box around a queue and a server you have arrivals and departures the arrivals on
+1:00:11
+average equal the departures on average otherwise the system blows up uh the rivals have a probabilistic
+1:00:18
+distribution the service times have a probabilistic distribution and what we're going to do is we're
+1:00:24
+going to try to figure out how big the q is on average okay and so for instance
+1:00:29
+with little law little's law applied to this we can say that if we know the amount of time i
+1:00:35
+wait in the queue t sub q times lambda which is the rate at which things come in that'll tell me
+1:00:41
+how long the q is so if we could say compute one of these guys we could get the other one pretty easily
+1:00:47
+so uh perhaps we're interested in seeing whether we could compute t sub q and then we can figure out the length of
+1:00:53
+the q later okay just by using little's law
+1:00:58
+all right so some results so assumptions are first of all the system's in equilibrium we talked about
+1:01:03
+that earlier there's no limit to the queue time between successful arrivals is random
+1:01:08
+and memoryless for instance okay on the input
+1:01:14
+so we're gonna we're going to go back to our notion that memoryless
+1:01:20
+appear represents a situation where you have a bunch of random things that are uncorrelated that
+1:01:26
+all summed together and are coming in we'll call it memoryless with some lambda and what we're going to do is our
+1:01:32
+cueing theory uh is going to assume that okay and so the departures are going to
+1:01:40
+be um an arbitrary distribution but the input's going to be memoryless
+1:01:45
+okay so if you look here we have an arrival rate lambda which is
+1:01:50
+a memoryless uh distribution and a service rate which could be an arbitrary distribution so
+1:01:55
+like a disk drive and mu is going to be one over the time to service okay and that's just t
+1:02:01
+sub s is the average time to service the customer c is going to be the squared coefficient
+1:02:07
+of variance on the server and so in a typical problem you're going to get a couple of these variables and
+1:02:12
+you'll have to compute the other one so oftentimes for instance you might have to figure out what c is and usually you have a very clear way
+1:02:20
+to figure that out like this is a deterministic server time where it always takes exactly the same
+1:02:25
+amount of time to service that would be c equals zero or this is a memoryless service time
+1:02:30
+then you know c equal one or it's something else and we tell you what c is okay
+1:02:35
+um so usually you'll be able to do that pretty easily notice that if you know that the average time to serve something you
+1:02:43
+can take one over that to get mu or if you know mu you could take a one over that to get the average service
+1:02:48
+time so these are related to each other and so typically getting three of these variables you can
+1:02:54
+get the other two okay and so for instance
+1:03:00
+a memoryless service distribution it's often called an mm1q this is where not
+1:03:05
+only is the input memory list but the output server is memoryless as well and so
+1:03:10
+you would say that in that mm1q where c equals one then the time in the
+1:03:16
+q is actually rho over 1 minus rho times the service time so if your
+1:03:22
+disk on average took a second and you know what row is like say rows a half
+1:03:28
+okay then you could say a half over one minus a half which is one says that the time in the
+1:03:33
+queue is about it is about uh 0.1 seconds or 0.5 seconds right so this is a very simple mm1q
+1:03:41
+distribution and amusingly enough if you have a general service time which
+1:03:47
+is not memoryless on the output um you can just say one plus c over two so the only difference
+1:03:53
+in this is that c is now varying if you have something that's general and if you notice the difference between
+1:04:00
+this first one and the second one if c equals one then one plus one over
+1:04:05
+two is one and so these two are uh this one merges into that one when c
+1:04:10
+equals one and you have a memoryless input okay now yes
+1:04:17
+126. there's some similarities here fortunately we're not going to go any further with than this
+1:04:22
+okay are the dash is part of the equation no i'm sorry this is a little confusing this dash is the uh the dash is part of
+1:04:28
+the um part of the uh powerpoint here i realize that's
+1:04:35
+confusing my apologies in fact you know what i'll fix the slide when i put up the
+1:04:41
+put up the um the pdf so that it doesn't have the dashes there because i agree that's bad
+1:04:47
+so here's some uh results here if we know what the time in the queue is
+1:04:53
+which we can just compute based on this if you know utilization you know the service time you get the
+1:04:58
+time of the q from little's law we can get the length of the q all right if we uh we can compute rho
+1:05:05
+by saying it's lambda over mu max or lambda times t sub s and so we can work this all out and find
+1:05:12
+out for instance that the length of the q is rho squared over one minus rho i hope
+1:05:17
+you've all seen this one over this one minus rho in the denominator that means that as rho gets closer to 1
+1:05:24
+what happens to this equation or all of these equations as the utilization goes to 1. what do we
+1:05:31
+see infinity that's right so this is a curve
+1:05:37
+that blows up all right just like you've been seeing okay and so rather than the ideal system
+1:05:45
+performance we saw the moment we have some randomness on the input
+1:05:50
+we suddenly have a we don't have that green curve instead we have the time in the q
+1:05:56
+is rho over one minus rho and we get this okay so the latency goes up to infinity as we get close to
+1:06:04
+mu max in our input rate which is the same as getting close to rho equal one okay and so
+1:06:10
+this behavior is because of this these equations all have rho or one minus rho
+1:06:15
+in them and rho is lambda over mu max so as lambda over mu max goes to one
+1:06:20
+we blow up okay and so this is a very funny side effect
+1:06:27
+of randomness on the input because if we had determinism on the input we would get the green curve
+1:06:32
+okay look at the difference and obviously we wouldn't be going past one here either but we would
+1:06:38
+have much less of a blow up okay so why does the latency blow up as we approach 100
+1:06:44
+because the cube builds up on each burst then it never drains out and so you got a problem okay
+1:06:51
+very rarely do you get a chance to to drain and so pretty much i i think of this uh curve
+1:06:57
+here is a as a indicator of all sorts of things in engineering and life for that matter you
+1:07:03
+never want to get close to 100 utilization on anything because all of the things you're going
+1:07:08
+to encounter have this blow up behavior as you get close to 100 percent and that's because there's just
+1:07:14
+randomness in pretty much everything and just that little bit of randomness causes this weird behavior
+1:07:19
+and now you got to worry about that 100 percent and you know think about it you got a bridge that's
+1:07:25
+set at 100 um you know 100 tons you don't want to be running 99
+1:07:32
+tons over that bridge because you know the slight randomness on the input of that weight with some extra wind or whatever is going to cause a bridge to
+1:07:39
+collapse and you got a problem okay one thing that's interesting is
+1:07:45
+what we would call the half powerpoint which is a load at which the system delivers half of its peak performance okay because
+1:07:52
+keep in mind that what we're seeing here is latency all right what is latency is
+1:07:59
+the time for when i get into the front door of the mcdonald's to when i have my hamburger that's
+1:08:04
+what i perceive as latency however what we do have and we do know is that
+1:08:10
+when we look at this half power point where lambda is equal to mu max over two
+1:08:16
+that's the point at which uh the servers that are at the counter are
+1:08:22
+basically handling half as many hamburgers per unit time as they could it doesn't matter that i as a hamburger
+1:08:28
+user see a really long latency i'm getting a lot of hamburgers out the door if i'm the mcdonald's in fact as i get closer to
+1:08:35
+one i'm actually happy here because uh as a mcdonald's owner because i'm getting my maximum hamburger right
+1:08:40
+out the door but from the standpoint of the overall system this half powerpoint is often a
+1:08:46
+really good point to be because it's kind of that point just before things really
+1:08:51
+go blow up on latency and so it's the point at which things are the system is operating pretty well once
+1:08:57
+you get to the right of that now you got problems and you got to start worrying about there being basically too much load in
+1:09:04
+the system okay and that's when you got to start thinking about this okay what do you do
+1:09:09
+and you can do lots of things if i want to get lambda over mu max to be smaller
+1:09:15
+i could make mu max bigger right how would i what's the simplest way to make mu max twice as big as it was before in the
+1:09:22
+case of hamburgers
+1:09:27
+anybody think about that add a server exactly double the
+1:09:34
+restaurant if you double the number of people cooking hamburgers what you did was you pulled yourself back from the brink
+1:09:41
+back to the half power point okay order from another mcdonald's yes you could do that too that's another
+1:09:47
+server so the point here is that we could go for more servers or we could try to reduce lambda those are two ways of improving
+1:09:54
+our current situation okay and and i wanted to close this a little bit so first of all i wanted to back up here
+1:10:01
+and show you so i can compute if actually let's go back to this one if
+1:10:08
+i know c and i can compute rho and i know t sub s
+1:10:13
+then i can come up with t sub q which is then going to let me with little's law figure out the length of the queue so
+1:10:18
+pretty much three items rho c and t sub s or
+1:10:23
+different combinations of the one of these guys down below give me enough to come out with how long somebody waits in the
+1:10:29
+queue which gives me enough to figure out uh what the length the number of items in the queue are
+1:10:35
+so the way to come away from today's lecture is once you've figured out how to identify these different pieces
+1:10:42
+then you can plug them in and you can get a back of the envelope estimation of where you are in
+1:10:48
+the curve okay where are you in this curve here are you in the reasonable linear
+1:10:55
+area here where a slight increase in utilization doesn't
+1:11:00
+blow up the time or are you in the in the part here where a very slight increase in utilization suddenly gives
+1:11:07
+you everybody a huge increase in average latency time okay that's what you want to get out of these equations
+1:11:13
+okay and so let's take a look here just for a moment to remind you of the deterministic case
+1:11:19
+right here's a case where something arrives it's going to get serviced another one's going to arrive service
+1:11:24
+arrive service and i'm going to have the arrival be deterministic with no bursts
+1:11:30
+and the service time is deterministic and what i see as a result is i can compute the average
+1:11:38
+arrival rate and the average service time so the average arrival rate is one over
+1:11:43
+the service time the average service time is one over service time and lambda is
+1:11:48
+exactly equal to mu in this deterministic situation but it doesn't blow up why there's no randomness on the input
+1:11:55
+right because i can exactly service a hundred percent if they're all uh
+1:12:01
+point-to-point next to each other and things arrive at exactly the right rate okay so you can imagine this never
+1:12:07
+happens in reality instead we have this where even though we have the same average
+1:12:13
+arrival rate we put some burstiness in which is we have a bunch of them show up
+1:12:18
+and a bunch of other ones show up and we have these long tails of time and what happens is when we get our
+1:12:25
+burst we're going to start servicing them as quickly as we can because they're in the queue
+1:12:31
+and then we have this little long tail where nothing happens for a while and then we get another burst and so on
+1:12:37
+and why do we get this response time as we get close to 100 percent it's because when we got burstiness
+1:12:43
+we've got these little gaps and we never have a chance to make up for our missing time okay so that's why burstiness leads to
+1:12:51
+this curve uh of growth okay
+1:12:57
+good so let me give you a little example here so suppose the user requests 10 8k disk ios per second the request
+1:13:05
+and service times are exponentially distributed so that means that c is equal to one
+1:13:10
+so exponentially distributed memory list those two are the same thing right average service time at the disk is 20
+1:13:17
+milliseconds which i'm going to say is controller plus seek plus rotational plus transfer
+1:13:22
+added together on average it'll be 20 milliseconds and so we can now ask these questions like how utilized is the disk
+1:13:29
+rho is equal to lambda times the service time okay so what's uh what's lambda here
+1:13:35
+well lambda is 10 uh requests per second the service time is 20 milliseconds okay
+1:13:42
+and so i can compute lambda is 10 per second the service time is 20 milliseconds
+1:13:49
+which is 0.02 seconds don't forget to keep your units together and so row which is the server utilizations just lambda t sur
+1:13:56
+so the utilization here is 0.2 so 0.2 is a low utilization so i know that i'm doing okay all right
+1:14:03
+and um so the time in the queue is just the service time oh by the way i'll fix this this is rho over one minus rho
+1:14:10
+sometimes people use u as utilization so rho over 1 minus rho is 20 times 0.2
+1:14:16
+over 1 minus 0.2 i compute that i get 5 milliseconds or 0.005 seconds
+1:14:22
+so the time i'm sitting in the queue is only 5 milliseconds the time service from the disk is 20 the
+1:14:28
+total time from when i submit the request to when i'm done is 25 milliseconds right that's the sum okay and
+1:14:35
+the average length of the queue here is only 0.05 so this q is really not building up right it's got
+1:14:42
+an average 0.05 things in it if i uh make the request much faster
+1:14:49
+i will very quickly get to where the cube completely dominates all of the time on this all right good questions before i put
+1:14:57
+this and i'll fix this u over 1 minus u this is rho over 1 minus rho here sorry
+1:15:03
+i switched my notation to be consistent with somebody else and i missed one
+1:15:10
+all right good um so the average time so never forget this
+1:15:16
+right how long do i sit in mcdonald's it's my time in my queue plus the time being served so in
+1:15:21
+this case it's the 20 milliseconds being served and the 5 milliseconds in the queue gives me 25
+1:15:27
+total milliseconds okay good so you're now good to go on solving a cueing theory problem
+1:15:37
+okay there's a bunch of good resources that we have up on the resources part so you can take a look at some readings
+1:15:42
+and so on okay and there's some previous midterms with queuing theory questions as well but you should assume that maybe
+1:15:48
+queueing theory is fair game for midterm three now um so now we can um how do we
+1:15:55
+improve performance if our queue is going crazy we can make everything faster okay well
+1:16:00
+we get uh we we hire a bunch of really crazy hamburger
+1:16:06
+fryers and we give them you know 10 times the heat on the grill
+1:16:11
+and they have to flip really fast and maybe that's faster or we could put more of them okay steroids that's right
+1:16:17
+hamburger flippers on steroids we could have more more parallelism that's a more reasonable thing to do right
+1:16:23
+um we could optimize the bottleneck well we could figure out what is the bottleneck in frying hamburgers maybe
+1:16:29
+it's getting the hamburgers from the back who knows what it is but we could optimize that to make the
+1:16:34
+overall service times better okay and we could do other useful
+1:16:39
+work while waiting so that's kind of what we do with paging where we switch to another
+1:16:45
+process to run it while we're waiting for the disc to complete our paging okay
+1:16:52
+cues are in general good things because they absorb bursts and smooth the flow but anytime you have a cue you have the
+1:16:57
+potential for a response time behavior that goes like this okay and so cues are
+1:17:02
+are both a blessing and a curse from that standpoint and oftentimes what you do is you limit the maximum
+1:17:09
+size of a q so that the bursts are too much then what happens is you put back pressure
+1:17:14
+and you slow down whoever is generating the requests by explicitly telling them they can't submit anymore because the
+1:17:19
+queue's full so that's a that's a response to a cubing to full and a lot of systems do that as well
+1:17:27
+okay and you could have finite cues for admission control and that's what i just said okay all
+1:17:33
+right questions
+1:17:40
+now when is disk performance the highest it's the highest when there are big sequential reads
+1:17:46
+right what's that mean that means that i move the head and i rotate to get the starting point
+1:17:52
+and then i just read a whole bunch of blocks off the disk a whole bunch of sectors okay or when there's so much work to do
+1:18:01
+that um you have many requests and what you do is you piggyback them together and you move the disk uh
+1:18:09
+in a way that optimizes for all the set of requests that are out there rather than individual ones which may cause you
+1:18:15
+to move around okay and when the disk is not busy it's okay to be mostly idle
+1:18:22
+okay so births are bad because they fill queues up but they
+1:18:27
+are an opportunity because if we have a bunch of requests we may be able to reorder things and get
+1:18:32
+better overall efficiency of our disks okay and so you can come up with many other ways of optimization here
+1:18:40
+you know maybe you waste space by replicating things and so that when you go to read it's faster so when we talk about raid
+1:18:47
+one of the things we get out of raid is we have multiple copies of things which make it faster to read
+1:18:53
+when we're under high load because we can choose to get our data off of any of many different disks at a time okay so it
+1:19:00
+gives us a way to do parallelism we have may have user level drivers to
+1:19:05
+try to reduce cueing as represented by software in the kernel
+1:19:10
+maybe we could reduce the i o delays by doing other useful work in the meantime there are many ways of making things faster
+1:19:16
+okay but i want to close out this discussion i was going to talk a little bit about the fat
+1:19:22
+file system today but i think i'll save that for next time but i do want to say a little bit about scheduling to
+1:19:27
+make things faster okay that's useful from a disk standpoints so suppose um we recognize the fact that
+1:19:36
+the head is assembly is is stuck together and so we have to move the head as a unit
+1:19:42
+and so um how do we optimize this thing because the anytime we deal with
+1:19:48
+mechanical movement like moving in the head or waiting for a rotation to happen things slow down
+1:19:54
+okay and so uh if we allow ourselves to queue up a bunch of requests
+1:19:59
+we could do one thing which is the obvious one which is we handle the first request this is basically saying we go to track two
+1:20:05
+sector three track two sector one track three sector ten track seven sector two so we could take
+1:20:11
+them in the exact order in which they were cued and that would be
+1:20:16
+okay i guess except that we could very easily have to go all the way into the to the inside of the disc and then all
+1:20:22
+the way to the outside and back to the end and so on because we have a set of requests that
+1:20:28
+don't have any locality with them the alternative is to try to optimize
+1:20:33
+for our head movement okay and so this one example here is the sstf or shortest
+1:20:39
+seek time first option where you pick the request that's closest on the disk and so if the disk
+1:20:44
+head is here i might go request one then request two then request three then request four and
+1:20:51
+what i'm doing is i'm reordering my requests so that they're one two three four so
+1:20:58
+that the disk head is kind of spiraling its way out in a single movement okay and so this is
+1:21:05
+um and although this is called sstf today you have to include all sorts of things like rotational delays in the
+1:21:12
+calculation since it's not just about optimizing for seek you also have to optimize for rotation
+1:21:18
+uh the pros of this is that you can minimize your your head movement as long as you have a bunch of things queued up the cons is
+1:21:24
+you can lead to starvation because it's possible that if a bunch of things keep arriving on the queue
+1:21:30
+and you force the disc head to keep servicing things uh in the local area you know maybe on the inner part of the
+1:21:36
+disc inner tracks you may never get to the outer tracks and so sstf could optionally um
+1:21:44
+even as you're limiting the disk movement you're causing a lot of requests to get stuck and never
+1:21:50
+serviced okay so that's a problem and now this kind of goes back to our scheduling when we were talking about
+1:21:55
+cpu scheduling where we could end up with low priority tasks never essentially getting
+1:22:01
+any cpu what's a low priority read well low priority read in this case
+1:22:06
+is something that's far away in tracks relative to the uh continually
+1:22:12
+arriving requests now another thing we could do is uh which is often called the elevator
+1:22:18
+algorithm is we take the set of requests and rather than doing that movement on the fly by taking a look at
+1:22:26
+the cue we instead move in a single direction at a time so
+1:22:32
+we started a given track we spiral our way out then we spiral our way in and so on and
+1:22:39
+as we're doing that we grab all of the requests that are relevant to our given direction
+1:22:48
+and position okay and you can see why this is called the elevator algorithm because it's just like an elevator just rotate this side
+1:22:54
+on its side and imagine an elevator going up and down that's exactly what happens it sort of stops at each floor
+1:23:00
+services people and so on the analogy of which floor is of course which cylinder you're on
+1:23:05
+and we deal with that by uh by sorting the input requests okay now one of the things that we might
+1:23:13
+worry about this is that this has a tendency to favor tracks that are in the middle
+1:23:19
+because we're kind of going out and coming back in and there's a lot more time kind of spent on the inside and so there is something called
+1:23:26
+circular scan which is normally a little better where we always uh service going in one direction and we
+1:23:32
+have a very quick spin back to another place and go out okay so that's uh that's the circular scan or
+1:23:39
+c scan
+1:23:46
+questions now you might imagine asking who does
+1:23:53
+this well clearly the operating system could right the operating system could take a look at all the requests
+1:23:59
+that are it's waiting on and it could do a reordering of them so as to do
+1:24:06
+either the elevator or the faster the c-scan algorithm and
+1:24:12
+thereby optimize head movement so remember that this is only useful when we have a full cue if we have an empty queue it
+1:24:19
+doesn't matter because we're not um trying we're not overloading the resource um so we wait
+1:24:24
+you know when there's a queue then we re we reorder it based on c scan now the issue that's of interest
+1:24:31
+which can anybody tell me about modern disks and possibly optimizing like this is this
+1:24:37
+something that the operating system wants to do
+1:24:48
+what do you think
+1:24:58
+could be a what could be a downside of the operating system doing this can anybody think
+1:25:05
+i think people are thinking too hard
+1:25:16
+okay very good we have some interesting uh comments in the chat so first of all
+1:25:23
+um the operating system has to know the head location so that's a that's an issue certainly and
+1:25:30
+we'll uh we'll talk more about this moving forward but um in modern discs
+1:25:35
+the controller takes in a series of requests and does all of this reordering itself so in many
+1:25:41
+cases the modern operating system and device driver doesn't even know exactly where
+1:25:48
+the disk head is or how the logical block ids actually map to physical
+1:25:53
+blocks so that's one issue the second issue is that the modern controllers actually
+1:25:58
+take a bunch of requests in and do the elevator algorithm themselves and so the operating system trying to do
+1:26:04
+that and by the operating system i mean the device driver as well the issue with that trying to be computed on
+1:26:10
+the host is that the disk itself is already doing a lot of that stuff because they're much more intelligent than you might think
+1:26:16
+today so while in the old days this kind of disk scheduling was definitely done by the operating system device driver
+1:26:22
+combination today uh some of it is still done but it's a bit redundant with what
+1:26:27
+the disk can do okay so i want to finish up uh actually i think we'll pick this up
+1:26:33
+next time so in conclusion we talked about disk performance uh a lot last time and we've brought it back
+1:26:40
+by talking about cueing time plus controller plus seek plus rotational plus transfer time we
+1:26:45
+talked about rotational latency right so that's the on average half of a rotation
+1:26:51
+the transfer time has to do with the spec of the disk as to how fast it is um pulling things off the disk
+1:26:58
+technically it also depends on whether you're reading from the outer track or the inner track because the transfer times are faster on the outer tracks but
+1:27:04
+usually we give you an average transfer time this queuing time uh was something that
+1:27:10
+we didn't talk about initially but the devices have a very complex interaction and performance
+1:27:16
+characteristics we talked about q plus overhead plus transfer um and the question of sort of an
+1:27:22
+effective bandwidth which varies based on the devices we talked about that last time this queue is really an interesting
+1:27:29
+thing right so the file system which we we haven't quite gotten to is really going to need to
+1:27:34
+optimize performance and reliability relative to a bunch of these uh different parameters and
+1:27:42
+the other thing that we talked a lot about today is the fact that bursts and high utilization in introduce queuing delays and so
+1:27:49
+finally the skewing latency for mm1 which is memoryless input memoryless output one
+1:27:55
+queue or mimilous input general output 1q are very simplest to analyze and
+1:28:00
+basically you can say that the time in the q is the time to service times this one half one plus c
+1:28:06
+factor times rho over one minus rho and that goes to infinity as latency as
+1:28:12
+uh utilization goes to 100 percent okay um next time we'll talk a lot more about
+1:28:19
+file systems uh we didn't get to them today but um we'll pick up with the fat file system and then we'll move on to
+1:28:26
+which is in use today and then we'll move on to some real file systems uh that are more interesting than the fat file system next time as well
+1:28:33
+so i'm gonna uh bid to do it to everybody please vote tomorrow very important um try not to be stressed
+1:28:39
+about it uh i think that it'll all work out well in the grand scheme
+1:28:44
+alrighty you have a good night

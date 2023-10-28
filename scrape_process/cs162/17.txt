@@ -1,0 +1,1638 @@
+0:03
+welcome back everybody um we are going to continue and finish
+0:08
+up our discussion of demand paging a bit and then uh move on and talk about some io
+0:13
+it's hard to believe we're already on lecture 17. but anyway welcome to cs162 uh if you remember last
+0:20
+time we were talking about the notion of using the virtual memory system to to build essentially a cache uh which we
+0:27
+call demand paging and we came up with this effective access time which looks very
+0:35
+much like the average memory access time and the key thing to note is this uh simple equation here which
+0:42
+basically says uh memory access time from dram say 200 nanoseconds um page fault going to the disk maybe
+0:49
+eight milliseconds and we built uh keeping our units constant of course we built ourselves an
+0:54
+effective ad access time and what we see there is really this value of p here that if
+1:02
+one axis out of a thousand causes a page fault your effective access time goes up to 8.2 microseconds
+1:09
+which is a factor of 40 larger than the dram so clearly one out of 1000 is not a good
+1:16
+idea and notice i'm talking about dram here with 200 nanoseconds if we were talking
+1:22
+about cash it would be even faster and a bigger slowdown and so we can do this uh slightly
+1:28
+differently we can ask well if we want the slowdown to be less than ten percent then um what do we have to have for a
+1:35
+page fault rate and we find that it can't be any larger than one page fault and four hundred thousand
+1:41
+so uh this means that we really really really have to be
+1:46
+careful not to have a page fault if we can at all avoid it which led us
+1:51
+to basically considering our replacement policy as being very important to try to keep as much
+1:58
+data that we need in the cash as possible now we went through several policies
+2:04
+last time and we talked about how lru was a pretty good policy but
+2:09
+uh impossible to implement and so we came up with this clock algorithm if you remember and the reason it's called the clock algorithm is
+2:16
+because it looks like a clock we basically take every uh dram page in the system and we link
+2:21
+them together so typically in an operating system like linux or whatever that means that every
+2:27
+physical page or range of physical pages has a descriptor and those descriptors are
+2:32
+linked together and we have a clock hand which says which page we're currently looking at and uh we're going to work our way
+2:39
+through and on every page fault the clock algorithm says um
+2:45
+what do we do well we sort of take a look at the hardware use bit which is usually in the page table entry
+2:51
+and if it's uh a one it means that the page has been used recently and if it's a zero
+2:57
+it means that it hasn't and so what we're going to do in general is uh we're going to advance the hand we're
+3:03
+going to take a look at the use bit and if the use bit is 0 we're going to assume that it's an old page and therefore we
+3:09
+uh go ahead and reuse it if it's a 1 we know that it's been used recently
+3:14
+what do i mean by that well if we see a one and can't reuse that page we set that use bit to zero
+3:20
+again and then we go on to the next one and we keep repeating until we find one where the use bit is zero
+3:26
+and the key idea here then is that if we see something that's a one it means that the page has been used
+3:32
+since the last time we came around the loop okay and so really what we said was yes
+3:37
+this is not lru but it divides the pages into kind of two categories uh one
+3:44
+that is recent pages and ones that are older pages and we pick an old page now it's the
+3:50
+number of pages in the clock the number of total pages and the answer is uh it's the total
+3:55
+number of pages uh in the system okay now the question
+4:00
+here about is it uh the number of pages in the page table the reason that question isn't quite
+4:06
+what you thought you were asking is that every process has a page table so there are many page tables in the
+4:11
+system and each of them point at parts of this so what's in this clock is all of the
+4:16
+physical pages not the pages in the page table okay because there are many page tables
+4:23
+and the hardware does not set the use bit to zero unlike what was on uh in the chat here what happens is the
+4:29
+hardware only goes from zero to one when the page has been touched the operating system sets it to zero and
+4:34
+it sets it to zero uh when it's decided that it's not going to recycle that page it sets it to zero
+4:40
+and moves the clock hand on to the next okay so the operating system sets it to
+4:46
+zero the hardware sets it to one okay are we clear everybody
+4:54
+and the other thing we talked about last time and you should go back and take a look is how to emulate this bit so the use
+4:59
+bit and the dirty bit which is typically tells you that uh the page has been written uh both of those
+5:05
+can be emulated in software if you're willing to take more page faults and i talked about that last time all right
+5:13
+the other thing we talked about was the second chance algorithm which is uh has the same goal as a clock
+5:20
+algorithm which is to find me an old page notice how he said that an old page right we're looking at an old
+5:27
+page not the oldest page so the second chance algorithm has the same idea
+5:32
+and this was uh designed in the vax vms where uh through various reasons the hardware
+5:38
+didn't have a use bit and so this was a different algorithm than clock and the idea here is two groups of pages
+5:46
+the ones in green are mapped and ready to use the ones in yellow are there and they
+5:51
+have their contents but they're marked as invalid in the page table okay and in page tables and so now what
+5:58
+happens is the ones in yellow are put together in an lru list the ones in green are
+6:04
+handled fifo and uh what we do is the following so these green pages are the only ones that
+6:09
+we can actively access in hardware without doing anything if we happen to touch a green
+6:14
+page we're good and we can go forward okay if we have um
+6:21
+a page fault it would be because the page we're looking for is not in the green area now it might be in
+6:27
+the yellow area and if it's in the yellow area what we're going to do is we're going to pull the page from the
+6:32
+yellow area into the green area just by reassigning it's what categories in and
+6:37
+enabling the page table to allow it to be used otherwise we'll pull off of the disk
+6:44
+okay now we can make a better approximation to lru was asked about having multiple use bits
+6:49
+the problem is it's not really easy for the hardware to have multiple use bits but as was also mentioned in the chat you
+6:54
+should take a look at the nth chance clock algorithm which gets you closest to lru so let's look at this one
+7:00
+now so um basically what happens is uh full speed for the green ones we get
+7:06
+page fault on the yellow ones but we don't have to pull it off of disk and last but not least are the pages that are on disk
+7:11
+and so if you notice what happens here is if we have a page fault we uh take the top green page and we put
+7:18
+it at the end of the lru list and now we have to pull the page that we're looking for
+7:24
+into the green list now if we're lucky enough and it's in this second chance list we can immediately pull it out in the middle of the second chance list assign
+7:30
+it to the green list and the end and we're done and we can return and start executing
+7:36
+and notice that the yellow again is being handled as an lru list because we put things new pages on one side and we pull them
+7:42
+out of the middle and so we know that the one on the end at the very top here is the the oldest
+7:48
+in the uh yellow list okay and so if the page is not in the yellow list we have to pull it off of the disk
+7:54
+and so we pull it off of the disk and put it at the same spot in the green and at that point we're going to throw out the oldest page from
+8:02
+the yellow okay and so this is now a an approximation uh that gets us an
+8:10
+old page to throw out which is this top yellow one
+8:15
+and is uh and sort of has the same purpose as the clock algorithm and this was designed in an architecture
+8:20
+namely the vax that didn't have a use bit in hardware all right okay
+8:27
+good great so um the other thing i kind of pointed
+8:34
+out is the way we introduced the clock algorithm was that every time you had a page fault you'd run the clock algorithm to find a
+8:40
+page well of course the problem with that is many fold not the least of which is that it means
+8:48
+that you can't actually start paging in off of the disk until you find a page to throw out
+8:53
+and so the disk we know is going to take a really long time so we want to get started as soon as absolutely possible
+8:58
+so instead of uh basically running the clock algorithm when we have a page fault what we do
+9:04
+is we just keep a free list and the free list is some number of pages that are ready to be reused
+9:10
+and they're like the second chance list okay so they're not mapped i should really make these yellow i
+9:15
+guess but i like the red and green combination here but call this a second chance list and
+9:20
+we have a demon called the page out demon which works its way around trying to find
+9:26
+enough free pages or enough old pages to put on the free list and at the same time we can also have
+9:32
+ones that happen to be dirty we can write them out to disk and so that by the time we get to the head of the free list this page is
+9:39
+not dirty and ready to be reused okay and it's just like the vac second chance
+9:45
+list except we have a clock for the active pages and a second chance list for the free list
+9:50
+and why do i say this well if you happen to have a page fault that happens because of a page that's
+9:56
+still in this free list we can immediately put it back in the clock ring and reuse it okay
+10:04
+so a daemon is really uh basically a kernel thread that's always running um is one way to look at that so uh the
+10:11
+operating system starts up some number of threads that are only running in the kernel and they don't have a user half
+10:16
+or it's um something that runs uh that started up its startup time in
+10:23
+the operating system and it's running with root privileges and uh it's running all the time that's typically called a demon as well
+10:29
+all right now call it a background process if you like
+10:35
+so now on to where we were at the very end of the lecture so we were talking about this idea of a reverse page
+10:41
+mapping so think about page table as forward basically says for every virtual address
+10:47
+find me a page and i can figure out if there is a mapping what the physical page is the problem is
+10:52
+that occasionally if i want to evict a physical page we've been talking about when you'd want to do that you have to
+10:59
+figure out all of the page table entries and really page tables that hold that and the reason this is tricky is because
+11:05
+it's possible that for a given physical page there might be many processes that point at it we talked about when you fork processes
+11:12
+you have a bunch of page tables that point to the same physical page we've talked about shared memory etc and
+11:18
+so uh basically this is a reverse mapping mechanism that goes from a physical page to all of the virtual
+11:24
+uh page table entries all the page table entries that hold it okay so it needs to be fast we talked
+11:30
+about that last time there's several implementation options options one is you could actually have a
+11:35
+page table or a hash table whatever that goes from a physical
+11:40
+page to uh the set of page tables or processes that hold that page
+11:47
+and you know that that's fine you can build that in software in the operating system it's a little expensive potentially
+11:53
+linux actually does this by grouping physical pages into regions and it deals with regions
+11:59
+at a time and that uh since there's a smaller number of entries it makes that a little faster okay but the essential idea is to
+12:05
+basically go from a physical page to the set of page table entries that hold that physical page
+12:13
+okay now on to what we haven't talked about so how do
+12:18
+we actually decide which page frames are going to be allocated amongst
+12:24
+different processes so we have a physical amount of memory i don't know 16 gigabytes okay whatever it is and
+12:32
+we've got a modern cloud server it might be terabytes these days and the question is how do we divide
+12:37
+that physical memory up on the different processes uh so that you know i don't know is it for fairness
+12:44
+or what what's the question there well um we have many policies this is a
+12:49
+scheduling decision so does every process get the same fraction of memory if i have 100 processes
+12:54
+you know and i got 100 gigabytes each gets a gigabyte but maybe different processes
+13:01
+have different fractions of memory that they need to actually run if you happen to have a process that basically reuses the same page over and
+13:08
+over again giving it you know 100 gigabytes of storage
+13:13
+is not going to be helpful and it's wasteful somebody else might need that memory okay
+13:19
+um it may be the case that we have so many processes running that there's so much memory that's needed that we're spending all our time
+13:25
+thrashing and maybe we ought to actually swap the whole process out to give our machine time to run
+13:32
+okay that's a desperation scenario okay well the other thing to keep in
+13:37
+mind is that every process needs a minimum number of pages and the way to think of that is you've clearly
+13:42
+got a page where the current um instruction pointer is you want that
+13:48
+one in memory otherwise you won't be able to execute and you want some number of uh of dram
+13:54
+pages that would basically uh be the ones that we're currently accessing and you you know if you don't have that
+14:01
+you're not going to be able to make forward progress okay um and uh for instance on the ibm
+14:08
+370 uh uh you might actually need six pages to handle the
+14:13
+single ss move instruction so there was a question in the chat that won't don't we just figure this out dynamically
+14:19
+the answer is mostly yes except there are a minimum number based on the architecture of pages just
+14:25
+to guarantee forward progress of one instruction to execute okay and it's not about full associativity in
+14:33
+this case it's about making sure because remember we have hundreds of processes it's about making sure that every given
+14:39
+process has its minimum number so that when we go around to scheduling it we actually can execute okay
+14:47
+so we could when we're ready to replace a page we have a couple of options so
+14:53
+what do we mean by replacing a page it means we have a process that's trying to run it needs a page that's out of memory
+14:59
+where do we get the memory from now we can use the clock algorithm in a global sense which is what we've
+15:04
+kind of been talking about here right we have everything in the same clock uh algorithm and the same clock data
+15:11
+structure and the process just gets a replacement frame from the set of all frames and um
+15:18
+you know whatever process loses it loses it okay so that is uh often done that's a very
+15:25
+common policy is basically all of the pages are in the same boat and they just get
+15:32
+replaced using the clock algorithm another thing that you might imagine in which some operating systems do to be
+15:38
+more fair or if you have a real-time operating system maybe you do this to make sure you meet your real-time goals
+15:43
+is that each process selects uh from its own frames so you you assign physical memory
+15:50
+to the processes and then when a process runs out of memory and needs to page in something it picks
+15:57
+one of its own pages to put out okay so in that scenario you could have each process has its own clock algorithm
+16:04
+to choose which page of its own is an old one and then we need some policy now to decide
+16:11
+how to divide the pages up and maybe we dynamically choose a number of pages per process
+16:16
+okay and that would be a local replacement policy with a um some policy for dividing the
+16:22
+memory up probably dynamically okay so let's look at a couple options here
+16:28
+so one option is that every process uh gets the same amount of
+16:34
+of memory and so this is a fixed scheme so for instance you have 100 frames of
+16:39
+physical memory five processes each gets 20 frames another might be a proportional
+16:44
+allocation scheme where um the bigger process the one that has the
+16:49
+most virtual memory needs gets more memory and we could allocate this uh with some
+16:55
+proportionality constant right so um perhaps s sub i is the size of process p sub i
+17:01
+inter total virtual pages on the disk and so then what we do is we uh say well
+17:07
+what's s i over the sum of everything times the amount of memory i got and so that fraction goes to that process can anybody think
+17:15
+about why although this might sound good this might not be a good plan
+17:23
+okay we have malicious programs and abuse but let's assume for a moment that uh this is not about maliciousness those
+17:30
+those are perfectly good uh answers yes i like i like this next point here so basically
+17:37
+the size of the process is the size of the code all right and what's uh and so in that
+17:43
+sense if you take the binary and you uh link it and you look at the the size of the binary on disk uh
+17:51
+and that would be this proportional allocation scheme why why is that probably not indicative of
+17:57
+the number of pages that this thing actually needs to execute properly anybody think of any good reasons
+18:14
+okay so everybody's kind of uh on the chat is basically getting um the right idea
+18:21
+and the right idea is this you know when you think about it today's uh programming we we link in these huge
+18:27
+libraries that pretty much um you know they're they have a lot of features to them but
+18:33
+we only use some of the features and so the size of the code may have no reflection on the amount of code we're
+18:38
+actually using at any given time so you could have a really large process which is really only using a small
+18:44
+amount of code and this proportional allocation scheme wouldn't do the right thing okay another thing obviously that you
+18:51
+could do is a priority allocation scheme so basically it's proportional but with priorities rather than size
+18:58
+and so um the higher priority uh processes get a choice of more pages to
+19:05
+use okay and so the idea might be if a process generates a page fault pi
+19:11
+you select a replacement frame from all the processes with lower priority
+19:18
+so the question in the chat somebody had said oh dynamic linking is a reason that this
+19:23
+proportional allocation might not work and then the question is why does that have something to do with it and the answer is well
+19:29
+when you uh when your program starts running and it dynamically links a bunch
+19:34
+of libraries we talked about that briefly what you're doing is you're essentially attaching to libraries that are already
+19:40
+in memory and now all of a sudden you've got uh now all of a sudden you've got a much larger process because you've
+19:48
+uh linked in all of those libraries right and so that that might contribute to what you were
+19:53
+considered as your total size and notice by the way that dynamic linking is not the only thing here if we just statically link a large library
+20:00
+that'll increase our size as well okay so maybe the problem with these
+20:06
+schemes is these are kind of fixed they're trying to do something based on static properties of the process and
+20:13
+maybe it'd be better to do something more adaptive okay so what if some application just plain
+20:18
+needs more memory and some other application doesn't need more memory maybe we ought to listen to that okay
+20:26
+and how would we tell what would be a clean a clear sign that a process needs more memory
+20:35
+anybody have an idea page faults lots of page faults what
+20:41
+might be a clear sign that a process doesn't need as much memory as it's got
+20:52
+okay i see i see a bunch of people saying no page faults now you're never going to get no page faults but i would say low
+20:57
+page faults right so the the number of pages the number of page faults is small
+21:02
+relative to some process that really needs them which has a high page fault rate so we could see relative to each other
+21:08
+that perhaps we could reallocate some of our memory and it might be a better idea there okay and so so the question might be
+21:15
+could we reduce capacity misses now if you remember the three c's right um capacity misses are ones that happen
+21:22
+because uh we don't have a big enough cache or in the case of page faults that process doesn't have access to
+21:29
+enough memory and so in this case what we're going to do is um
+21:35
+figure out how to dynamically assign okay and we could imagine that there's something
+21:40
+like this okay so we have the number of physical frames we give to the process on the x-axis
+21:46
+the number of page faults on the y and you could imagine a lower and upper bound which is where we want to be so
+21:52
+not so low on the page fault rate that we're just using memory uh in a way that's not helpful and
+21:59
+certainly not so high because we are going to be thrashing and not making progress but maybe we want to be in this narrow
+22:05
+range here between lower and upper and so as a result if if the number of page faults is above the upper bound we
+22:12
+know we really need more memory and if it's below the lower bound it means that maybe we could give up some of our
+22:17
+memory and we wouldn't notice too much okay and so this this is a specification
+22:23
+for a policy to assign page page rates okay
+22:29
+um of course what if we just don't plain have enough memory so that we can't get anybody below the
+22:35
+upper bound then what okay so we don't have anybody in the lower below the lower bound to
+22:41
+take pages from to help with the upper bound what do we do
+22:46
+yeah and then you cry somebody said right buy more buy a better system yep or maybe
+22:54
+you swap out enough pages uh swap out enough processes so you basically take a running process you put
+23:00
+it completely on disk thereby freeing up memory um so that the
+23:06
+remaining ones can run fast enough and then pull the process back in off of disk and run it
+23:12
+okay because when you're in this region of with a high fault rate what's happening is the overhead's so high
+23:17
+you're not making progress and you're doing a whole lot of swapping in and out okay and so the only thing
+23:23
+your machine is doing is swapping and it's doing it really well and it's doing it really rapidly
+23:29
+okay whereas if we if we take several processes and put them out on disk
+23:34
+to sleep entirely we free up memory then we can get into this uh better region where we're more
+23:39
+efficient and we're actually going to be running much faster on the remaining processes we can complete them and then start pulling
+23:45
+things back in okay so this is a situation where swapping can make a big deal now there was a question
+23:52
+about how we set the lower and upper bound so what's going to happen there is really based on
+24:00
+previous experiments on your operating system you can kind of figure out that things above the upper bound
+24:06
+are really not making progress and things below the lower bound are uh really don't need their pages
+24:13
+the upper bound one you can kind of figure out if you look at the overhead of swapping uh you can kind of figure out what's
+24:19
+that break break even point at which uh you know you're doing
+24:25
+you know 50 50 half swapping half regular perhaps that's an upper bound or somewhere in the middle here that you
+24:31
+don't want to exceed okay so here but the word frame by the way
+24:36
+um is the same as a as a physical page sorry if that's a confusing term there
+24:44
+okay so frame is a physical page
+24:50
+all right so thrashing is a situation where you just plain
+24:55
+don't have enough pages and yes if you could somehow uh buy more memory
+25:01
+you might help but um in fact if you take a look here on the x-axis on this
+25:07
+this uh graph what i've got here is the number of um threads that are simultaneously
+25:13
+running so you could i got this as degree of multi programming this could be the number of processes it could be the number of
+25:19
+threads that are all simultaneously running and the interesting thing about this is as you increase the number of threads
+25:26
+your the fraction of the cpu that you're using starts rising so at some point we have enough threads to keep the cpu
+25:33
+busy can anybody tell me why adding more threads even if you have only one cpu might give
+25:39
+you higher utilization of the cpu why does it even make sense that this
+25:44
+goes up okay because if you think about so there was something here somebody said
+25:50
+there you go somebody said less blocking on io correct all right so the thing is that
+25:56
+um it's not that there's less io what's going on is we have even though we have threads that
+26:01
+are blocked on io we have other threads to run and so we're good to go okay and so this is helping us overlap
+26:07
+computation and uh and io okay now um at some point you hit the
+26:14
+thrashing point where the number of threads you've got is just way too high and you're doing nothing but overhead
+26:20
+and what you get is this precipitous loss of performance okay so it's not just that this level's out but that it just
+26:26
+gets bad and everybody does poorly and that's because you're spending all of your time going on and off of disk
+26:32
+and disk of course is extremely expensive and thereby nobody is making any progress okay so thrashing is a situation where a
+26:40
+process is busy swapping pages in and out with little or no progress okay
+26:46
+so the question is how do we detect it what's best response to thrashing well clearly we would detect it
+26:52
+uh by there being just a very high rate of uh i o going on or excuse me of um
+27:00
+paging going on in fact you could even detect that the amount of time you spend paging versus the amount of time you
+27:05
+spend executing far more paging okay when you're in that situation you're clearly thrashing
+27:11
+and the best response in that situation is really to basically stop some processes put
+27:18
+them out on disk and let the other ones make forward progress and you'll do much better okay
+27:25
+okay the reason that more threads lead to more paging is because they're going to have more unique memory requirements
+27:31
+and therefore you're going to have a lot more paging okay all right the other thing is why
+27:37
+does io help us here the answer is it's if you have a single thread and
+27:43
+it's doing bursts of io followed by burst of computation then when it's doing the i o
+27:48
+it's getting zero cpu utilization so you want to make sure you have enough threads left over so that somebody can always be
+27:54
+computing while the rest of them are sleeping on i o okay and you might the choice on which
+27:59
+ones to page out that's a good policy question all right maybe you pick the one that's got the most pages so the
+28:06
+other ones can run all right or you there's several different policies you can imagine there
+28:13
+so let's talk a little bit about the needs of an application okay so the needs of an application
+28:20
+or a process or a thread is based on its uh memory access okay so if you were to
+28:26
+take we we looked at this couple of lectures ago if you were to take a look at the the memory address space on the the
+28:32
+um y axis here and you look at time on the x what you see is every vertical slice
+28:37
+represents the set of pages of the set of virtual addresses that are actively in use right so we could
+28:44
+scan across for any given point in time little window in time and we could look
+28:49
+at all the addresses that are in use and that's actually our working set so those are the pages
+28:55
+um that have to be in memory during that given time period in order
+29:00
+to make for forward progress okay now um
+29:06
+so one of the answers to what does a process need to make forward progress is it needs to have its
+29:12
+working set of pages in memory and notice by the way let's back that up watching that cool yes so if you were to look at any given
+29:18
+time uh slice what you'd see is the set of pages in that given time slice is different
+29:23
+than the set of pages a little later okay so if you look here is a region
+29:29
+where the memory addresses in this region are in high use but they're not in high use for the rest
+29:35
+of this execution time so only when we're in this region do we need those pages in and so our working
+29:40
+set's changing over time and we want to make sure at any given time that the total working sets of all
+29:46
+the processes that are trying to run or threads that are trying to run can fit into memory and if you if the
+29:51
+total memory you need for the running threads is bigger than will fit in your physical
+29:57
+dram then you got thrashing okay so the working sets the minimum number of pages
+30:02
+so if you don't have enough memory then what well better to swap out processes at that point and the policy for what to
+30:09
+do um you know there are many policies you could come up with the bottom line is trying to free up
+30:15
+enough memory that things can make forward progress okay so here's a model of the working
+30:20
+set which roughly corresponds to this blue bar i showed you in this previous slide so the blue bar
+30:26
+says if we take a look over a period of time window from you know delta to delta plus
+30:32
+something and i'd look at all of the addresses in that range that's the working set at that given time period okay and so
+30:39
+here the working set at time t one is really uh going back a delta
+30:44
+period what is the total set of pages that are in use
+30:49
+and i could write those in set notation pages one two five six seven are in use and those are the
+30:55
+pages that need to be in memory okay if uh you look at this other
+31:01
+time set uh work excuse me you look at t2 then you see that there's a different
+31:07
+set of pages three and four okay now um so the working set window is a
+31:12
+fixed number of page references for instance you might be the last 10 000 instructions
+31:18
+that defines a working set and those are the pages that have to be in memory in order to make forward progress
+31:25
+and so this is actually a model and you can imagine that if delta is too small it's not really encompassing what i need
+31:31
+to run okay and if it's too large it's not going to meet up with the different
+31:38
+periods in the program so if delta is too big so that would correspond to this blue bar being too wide
+31:44
+then i would mistakenly think that i need all of those pages as well as all
+31:50
+of these other ones if the bar was too wide and so it needs to be kind of narrow enough to reflect the
+31:55
+changing patterns of the working set over time okay and of course if delta is infinity
+32:01
+then um you're encompassing the entire program and this isn't really a useful model other than to say well here's all the
+32:06
+addresses that the program uses right that doesn't have enough of a time component to be helpful
+32:12
+okay so this is a good question in the chat
+32:18
+won't we give a lot of memory right as processes change their working set so the answer is really um that as
+32:26
+if you look at the clock algorithm what happens is that dynamically adapts uh so as the working set changes
+32:33
+what really happens is uh the old pages aren't the active ones and i bring in
+32:38
+new ones if i want to be more sophisticated about what's going on here and i see a changing working set then
+32:45
+what i'm really saying is i'm never going to have more pages than fit in that say 10 000 instruction scheme and if i'm really
+32:52
+going to build a paging scheme based on that then as i go through what really happens is i sort of say oh
+32:57
+gee those pages i had before i don't need anymore but i need these new ones and you could let those whole pages be
+33:03
+used by some other process that's getting some new ones okay um so the page faults uh
+33:10
+you know this is kind of averaging over time so as you move forward the page faults aren't going to get
+33:15
+any faster than they would otherwise just by this model this is really trying to model what pages we need to have in core to
+33:22
+make progress and if you were to add up all the working sets for all of the running processes then you get an idea of how
+33:28
+much total memory you need how many total frames and that gives you an idea whether you're in a frashing situation
+33:35
+because d is greater than the total memory you've got okay so the policy sort of is if the demand
+33:41
+is greater than m then you suspend or swap out processes until you can make forward progress and
+33:47
+here the word swap when i say swap out a process that means put the whole thing out
+33:53
+on disk and free up its physical pages so that other things can use those physical pages
+34:01
+now m here is total memory okay so m is what i've got
+34:07
+available for my memory spot of dram
+34:13
+now let's talk a little bit about compulsory misses so compulsory misses are misses that
+34:19
+occur the first time you ever see something um this might be the first time you ever touch a page um
+34:25
+or after the process is swapped out and you swap it back in all right this could be um
+34:32
+the uh this could be a source of compulsory misses after a phase where you've pushed the thing out
+34:38
+um so the question here are demand phase frames basically page faults right now um if we're doing demand
+34:44
+paging what we're saying is we bring a page in as a result of a page fault so demand
+34:49
+paging is the same as pulling something in dynamically as soon as it's needed the the reason
+34:56
+for looking at the working set that we've done is one to give us a better idea how many pages we really need but two it can actually lead to a
+35:02
+slightly more intelligent paging in okay so um you could say that uh
+35:08
+we could do something called clustering which some operating systems do which says on a page fault what you do
+35:14
+in is you bring in multiple pages around the fault faulting page that's a form of
+35:19
+prefetching and um since the efficiency of disk reads increase with sequential reads
+35:25
+which we'll show you as soon as we get to disks uh it makes sense maybe to read several pages at a time rather than just the one
+35:31
+that you page faulted on so that's a way on a demand page
+35:36
+miss to pull in slightly more pages than we're asked for as a way of trying to optimize
+35:42
+our page faults and our compulsory misses okay lower than compulsory misses
+35:47
+the other is actually to do a real working set tracking which is to try to have an algorithm that figures out what the current
+35:53
+working set is for a given process and when you um swap the process
+35:58
+out and then bring it back in maybe you just swap in the working set as a way to get started
+36:04
+and thereby avoid the compulsory misses okay now um let's look a little bit about
+36:11
+what linux does so memory management in linux is a lot more complicated than what we've been giving of course
+36:17
+but um it is interesting to take a look at what they've settled on so among other things linux is uh has a
+36:25
+history that tracks some of the history of the x86 processor and so linux actually has at least three
+36:31
+zones it has the dma zone which is uh memory less than the 16 megabyte
+36:37
+mark originally these were the only places where dma worked well on the isobus i'll say
+36:43
+more about dma uh in in a couple of slides or in a few slides but this is the direct memory access
+36:49
+there's a normal zone which was everything from 16 megabytes to 896 megabytes
+36:54
+okay and this is uh all mapped up at c00 for the kernel i'll show you that in a moment and then there's high memory
+37:01
+which was everything else okay every zone has its own free list and two lru lists which is kind of like
+37:08
+they each have their own clock okay many different types of allocators okay you've started looking in in
+37:14
+homework four you've been looking at ways of making malloc and so on well if you look inside the kernel there's several different
+37:21
+allocators so there's things called slab allocators uh per page allocators uh mapped
+37:27
+unmapped allocators there's a lot of interesting things there there's many different types of allocated memory so
+37:34
+some of it's called anonymous which is means it's not backed by a file at all um some of it's backed by a file so once
+37:41
+we get talking about file systems a little more we'll we'll uh look at some of these uses of memory
+37:48
+there's some priorities to the allocation is is blocking aloud so if you're if you uh remember we
+37:54
+talked about how things like interrupts aren't allowed to go to sleep uh because the interrupt has to be short
+38:00
+okay well blocking that's going to sleep miter might not be allowed in your
+38:06
+memory allocator so if you can imagine you have a colonel malik one of the things you need to tell it
+38:12
+is if you don't have the memory i'm asking for are you allowed to put me to sleep or not if you're in an interrupt handler the
+38:18
+answer's got to be no because if it puts you to sleep you basically crash the machine on the
+38:23
+other hand if you're coming in from a process maybe getting put to sleep is okay so that's the difference between blocking
+38:28
+or not blocking and the allocators inside the linux kernel have to make that distinction
+38:34
+okay so here's a couple of uh interesting things i want to show you so this is pre-meltdown i'll say a
+38:40
+little bit more about meltdown in a second but back at a couple of years ago
+38:45
+we basically had a 32-bit address space looked like this so there was three
+38:50
+gigabytes for the user and another gigabyte for the kernel and what this is is the kernel would map
+38:59
+not only its kernel memory but also every page up to 896 megabytes were also mapped up
+39:06
+here okay and then the user space had up to three gigabytes of virtual memory that it was allowed to use
+39:12
+now what's interesting about this is of course what's in red isn't available to users so if users try to use this
+39:18
+um you get a page fault and ultimately a core dump but as soon as you went from kernel
+39:26
+or excuse me as soon as you went from a user to a kernel like by a system call these addresses are already mapped in
+39:32
+the page table and they're ready to use okay so you know all of the kernel code is up there
+39:37
+all of the interrupt handlers all that stuff and uh every page in the system is up there
+39:43
+all of that's available for immediate use as soon as you go into the kernel okay when you get to
+39:51
+64 bit memory which is considerably bigger so notice that we only have 32 bits of a
+39:58
+virtual address here we have 64 bits of virtual address it has a similar layout but
+40:05
+basically 64 bits give you a lot of memory so much
+40:10
+memory that uh nobody has that much dram yet okay and so you not only have don't have that
+40:17
+much dram you don't really have that much virtual memory even and so what happens there is
+40:22
+even though in principle you could map any virtual address to any physical address
+40:28
+what happens in real processors is there's actually uh what's called the the canonical hole
+40:34
+in the middle okay and that really reflects the fact that the page table only works up to say
+40:40
+48 bits of virtual address and notice the the idea here is that
+40:46
+you'd have 47 uh ones you know from all zeros to 47 ones gives
+40:53
+you the user addresses and then at the top of the space from all ones down to
+40:59
+uh 47 zeros gives you the kernel addresses and then everything in between is basically not
+41:05
+assignable so any uh any attempt to touch that part of the virtual space would cause a page fault
+41:10
+okay and so this layout really reflects the fact that you don't even have all 64 bits worth of virtual
+41:15
+addresses now somebody kind of joked in the chat there that yeah we don't yet have uh 64 bits worth
+41:22
+of physical memory but um yeah someday probably will happen there's
+41:29
+already people talking about 128 bit processors i mean those exist so
+41:36
+i don't know things keep getting larger okay so let's look a little bit more about
+41:42
+what we had here okay now um if you look again what's great about this
+41:48
+arrangement is that every page is available um every page is available
+41:55
+in the kernel and up in this space and um you know all of the kernel code and
+42:02
+everything's available up in this space and so it really makes it easy for the kernel because it can touch any page it can
+42:07
+touch any of its code um and it can basically manage those pages easily okay
+42:12
+and one of the things is that in general those red regions are
+42:18
+just not available to the user there's a couple of special dynamically linked shared objects that are available
+42:24
+to the user and those are moved around randomly every physical page has a page structure
+42:30
+in the kernel they're linked together into the clock and they're accessible in those red regions for 32
+42:37
+megabit architectures as long as you have less than 896 megabytes then every page not only was
+42:43
+in some user's page table but it was also available in that red region up there for the kernel to
+42:49
+to touch so it actually had double uh double mappings okay and then for 64 bit virtual memory
+42:57
+architectures pretty much all the physical memory is mapped above that fff 8 range
+43:05
+okay so this 896 megabyte number comes from having enough space up in
+43:12
+that red region to map 896 but leave some extra space for the kernel and for a few other
+43:18
+uh specialized addresses okay so needless to say the kernel's
+43:24
+only got a gigabyte up there so you can't map four gigabytes into one gigabyte that wouldn't work
+43:29
+and it turns out 896 megabytes is the max you can get uh above c 00 because that's just the
+43:37
+way linux does it so meltdown happened okay so what was
+43:44
+meltdown meltdown let's go back to this map so sometime in 2017 2018 basically
+43:52
+uh the computer architecture community was shocked by something called meltdown and what it
+43:57
+was was it was a way that was demonstrated for user code
+44:03
+to read out data that happened to be mapped but invisible uh in the kernel
+44:10
+okay so even though these page table entries were marked as kernel only
+44:15
+the fact that they were in the page table at all even though they were marked as unreadable meant that using the meltdown
+44:23
+code you could read data out of that and it was actually demonstrated that you could um with user code read
+44:29
+all of the data out of the kernel which means that you know secret keys and all that sort of
+44:34
+stuff was all vulnerable okay which as you can imagine was not a
+44:39
+great thing for people right and so the idea here is is using speculative execution now
+44:46
+what you got to realize is modern processors take a bunch of instructions and they execute them
+44:55
+out of order and a way to make everything fast okay and so they run them out of order
+45:01
+and they even allow things to run ahead and do executions that aren't allowed and
+45:07
+the reason that's okay is because any problems are eventually discovered and all the results are squashed
+45:13
+and it just works okay so the if you were really interested in this i highly recommend you take 152 it's a lot of fun to learn
+45:20
+about why this out of order execution works but uh the key thing here to to first of all keep in mind is yes
+45:28
+things are executed out of order and they're executed in parallel and what have you but and they're allowed to temporarily
+45:34
+do things incorrectly but when all is said and done it's all cleaned up at the end so the registers
+45:41
+never reflect incorrect execution or violating of priorities or kernel
+45:48
+uh privileges or anything and so nobody in the you know computer architecture community
+45:53
+really thought that this was going to be possible okay and what they didn't realize
+45:59
+was that you could do something like this where you set up the cache okay you have an array at user mode
+46:06
+that's why it's green it's got 256 entries times 4k a piece which is a page size and you
+46:13
+flush all the array out of the cache so this all of these um cache entries in the
+46:19
+array are now gone and then what you do is this following code and i just want to give you a bro
+46:26
+a rough idea you say i'm going to try something this is not quite c but it's close
+46:31
+i'm going to try to read a kernel address that i'm not supposed to okay so it's up in that red region and
+46:37
+i'm going to try it okay and then i'm going to take the result that i read out of it
+46:43
+and i'm going to use that to try to read out of this array which i have access to
+46:48
+okay so i'm only going to get one byte out of the kernel i'm going to use it to access something in the array
+46:54
+and then if i get an error which of course i'm going to get an error because i'm reading kernel code it gets caught and
+47:00
+no and it's ignored okay and why does this do something well this does something because
+47:07
+the the processor is is running all of this stuff ahead in its pipeline it goes ahead it does the read early
+47:16
+it it accesses the cache early and then it says oh you weren't supposed to do that and it squashes all the results so
+47:22
+the registers don't have anything in it but i have touched the cash and now the cash
+47:28
+has got an entry in it depending on what the value was i read back so one of 256
+47:35
+cash lines is now in memory in cache and so then all i have to do is scan
+47:40
+through and find the one that's actually cached and fast as opposed to all the other ones that go to memory and voila i just read eight bits out of
+47:47
+the kernel okay and this is this was shocking okay what this did was it took the out of order
+47:53
+execution which is there for performance and it suddenly gave you the ability to
+47:58
+read stuff out of the kernel uh that you weren't supposed to touch
+48:03
+okay questions
+48:10
+it takes a little getting used to it but it's astonishing that this is possible okay and let me just say this again the
+48:17
+idea here is i try to read a byte out of the kernel which i'm not supposed to the processor
+48:23
+is pi heavily pipelined so it goes ahead and reads it anyway i use that result to touch which or try to do a read from
+48:31
+cash in one of 256 values and all of this stuff gets squashed because the process
+48:36
+says oop that's not something you're allowed to do but the damage has already been done because i've already tried to read into
+48:42
+the cache and as a result one out of 256 entries in the cache has a value in it
+48:48
+and i can figure out which one through speed by just saying oh that one cache entry is fast the others
+48:53
+are slow okay and as a result you can work your way through and read out a memory
+48:59
+so this is bad okay and in particular it's bad because all of
+49:05
+the kernel uh address maps that everybody had all of these years
+49:10
+with kernel mapped stuff up in the upper portion i just showed you that all of that red up there right
+49:16
+okay this type of layout had been around forever extremely convenient because basically
+49:23
+the page table has got everything in it but it's only until you go into the kernel that these kernel addresses are
+49:29
+allowed to be used suddenly you couldn't do that anymore because it uh it opened you up to the meltdown bug and
+49:36
+so post meltdown there's a whole bunch of patches that came in that basically involved no longer having
+49:44
+one page table but really having two for every process one that's used in the
+49:49
+kernel and one that's used for the process and that meant that you had to flush the tlb
+49:56
+on every system call okay in order to avoid the bug except from
+50:02
+processors that actually had a uh a tag in the tlb that would tag based on
+50:07
+which um which page table you're using and only uh versions of linux after 4.14
+50:15
+was able to use that pcid so this really slowed everything down okay and
+50:22
+okay and the fix would be better hardware that kind of gets rid of these timing side channels and
+50:28
+there have been fixes kind of on the way for a while and they're starting to get better um so the reason the processor does what
+50:34
+we're talking about here is really to speed everything up because you want as much pipelining as as possible and um
+50:42
+that this the checking of the conditions takes a lot of time just like the access
+50:47
+so it starts the accesses early okay and it is it's mostly fixed okay
+50:53
+it's mostly fixed but it's still a little bit uh surprising that this was possible at
+50:58
+all okay okay yes you are understanding this
+51:05
+correctly okay all right so let's uh let's switch gears a little bit um but
+51:13
+anyway the reason i wanted to bring this up is a it's an interesting bit of very recent history
+51:18
+and b it uh it actually changes what memory maps are
+51:24
+allowed now and if you're wondering um why things are not as clean as they used to be
+51:29
+it's partially due to the meltdown memory map okay so now we're going to switch gears
+51:36
+we're going to talk about io and um if you remember uh you know we've talked a lot about the
+51:43
+computer and data paths and processors and memory we really haven't talked about this uh
+51:49
+input output issue yeah pintos is potentially vulnerable to this problem but pintos is not a commercial operating
+51:55
+system so um so uh why is io even interesting
+52:01
+uh and the answer is really uh without io a processor is just like a disembodied
+52:07
+brain that's busy just computing stuff and you know of course we all know that all processors auto aspire to computing the
+52:14
+last digit of pi but presumably it'd be nice if we were
+52:20
+able to get the answer out okay and so um
+52:25
+what about io now there is question is i o and scope so general i o basically i think i said everything up
+52:31
+to today was potentially in scope um so without io computers are are
+52:36
+useless and uh the problem though is that there's so much i o right
+52:42
+there's thousands of different devices there's different types of buses so what do we do how do we standardize the interfaces on
+52:48
+these devices and the thing is the devices are unreliable media failures and transmission errors happen
+52:54
+and so the moment we put io in here our carefully crafted virtual machine view
+53:00
+of the world suddenly gets very messy and we need to figure out how to standardize enough of
+53:05
+the interfaces across all these different devices so that we can hope to program this
+53:11
+okay so how do we make them reliable um you know because there were lots of
+53:17
+different failures how do we deal with the fact that the timing is off they're unpredictable they're slow
+53:23
+how do we manage manage them if we don't know what they'll do or when they'll do it okay all of these different things
+53:29
+and really um philosophically i like to think of this as the fact that the the world which is what io touches
+53:35
+is is really very complicated and um computer scientists like to think in some simple ways and nice
+53:42
+abstractions and uh when the nice abstractions collide with the real world
+53:48
+uh you get problems okay you get you get the the fake news shows up right and so we
+53:54
+got to figure out what to do about this and so if you remember we kind of said
+54:00
+what is i o well io is all of these buses it's the networks it's the displays
+54:05
+and we somehow have this nice clean virtual memory abstraction of processes and stuff
+54:10
+virtual machine abstraction excuse me above the red line and you know storage uh we have to
+54:16
+access the binaries we have to access our networks across that protection boundary and all of the i o
+54:24
+is both below that uh kernel boundary of processing and potentially out into the
+54:30
+real world and hopefully the os is going to give us some sort of common
+54:35
+services in the form of io that we can then access without caring
+54:41
+so much about the exact precise details of the world and the other thing is of course the the
+54:47
+jeff dean range of time scales where cash replacements might be 0.5 nanoseconds
+54:54
+all the way up to you know the time to send a packet from california to the netherlands and back might be you know 150 milliseconds
+55:02
+there's a big range and so whatever we do uh it's likely
+55:09
+that um we're gonna need a whole a whole range of techniques to deal with all of these different time scales
+55:15
+okay now uh so let's go and think about this a little bit more
+55:23
+um if you look at uh the device rates varying over 12 orders
+55:30
+of magnitude here's the sun enterprise buses these are all different uh devices that are actually
+55:36
+on those buses the system has to be able to handle this wide range so you don't need uh you don't want to
+55:42
+have high overhead for the really high speed networks or you're going to lose packets but you don't want to waste a lot of
+55:48
+time waiting for that next keystroke which is going to take a long time okay so in a picture what do we have we
+55:55
+have our processor which we've been focusing on pretty exclusively say this is a multi-core machine which
+56:01
+is each core has registers an l1 cache and an l2 cache
+56:07
+and then those cores share an l3 cache okay and that's our processor and then we've got to deal with the i o out here
+56:14
+and what you can see is the i o devices are supported by i o controllers for
+56:19
+instance here and those i o controllers provide some standardized
+56:25
+facilities to talk with the outside world and then there's various wires and so on
+56:30
+that communicate okay and this these interfaces are the things we need to figure out how to make work
+56:37
+okay and and you know right for instance if you were gonna
+56:42
+pull something off of ssd you're going to put commands into the i o controller
+56:47
+which is then going to reach out across a standardized bus start the read off the ssd which will
+56:53
+pull it through dma into dram and then you can read and write as a result
+56:58
+once it's in dram and so there's a lot of different interesting pieces here that we're going to have to figure out
+57:03
+okay so dma writes to um that's a good question in the chat does
+57:08
+dma write to physical addresses i'm going to say yes for now although there are virtual dma
+57:14
+protocols that can write into virtual memory as well but usually you pin it into physical memory before you start dma okay so here's
+57:22
+another look at a modern system so you got the processor with its cache
+57:27
+and then you've got various bridges to pci buses for instance and then maybe you have a
+57:34
+scuzzy controller that talks to a bunch of disks or maybe you have a graphics controller which talks to monitors
+57:40
+or maybe you have an ide controller which talks to a slower disks etc and it's really all of
+57:48
+these different buses are part of the i o subsystem as well okay so what's a bus so it's a common
+57:55
+set of wires for communicating among hardware devices and there are protocols that have to be uh satisfied on these
+58:02
+wires so operations or transactions include things like reading and writing of data
+58:08
+control lines address lines data lines uh have to be part of this bus so it's
+58:13
+typically a bunch of wires okay and you have many devices that might be on a bus
+58:19
+right so this is a standard abstraction for how to plug and play a bunch of individual
+58:24
+things onto a common bus that then can get to your processor okay and so there's protocols
+58:30
+um there's an initiator that starts the request there's an arbitrator which says it's
+58:36
+your turn to actually talk um there may be handshaking to make sure that
+58:42
+no data is gone uh before you can grab it so the communication's only as fast as permissible
+58:48
+um there's also arbitration to make sure that two speakers don't try to speak at the same times etc
+58:55
+okay now the closer we are to the processor typically the wires are very short we can get very high speed uh
+59:01
+communication the farther away from the processor the wires are longer or you go through more gateways and the communication gets a
+59:08
+lot slower so we you know things that need to be really fast or typically close to the process or things that uh
+59:14
+maybe need to be more flexible or often further away but slower so why do we have a bus well the buses
+59:21
+in principle at least let you connect end devices over a single set of wires so buses came up
+59:29
+over the long history of computers as a way of allowing us the maximum flexibility
+59:34
+to plug in many devices okay now of course you end up with n squared relationships between
+59:41
+different devices on that bus which can get messy very quickly the other thing is that
+59:48
+several downsides to a bus so one is that you can only have one thing happening on a bus at a time
+59:55
+and that's because everybody has to listen okay and that's where the arbitration part comes into play
+1:00:02
+the other downside which i'm going to point out here before we leave the bus is the longer the wires the longer the
+1:00:09
+capacitance the slower the bus is because capacitance takes a long time to drive
+1:00:14
+up and down i don't know if you guys talked about that in 60 61c but basically if you have a really long
+1:00:20
+bus and a lot of capacitance it means to change a wire from a zero to a one
+1:00:25
+you have to charge it up and the more capacitance the the longer that takes okay so buses
+1:00:31
+that get too long get slow so that kind of explains part of what i'm
+1:00:36
+about to say next which is here's an example of the pci bus you've probably taken a look inside of
+1:00:42
+one of your computers you can plug a card in it's got many parallel wires representing 32 bits of communication or
+1:00:48
+what have you a bunch of control wires a bunch of clocking wires and this is a parallel bus because all
+1:00:55
+of the different card slots are all connected together with a common set of wires
+1:01:00
+okay and so what i showed is an arrow back here each one of these slices might have
+1:01:05
+another one of those connectors on it that would connect across um you know tens or hundreds of
+1:01:11
+wires in that bus okay and so not only is there a lot of
+1:01:17
+capacitance in this but the bus speed gets set to the slowest device so if you have a device on here that
+1:01:22
+responds very slowly then everybody suffers okay and so what happened is we went
+1:01:29
+from the pc bus to for instance pci express and some of these others in which it's
+1:01:34
+no longer a parallel set of wires but rather a bunch of serial communications
+1:01:40
+that all tie everything together and act like a bus but is really a bunch of point to point
+1:01:45
+okay it's really a collection of very fast serial channels devices can use as many lanes as they
+1:01:51
+need to give you the bandwidth and then slow devices don't have to share with the fast ones
+1:01:57
+and so therefore you get the expandability of something like a bus but the speed
+1:02:03
+of a single point-to-point wire set of wires between each device okay and one of the
+1:02:11
+successes of some of the device abstractions in linux for instance is going from pci
+1:02:18
+bus the original parallel bus the pci express really only had to be reflected at some
+1:02:24
+of the very lowest device driver levels most of the higher levels of the operating system never even had to know the type of device so
+1:02:30
+that's a good example of abstraction coming into play here to help deal with the messiness of the real
+1:02:36
+world so here's an example of a pci architecture you know you have your cpu
+1:02:42
+you've got a very uh short memory bus to ram so these are typically a bunch of uh
+1:02:48
+what are called single inline or dual inline modules and they're connected on a bus that typically is connected very
+1:02:54
+short wires directly to the cpu okay and so that can be blazingly fast and then the cpu
+1:03:01
+typically has bridges to a set of pci buses and these are serial communications
+1:03:06
+and plugged into the pci bus for instance would be a special bridge to the
+1:03:11
+original industry standard architecture bus so this was on the original ibm pc
+1:03:17
+was the isa bus what happens in a modern system is you fake it by having a fast pci express bus
+1:03:25
+but the isa controller can talk to legacy devices like old keyboards and
+1:03:30
+mice and so on okay and also though you might have bridges
+1:03:35
+between different pci buses and now typically you have usb controllers uh where usb is actually a
+1:03:41
+different type of serial bus um and uh that has
+1:03:46
+a set of root hubs and regular hubs and this is a webcam keyboard mouse those can be plugged into
+1:03:53
+usb which is plugged into pci which is plugged into the cpu okay and then you can also have disks
+1:03:59
+and so on so this is a view of the complexity of the bus structures uh but all of this
+1:04:06
+gets hidden behind proper device drivers so that the higher levels of the kernel
+1:04:12
+don't have to worry about some of this complexity only the lower levels okay the question is is this parallel or
+1:04:18
+serial the answer is yes okay now um so basically
+1:04:25
+uh when i say pci i'm talking about pci express is serial pci bus is parallel
+1:04:30
+um depends a lot on what parts of the system we're talking about but basically the the serial communication
+1:04:37
+for pci express is uh far more prevalent than the uh the parallel ones these days and
+1:04:42
+it's gonna depend on um your exact system so you can you can uh
+1:04:48
+open up some of your uh specs that talk about your computers and see kind of what the buses are inter internally okay
+1:04:57
+now how does the processor talk to a device so i wanted to start our conversation here a little bit
+1:05:02
+about what it is that's inside the operating system uh that talks to to uh devices and so we
+1:05:08
+already talked about the cpu might have a memory bus to regular memory okay and so that's a set of wires
+1:05:16
+that typically the hardware knows how to deal with directly okay um on the the memory bus or
+1:05:22
+possibly directly connected to um parts of the cpu okay we'll talk about that a little bit
+1:05:28
+might be a set of adapters okay and those adapters give you other buses
+1:05:33
+and i'm we're not going to worry exactly what the buses are here but what i wanted to show you is that typically the cpu is trying to
+1:05:41
+talk to a device controller this big thing in magenta and that device controller is the thing
+1:05:47
+that has all of the smarts to deal with a specific device it gets plugged into the right bus interfaces in a way that the cpu
+1:05:55
+can send commands to that device controller and read things from the device controller okay and some of that communication
+1:06:04
+might be via reads and writes i'll show you this in a moment um of special sort that basically go
+1:06:10
+across the memory bus or across a bus to the device controller and and set registers to control its operation
+1:06:18
+or pull data or start dma we'll talk about that in a moment also coming out of this is typically
+1:06:23
+interrupts that go to the interrupt controller now we already had the discussion about interrupt controllers earlier in the term
+1:06:28
+but one of the ways that the device controller typically says that it needs service or that something has been completed is over an interrupt
+1:06:36
+okay so the cpu interacts with the controller typically contains a set of registers
+1:06:42
+that can be read and written so what i've got here for the registers are ones that potentially allow you to
+1:06:48
+read and write things about the device maybe set some commands like for
+1:06:53
+instance if this is a display maybe one of the things you might write to the second register
+1:06:58
+is uh about the resolution okay now the device controller the
+1:07:04
+question in the chat is is this the same as the device driver no this is hardware device driver is running on the cpu
+1:07:09
+and the device driver knows how to talk to the device controller hardware okay so the device controller this is
+1:07:16
+actually hardware okay and so if you look here um for instance we might have a set of
+1:07:23
+registers that have port ids on them i'll show you what that means in a moment
+1:07:28
+but for instance port 20 might be this red the first register port 21 might be the second port 22 might be
+1:07:35
+a control register port 23 might be status and by reading and writing those ports i
+1:07:40
+could change the resolution of the device the other thing is i can read and write addresses okay and reading and writing
+1:07:46
+of addresses allow me to potentially write bits directly on screen
+1:07:52
+okay so there's two different types of access that are typically talked about
+1:07:58
+between the processor and the device controller one is port mapped i o
+1:08:03
+where the cpu uses special in and out registers that address ports in the controller okay and that's
+1:08:11
+the special register names and the other is memory mapped io where just by reading and writing to certain
+1:08:17
+parts of the address space i cause things to happen on my device and so i want to talk about port mapped i o and memory mapped i o so
+1:08:24
+about port mapped i o is port mapped i o is typically only shows up on things like the x86
+1:08:30
+processor or very specialized processors that have i o instructions memory mapped i o is much
+1:08:36
+more common where you can read and write from special memory addresses and it just
+1:08:42
+goes to the controller okay now region here
+1:08:47
+is uh what region of the physical address space can i read and write to that's going to cause things to happen
+1:08:53
+here i'll show you that in a second now here's an example if you were to go into devices speaker.c
+1:08:59
+in pintos you'd actually see something that turns the speaker on into frequency and off at a frequency
+1:09:05
+and what it says here uh is it's going to do some stuff and talk to hardware and it's
+1:09:12
+the thing i wanted to point out is these out b instructions okay which there's a special code for
+1:09:19
+that that really compiles to um you see the assembly instruction inside of this
+1:09:25
+routine actually runs an instruction called out b and what that out b is is that's a an i
+1:09:31
+o instruction that runs to a that writes to excuse me an address port
+1:09:38
+that's going to touch the speaker okay and there's also a corresponding in b
+1:09:45
+which is another instruction so these are actually native instructions for the x86 processor
+1:09:50
+that takes a port number and some data and accesses that io device
+1:09:57
+and these port numbers um typically are 16 bits or they can be 32 bits under
+1:10:02
+some circumstances but they're they're small uh a small address space for i o
+1:10:11
+okay the memory mapping is a little different
+1:10:16
+idea okay for memory mapping we have uh this is our physical address
+1:10:21
+space where if you keep in mind obviously there's going to be big regions that have dram in them for the physical address space
+1:10:27
+but when you have a device uh plugged into the system you can have regions of the address
+1:10:34
+space that actually talk to that device directly so if i happen to have reads or writes
+1:10:39
+to this part of the physical address space what i'm going to do is write commands into a graphics command
+1:10:45
+graphics command q which might for instance cause triangles to be drawn on the screen if i'm doing
+1:10:51
+some cool three-dimensional rendering okay or if i read and write this region
+1:10:58
+of memory i might actually put dots on the screen and then there's another region which might be commands and status
+1:11:04
+results where just by reading and writing the addresses in that region i get back
+1:11:11
+status or i cause commands to happen so um in the example here might be
+1:11:16
+that if i were to write dots on the screen i just write to display memory and it'll just cause i can cause
+1:11:23
+characters to show up there by writing the right dots right or if i write graphic descriptors i
+1:11:28
+mentioned here this could be a set of triangles which then i hit a command and that will cause it to be drawn
+1:11:34
+okay now are these addresses hard coded so typically in the really old days these addresses
+1:11:40
+were hardcoded now what happens is depending on what bus this is on like
+1:11:45
+the pci express bus these addresses are actually negotiated
+1:11:50
+at boot time by uh the boot driver this is not in the regular pintos code this would be in
+1:11:56
+the boot driver uh with the hardware over the pci express bus to to
+1:12:02
+decide which physical addresses go to which parts of the of the hardware and the reason
+1:12:08
+this auto negotiation is so good is because that means if you plug a bunch of devices in they negotiate so
+1:12:14
+that there are non-overlapping addresses whereas once upon a time you actually had to set
+1:12:21
+jumpers and stuff on cards before you dared to plug them in so that you didn't have overlapping addresses for your different devices
+1:12:28
+okay all right questions about memory mapping versus port mapping
+1:12:40
+there's a good question there so the good question on the chat is so is data getting written to memory and then the device controller
+1:12:46
+reads it or does writing to these addresses just then directly to the device it's the latter
+1:12:51
+okay so you don't put it into dram and then have it go into the uh the controller what happens is the
+1:12:57
+active writing doesn't go to dram it goes to the actual controller okay now what you can do
+1:13:05
+uh so the question here is why wouldn't they use virtual addressing to solve the negotiating the problem is you need an actual physical address on
+1:13:12
+the bus and then you can virtually map to it so if your physical addresses overlap then you got
+1:13:18
+a problem think of this like we've been talking about dram is our physical dram
+1:13:23
+space if we had different dram cells that map to the same physical
+1:13:29
+address all chaos would happen right so we got to make sure that um the physical addresses that are
+1:13:35
+dealt with in the cards are all unique from each other and once we've got that
+1:13:40
+then you can map virtual memory uh parts of the virtual address space to
+1:13:46
+these physical things and then you know you can give command of a device to a user level process for
+1:13:52
+instance just by setting up its page tables the right way to point at those physical addresses but you need to make sure
+1:13:58
+that the physical addresses don't overlap first okay now there's a good question of uh
+1:14:05
+what is faster port mapping or or memory mapping so the answer is
+1:14:11
+uh the memory mapped options are usually a lot faster
+1:14:16
+um under most circumstances this uh this mechanism of using
+1:14:23
+ports is uh kind of a legacy mechanism you often use it only to access uh old
+1:14:31
+devices old school devices or ones that are part of the ibm pc spec okay
+1:14:39
+and the answer is the reason is really that mapping through memory is so much more flexible it's a it's a path that's
+1:14:45
+been set up for large addresses and uh you can actually tell the cache
+1:14:51
+to ignore certain addresses so if you look carefully at the page table entries
+1:14:56
+i don't have it up today but look at it from last time you'll see there's a couple of bits in a page table
+1:15:02
+mapping that talk about not putting the data in the cache and you want that because you want to make sure that all
+1:15:08
+rights go straight through to the hardware and then when you read you don't want it to be cached so that you accidentally
+1:15:14
+get old data you want your read to always go directly from the hardware into the processor okay
+1:15:22
+good any other questions
+1:15:28
+so there might be overlapping so the question is why was i saying there might be overlapping physical addresses imagine
+1:15:33
+simply put two of these display controllers into the same machine okay
+1:15:38
+if we hard-coded where which physical addresses uh were for that card we now have an
+1:15:45
+overlap okay and so that overlap needs to be removed and that's part of the
+1:15:51
+negotiation process for modern buses like pci express and so on now the question about ports
+1:15:57
+is ports are actually a completely separate physical address space from uh the regular physical address space and
+1:16:04
+so the ports uh go via separate um a separate path if you will the data is
+1:16:11
+all the same but the addressing bits say something different they say this is not part of normal addresses this is part of the port
+1:16:18
+port map space all right good now and you can protect this with
+1:16:26
+address translation and where do these usually get mapped in virtual memory it depends
+1:16:31
+the depends on how they're being used so if you're not giving the user the ability to touch a device which you have
+1:16:37
+to be very careful about doing that then it's going to be mapped into a part
+1:16:42
+of the physical address space that doesn't have dram in it and if you take a look at um you know
+1:16:48
+the typical linux memory maps there's going to be some spots often in very low memory for io and also in high memory is
+1:16:54
+another possibility too but um the uh
+1:17:00
+you know it really it's going to depend a lot on the actual hardware that you've got and you know where is their dram where
+1:17:06
+is there not you need this to be in the places where there's no dram okay and each of the buses like pci
+1:17:13
+express and all the others they all have their own spaces that they map into as well
+1:17:20
+okay so i think the right answer to that question is really
+1:17:25
+you don't really need to worry about exactly where in physical space it is just that it gets mapped in physical
+1:17:30
+space and that at boot time we make sure it doesn't overlap with anything else mapped in that same space
+1:17:35
+okay so there's more than just the cpu i wanted to say a little bit about this
+1:17:41
+uh so this is uh for instance sky lake i've talked a little about sky lake but it's
+1:17:48
+got multiple cores you can have like 50 some cores in there okay
+1:17:53
+52 and there's typically a bus that might be a ring it might be a mesh okay
+1:17:58
+there are a lot of different options each core has a processor in it okay
+1:18:04
+the processor might do out of order execution remember meltdown we just talked about that it might have a bunch of
+1:18:12
+special operations to deal with security and so on um but that's just the processor if you
+1:18:18
+look at everything else here we've got the system agent so that basically talks to uh various
+1:18:24
+uh dram controllers there can that's the imc it can also
+1:18:30
+talk to other chips to give you cash coherence okay and then also there's a gpu in this
+1:18:37
+particular down here the processor graphics which can actually draw on the screen and so
+1:18:42
+on um if you don't have a special gpu in your system and so there's a lot of different pieces in
+1:18:48
+here that are more than just the processor that's kind of my point the processors are very interesting but all of this stuff with the system agent
+1:18:54
+gives you dram gives you display controllers processor graphics gives you graphics
+1:19:00
+and then there's integrated io on most modern chips from intel okay
+1:19:06
+and so that's the memory controller pci express for graphics card so you see
+1:19:12
+um coming out off the display here typically there's very fast pci express options up up top
+1:19:19
+here for other graphics there's also built-in graphics which is uh lower performance but pci express um directly on the same
+1:19:27
+chip okay and so you know like in the old days you had the processor you had other stuff then you had some buses and so on
+1:19:33
+here the pci express control signals are actually coming directly out of the chip and there's this direct media interface
+1:19:41
+for the platform controller hub you see up at the top this typically connects to a lot of other io
+1:19:47
+okay so here is an example where we have the processor and notice this is another view we've
+1:19:53
+got pci express we've got dram that's the ddr we've got embedded displays and so on
+1:19:59
+and then the platform controller hub down here handles pretty much everything else
+1:20:04
+that's interesting okay all right so um
+1:20:09
+the thing to to really learn about this particular slide is to understand the fact that the
+1:20:15
+i o is tightly integrated and that there's a lot of really interesting i o coming off of this okay so the platform controller hub is
+1:20:22
+this chip lots of i o okay usb ethernet thunderbolt 3
+1:20:31
+bios okay this lpc interface is for legacy things like keyboards and mice and so on okay you don't need to
+1:20:38
+know all of these details but this is trying to give you a flavor for some of the interesting things we have to control okay um so
+1:20:46
+we're gonna um we're gonna finish up here pretty soon but i wanted to cover a couple more things before we're totally
+1:20:51
+totally done so um when you start talking about io
+1:20:56
+and we're gonna go into this much more detail in a couple of days you start talking about things like well do i typically
+1:21:02
+read a byte at a time or do i read a block at a time so some devices like keyboards
+1:21:08
+etc mice give you one byte at a time okay things like discs give you a block
+1:21:15
+it might be 4k bytes it might be 16k bytes at a time networks etc tend to give you big chunks
+1:21:23
+um we might also wonder not just byte versus block but are we reading something sequentially or are we
+1:21:28
+randomly going places so some devices you know tape is an obvious case where you have to do
+1:21:34
+sequential right the others can give you random access like disks or cds
+1:21:40
+okay and in those cases there's some overhead to starting the transfer but
+1:21:45
+then you can pull the data out in large chunks often once you've gotten to that random spot
+1:21:52
+some devices have to be monitored continuously in case they go away and come back some generate interrupts when they need
+1:21:58
+service okay transfer mechanisms like programmed io and dma we're going to talk more about
+1:22:04
+that next time okay these are different ways in which to get the data in and out of the device
+1:22:10
+i showed you the topology earlier with the cpu talking to the controller but now we've got
+1:22:15
+how do how do we actually get the data in and out do we do it one byte at a time in a loop or do we ask for big chunks of
+1:22:22
+data that go out automatically that's going to be something we talk about okay and so really i think i think i'm
+1:22:29
+going to save this discussion for next time so in conclusion we've talked about lots
+1:22:35
+of different io device types today there are many different speeds many different access patterns okay block
+1:22:40
+devices character devices network devices different access timings like blocking
+1:22:46
+non-blocking asynchronous we'll talk more about that next time we talked about i o controllers that's the hardware that
+1:22:52
+controls the device we talked about processor accesses through i o instructions or load stores to special memory
+1:23:00
+as you know there are various notification mechanisms like interrupts and polling we'll talk a lot more about polling next
+1:23:07
+time but you're very familiar with interrupts okay and all of this is tied together with device drivers that interface to i
+1:23:13
+o devices so the device drivers talk to the controllers and the device drivers know
+1:23:20
+all the idiosyncrasies of the controllers and how to make them work and then the device drivers as we've discussed in the past
+1:23:25
+provide a really clean interface up okay they provide a clean read write open interface they're going to allow
+1:23:32
+you to manipulate devices through programmed i o or dma or interrupts there's going to be three types of
+1:23:38
+devices we'll talk about block devices character devices and network devices and so i think i'm going to let you go
+1:23:43
+um i hope to see you in a couple of days we're gonna have some uh interesting stuff about uh devices to
+1:23:50
+be talking about um next time but uh hope you have a good rest of your monday
+1:23:56
+and i hope there weren't too many of you that had the threat of power outages i know
+1:24:02
+that there are parts of uh parts of orinda and lafayette moraga on the other side of the hills that are
+1:24:08
+all have their power out but all right um other people are oh evacuated that's even worse i'm sorry to
+1:24:14
+hear that i hope that you get back to your living situation soon
+1:24:22
+have a great uh have a great evening and we will talk to you tomorrow
+1:24:27
+i mean excuse me talk to you on wednesday

@@ -1,0 +1,931 @@
+0:03
+hello everybody um welcome to a um quick little supplemental for a lecture from last
+0:09
+night um i didn't quite get through all of the topics i wanted to and so i thought i would record this just to help out a
+0:14
+little bit maybe for um for your uh laboratory number one
+0:20
+and putting together project one uh design docs so um what we were talking about yesterday was uh
+0:27
+concurrency and mutual exclusion and we're sort of starting that whole process of how to get synchronization to work properly
+0:33
+and i just wanted to finish up that discussion if you remember we sort of introduced
+0:38
+this issue that while threads can give us the ability to have overlap
+0:44
+from i o and computation and therefore seem like a really nice efficient way to have multiple things
+0:50
+happening at once we run into an interesting issue so i had introduced this
+0:57
+banking uh example where for instance what we did on a deposit was we would
+1:02
+get the uh account information we'd increment it uh because maybe we were doing a deposit
+1:08
+and then we'd store it back and uh the reason threads were really going to help us out here is because
+1:14
+if one user was uh you know their account was stuck waiting
+1:19
+for disk io another user could be adding to the balance or whatever and so this was our motivation for going to
+1:25
+threads except as you see here the the threads encounter the fact that the
+1:31
+accounts are shared state and so in this particular instance we show an example here where
+1:37
+perhaps thread one gets the balance and then thread two gets the run and it grabs the balance increments and
+1:44
+stores it back and then thread one gets to run again and as a result the whole operation that was thread two
+1:52
+is erased because thread ones overwrites it i mean if you remember i
+1:57
+talked about the malicious scheduler viewpoint which is you need to view
+2:02
+the fact that there is a malicious murphy's law scheduler running anytime you have
+2:08
+multiple threads working on the shared data that will find a way to find that sequence that
+2:15
+corrupts your data and it will do so at the worst possible time so in this instance our
+2:21
+malicious scheduler found a way to split up thread one and thread two
+2:26
+okay at exactly the wrong times now what we clearly need to do is we need to put
+2:31
+an atomic section in here which make basically says that three instructions load add and store
+2:37
+all become atomically bound together and can't be interleaved okay and so to do that we talked about Recall: Locks
+2:44
+locks and locks have come up earlier in the in the um term as well and a lock is in general
+2:50
+prevents somebody from doing something excuse me and uh in the context here you imagine
+2:55
+locking before entering a critical section unlocking when you leave and waiting if
+3:01
+something's locked and so the important idea that uh you ought to get
+3:07
+from these lectures on synchronization is that pretty much all synchronization problems are solved by weighting
+3:13
+so if you look back to our bad example here the fact that thread one started doing
+3:18
+something and then thread two popped in and screwed everything up and then thread one got to go again if thread two
+3:24
+were to just wait uh until thread one was done with this atomic section we would have resolved
+3:30
+this particular bad behavior okay and so all uh synchronization
+3:35
+problems can be solved by waiting and the trick is to wait only as much as you need to not too much and we'll talk a lot about
+3:43
+examples where you wait too long and of course when we talked about locks yesterday i mentioned the fact that you
+3:48
+need to allocate and initialize a lock so you could for instance on the left here you might declare
+3:54
+a myloc structure and run a lock and it on a pointer to it or on the on the right side you might
+4:01
+declare uh p thread mutex t and then uh initialize it in one way or another
+4:07
+that depends what on which type of locks you're using but then once you've done that the locks
+4:13
+provide a couple of atomic operations one is acquire which you know for instance
+4:18
+in c syntax would take a pointer to the lock you're acquiring and when you do that your wait until the
+4:23
+lock is free and then you grab it and if you try to acquire the lock
+4:29
+when somebody else has marked it as busy then you wait and wait in this context is going to mean
+4:34
+your threat is put to sleep so you're not wasting cycles and we'll talk about that in the next lecture
+4:41
+and then when you're done you release the lock which will then free up potentially somebody who might be waiting
+4:46
+and so uh looking at our banking problem again what you see here is we identify uh the critical sections
+4:53
+so a good critical section here is uh the fact that we want to have an atomic
+4:58
+uh sequence of this uh getting of an account incrementing and storing back and we
+5:04
+uh decorate around it the acquisition and release of the lock and so we acquire the lock at the top
+5:11
+and we release it at the bottom and by acquiring and releasing a lock what we've done is we've ensured that only
+5:17
+one thread gets to run at any given time in the critical section and that's what we call asserting mutual
+5:23
+exclusion and so just to show you that a little graphically here we've got an animation here's the critical section with an
+5:29
+acquire and a release and if you have multiple threads that are all trying to get into that critical section so say
+5:35
+here thread a b and c what happens is only one of them gets the lock and the other ones
+5:41
+are forced to wait so for instance if thread a is the one that gets the lock what that really means is not only do
+5:47
+they mark the lock as busy but they're allowed through the acquire operation thread b and c are uh waiting in a choir
+5:56
+so they um their threads the acquire assist system call or whatever it happens to be we'll talk
+6:02
+about many options uh starting next time they will be waiting there so they won't emerge from
+6:07
+the acquire yet okay so that again looking up top here if multiple threads all call deposit at
+6:13
+once only one of them will actually get through the acquire and into the critical section the rest of them will
+6:19
+be waiting in the acquire uh function call or system call and so what i show you here is as soon
+6:26
+as a exits then b is allowed to go through and then as soon as b exits then c is allowed to go through
+6:33
+and what ordering do things come through the acquire operation well unless it's a special type of block where the semantics are
+6:39
+explicitly specified you have to alert uh assume that there's a non-deterministic choice
+6:45
+as to which of the threads that are all waiting on the lock are allowed through at any given time the important part
+6:51
+however being that only one of them is allowed through okay and to circle
+6:57
+back and finish up this example in order to make this really work the uh it's the account that is the
+7:03
+shared data here and so we need to make sure that all uh all code that accesses the
+7:10
+account is protected by the same lock okay so for instance there might be
+7:16
+a uh withdrawal here or there might be a an initialize uh or some other account
+7:23
+operations we need to make sure that they all use a lock from an acquired release around a
+7:29
+critical section and in particular they need to use the same lock okay all right now um
+7:36
+some definitions that we had last time last night as well so synchronization is basically using
+7:41
+atomic operations where an atomic operation is a sequence of non-interruptible uh non-interruptible
+7:49
+instructions to ensure cooperation between threads to make sure that we don't get undefined
+7:56
+behavior okay and mutual exclusion is the technique that we talked about here where by putting locks around a critical
+8:04
+section and making sure that we exclude all but one thread at a time through that critical section
+8:10
+then we can make sure that we have an atomic operation there and that our synchronization works
+8:16
+okay and so that critical section is typically the piece of code that's being protected by an acquire and
+8:21
+release of a lock and we put locks around it to get mutual exclusion to give us our synchronization
+8:27
+okay now here's another concurrent program example you got two threads a and b they compete
+8:34
+with each other one tries to increment the shared counter the other tries to decrement it and then we've got this kind of a
+8:40
+free-for-all the thread a and thread b show here we have uh basically they're
+8:46
+sharing the same variable i so in this instance it's a global variable but thread a sets it to zero
+8:52
+and thread b sets it to zero so they're both setting the same shared variable to zero
+8:58
+then uh we're in a while loop and sort of while i is less than 10 for a it sort of increments i and b says well
+9:06
+well i is greater than minus 10 it decrements and whoever wins gets to say a wins or b
+9:14
+wins okay and we're going to assume that memory loads and stores are atomic
+9:20
+but incrementing decrementing are not atomic and so from that standpoint there's no difference between i equal i
+9:26
+plus one and i plus plus those compiled the same underlying instructions uh which is a multi-instruction sequence
+9:33
+okay in most cases um and so what happens here is uh
+9:39
+well either of them could win and in fact we've got kind of a funny scenario where it's not even
+9:45
+guaranteed that anyone can win okay because um if you look at
+9:50
+a hand simulation of this example we could look at the inner loop and here we have the example thread a
+9:56
+and b thread a might load from wherever i is and into register
+10:02
+one which uh maybe it's got a zero there thread b does the same thing we got a zero remember we initialized i to zero and
+10:09
+then uh thread a basically adds one to it and meanwhile thread b subtracts one and how could we get this
+10:17
+perfect interleaving well um in this perfect interleaving could happen if we have two uh two cores that are running or maybe
+10:23
+we have uh hyper threading which we talked about last night as well and then of course thread a goes ahead
+10:30
+and stores a one because it added one to zero and got one but thread b now stores a minus one and notice that
+10:37
+because of this interleaving thread b ended up completely overwriting the result of thread a so thread a
+10:44
+went to all this trouble and then nothing happened okay because thread b overwrote it so this is clearly a failure of atomic sections
+10:51
+you know when you just imagine this race and we're off a gets off to an early start b says better go fast and tries really
+10:57
+hard a goes ahead and writes one then b goes and writes minus one and a says huh i could have sworn i put a one there
+11:04
+okay this is uh indicative of the types of problems that happen when you've got
+11:10
+data races going on data races i'll show you in a second here is basically two threads attempting to
+11:16
+access the same data so that's basically this memory location m of i uh where one of
+11:21
+them is a right and here we have a situation where uh not two of them are rights okay so that's a data race
+11:27
+and the notion of simultaneous is really defined even when you only have a single cpu
+11:32
+and you can't have simultaneous execution like this shows here in this example
+11:37
+above but the scheduler could switch out at any time so you effectively have
+11:42
+all of the liabilities as if you had simultaneous execution so this may be concurrent but not
+11:49
+parallel but it still behaves badly even in those instances those are race conditions
+11:56
+okay so we could pull out our locks now and we could say well here i'm going to
+12:02
+put a choir and release around the um around the increment or decrement
+12:07
+and now did we do better okay well here now we no longer have an
+12:14
+example where a thought it was incrementing but ended up doing nothing because b overwrite it overwrote it
+12:20
+because we've got locks so thread a gets to the acquire first and it's busy incrementing then thread b
+12:27
+gets to acquire it's going to have to wait until a is done then it'll release the lock and then b will get to go through the acquire and
+12:34
+do its decrement so each increment and decrement operations now atomic
+12:40
+that's good okay um and in many cases this might be what you want technically
+12:47
+there's no longer any race condition here because it's never possible for thread a and thread b to be
+12:54
+simultaneously accessing i when one of them is a right and why is
+13:00
+that well because the simultaneous access can't happen because the the locking is
+13:06
+going on here all right but um the program is still broken potentially
+13:11
+um because this is uncontrolled okay uh a and b are just incrementing
+13:17
+decrementing incrementing decrementing there's really no control as to how many loops there are or who wins and so
+13:24
+maybe technically you've gotten rid of the race condition in the middle although there is this uh looking at it
+13:30
+in the while loop so i suppose maybe you could still call it a race condition but it's probably not really what you
+13:35
+wanted this is really still a bad program the one instance where you might want
+13:41
+something like this not with this loop but maybe the i equal i plus one with a lock around it
+13:47
+is for instance when you might have 100 threads that are all working on some part of a problem and each one of
+13:53
+them wants to get a unique number once it starts then they could call
+13:59
+an atomic section like this which um does an i equal i plus one and returns the result
+14:04
+back to the caller and now each of the threads some fred will get one some thread will get two some thread will get three some
+14:10
+thread will get a hundred uh if you do that then this could be an okay use
+14:16
+of something like this and it turns out actually there are atomic instructions that don't even require you to do the
+14:22
+lock and unlock in those instances okay so um one more locking example uh Recall: Red-Black tree example
+14:30
+here is this red black tree uh that we talked about in one of our early lectures and i also mentioned this last night and
+14:36
+in this instance this tree is balanced in a very special way that the red black
+14:43
+algorithm maintains okay as you're inserting and deleting
+14:49
+elements and if we allow uncontrolled access simultaneity or race
+14:55
+conditions to ch to screw up the structure of the tree then it's not going to work properly anymore it's not going to have
+15:00
+the level of balance it's supposed to have and so what we can do is we can put a single lock at the root
+15:06
+and um just make sure that before we touch the tree at all we acquire the lock here for instance
+15:12
+insert the number three and then release it uh maybe over on thread b we could we
+15:17
+want to insert four we could acquire the lock uh insert release maybe we want to get
+15:23
+the number six we could acquire the lock search for six and release and what we've done is by putting um
+15:30
+acquire and release of the same lock around all operations we make sure that at most
+15:36
+only one thread is ever manipulating the tree okay and so our critical sections are
+15:42
+anytime the tree is accessed either read or written we put locking
+15:48
+around it and therefore we make sure that the correctness of the tree algorithm is as good as a
+15:55
+uniprocessor non-multi-threaded version okay and so this is
+16:02
+a good use of locking even though the threads are busy adding and removing things
+16:07
+in this instance it makes sense because the different threads might be grabbing data from the network somewhere adding
+16:12
+it to the tree searching because of some network query looking in the tree whatever deleting from the tree that makes some
+16:19
+sense if we have all of these threads doing parallel operations and we make sure that the tree that's at the core of that
+16:25
+algorithm is stable okay and um so this makes sense you might say this
+16:31
+is a little slow because if you have a lot of threads maybe most of them are waiting in the
+16:36
+acquire of their you know of their operations and so um maybe most of the threads are
+16:44
+waiting and so then you can start to ask a question is there a way to make this faster well the
+16:50
+answer might be yes that answer might be well you lock a certain path in the tree so you put a
+16:56
+lock on every node and when you're searching or you're modifying then as you go down
+17:03
+the tree you lock the nodes so that anybody else who tries to go there
+17:09
+um doesn't encounter the same locks that you do they might be able to work in parallel
+17:15
+you got to do that very carefully okay um for instance if you always start by locking the top lock and then work your
+17:21
+way down then of course you haven't gained anything so while there are ways
+17:26
+to do uh locks on uh lots of nodes in a tree like structure
+17:32
+in a way that keeps the um keeps the data structure consistent under a
+17:38
+variety of different simultaneous operations you have to be very careful to do it so
+17:43
+this idea of putting a single lock at the root hopefully makes perfect sense to everybody you know for a fact that that
+17:49
+will always be consistent the moment you start trying to parallelize this and allow more than one
+17:56
+thread modifying it into the tree at a time then you got to be really careful
+18:01
+and you can start talking about maybe somebody who's reading does some advisory um
+18:10
+does some advisory locking that's all about reads just so that if a writer were to come along they
+18:15
+are not allowed to touch the part of the tree that the writer that the reader is in and maybe that's
+18:21
+an okay way to get some parallelism but i just wanted to warn you that if you go down this path you got to make sure you're careful what you're
+18:27
+doing okay enough on that let's ask ourselves if locking is going to be Producer-Consumer with a Bounded Buffer
+18:34
+the general answer okay and i'll tell you right now it's not locking is a way to do synchronization
+18:41
+and it's a way to ensure critical sections it's not always the easiest thing to do so let's look at this
+18:48
+producer consumer idea where we have a buffer that's finite size and we may have many um producers of
+18:55
+data that want to put the data on the buffer and many consumers and the producers can produce things and
+19:02
+the consumers can consume things running perfectly in parallel and all that we really want to do is we want to make sure that if the buffer is
+19:09
+entirely full then producers are put to sleep uh because they can't put anything in a full buffer
+19:15
+and so uh similarly if the buffer is completely empty then a consumer gets put to sleep because they can't take
+19:20
+anything off of an empty buffer so we want to make sure that there's still correctness here
+19:25
+okay and we certainly don't want the producer and consumer to have to work in lockstep so we want to do something that's a
+19:33
+little more sophisticated than every producer consumer first grabs a lock
+19:39
+that's associated with the whole buffer and then releases the lock okay that's gonna put us in that same problem that we kind
+19:44
+of saw with the tree data structure so what are we gonna do okay and there's many examples of
+19:51
+producer consumer we talked about pipes which i'm loosely showing you here with my gcc compiler example
+19:58
+uh where the cpr processor and and the first and second phases of the compiler then the assembler and then the loader
+20:04
+all feed into each other and one produces results that are forwarded through a buffer to the next
+20:10
+to the next to the next that's a great example of this bounded buffer the example i'm going to do here just
+20:16
+because it's fun is a coke machine the producer can put in only a limited number of coke bottles because the
+20:23
+machine only holds so many the consumers can't take uh coke bottles out of an empty machine and so
+20:31
+what do we do okay and examples other examples are web servers and routers and
+20:37
+you name it this bounded buffer is a good example okay so here's an example of a circular
+20:43
+buffer data structure where we have a right pointer and a read pointer and we set this up so that
+20:49
+the read pointer kind of points to the next thing to be read off the cue
+20:55
+and if you keep reading you'll circularly wrap around and if the if the read pointer ever runs
+21:01
+into the right pointer then it knows that there's no data there and similarly if the right pointer ever runs into the read pointer
+21:07
+it knows that things uh are full okay and so uh the you know the start on this
+21:14
+is there's a buffer structure there's two integers a right index and a read index and then there's an array
+21:20
+i'm roughly saying you know of some type star entries that's a buffer size and notice
+21:25
+that this is not a valid c code obviously you can't say arrow type arrow although you might in some other
+21:31
+language and so we might ask some questions how do we know if it's full on insert or
+21:36
+empty on remove and what do you do if it is you need to put threads to sleep and put the producer to
+21:43
+sleep or the consumer to sleep and uh what do we actually need for our atomic operations okay so this is
+21:49
+a clear question uh that comes up based on what i said there earlier and so uh here's our first cut
+21:56
+okay we'll have a mutex which is a lock on the buffer it's initially unlocked and the producer might do something like
+22:03
+this they grab the lock they sort of spin in a loop saying well while the buffer is full
+22:08
+don't do anything okay because remember our producer can't put data into a full buffer and then once it's no
+22:14
+longer full we enqueue an item on the queue and then we release the buffer lock
+22:19
+and then a consumer looks similarly where we acquire the lock on the buffer we wait and as long as it's empty
+22:26
+nothing happens otherwise we know that it's not empty that means we can dequeue and then uh we're gonna
+22:32
+release the buffer lock uh when we're done and return the item
+22:37
+okay and so notice that what we've got here is uh when the producer can't put anything
+22:42
+because things are full we're going to spin and when the consumer can't get anything because it's empty we'll spin and so that's the weight right so i
+22:49
+remember i said all uh synchronization problems the solution has some form of waiting this
+22:56
+looks like this helps us okay but not so well if you think about it
+23:04
+because look at this the producer acquires the lock and then goes into a spinning
+23:09
+weight loop then they have the lock acquired and they're in an infinite loop which means they're waiting for the
+23:15
+buffer to um get emptied a little bit except that if a consumer comes along
+23:22
+it's not going to be able to acquire the lock because the producer's got the lock so this consumer is going to go to sleep
+23:28
+waiting to acquire the lock forever and this producer will be spinning forever and we've effectively got
+23:34
+a deadlock here okay so or it's really technically a live lock um but it's a live lock that can't
+23:40
+resolve and so this is uh not a good solution
+23:46
+so we got to do something else okay so here might be a solution uh and if you notice what's different Circular Buffer - 2nd cut
+23:51
+here is the producer acquires the lock and then says well if the buffer is full
+23:57
+i'm going to quickly release and then reacquire the lock and then check again and release and acquire and so notice and the consumer's
+24:04
+got a similar idea here and if you notice why is this better well this is better because
+24:10
+let's suppose that the producer is trying to put something on a full queue they first acquire the lock they notice
+24:16
+the queue is full and at that point they release the lock
+24:21
+okay they reacquire it and then they check again and they keep doing that over and over again until the buffer is not full and then
+24:27
+they continue and the reason this works not very gracefully and not very well
+24:33
+is that the consumer let's suppose that things are full so the producer acquires the lock notices they're full
+24:41
+the consumer comes along and yes it could acquire the lock or try remember in our last example they
+24:47
+couldn't because the producer was holding the lock but if the consumer comes along and goes to
+24:53
+sweet sleep in the acquire then the moment that the producer says oh
+24:59
+buffer full release it releases the lock at which point the consumer comes out of the acquire
+25:05
+and now it has a lock okay and it's going to notice probably that the buffer is not empty because we know it was
+25:11
+full and then it can dq and go on and so that release is actually going to release and let the
+25:17
+consumer go and this reacquire will potentially temporarily go to sleep
+25:22
+until the consumer here finishes dequeuing and then releasing at which
+25:28
+point will come out of the acquire we'll notice the buffer is no longer full while in queue and go on
+25:33
+so surprisingly this works okay and this actually
+25:40
+uh works in a variety of circumstances but it's not great because notice that
+25:46
+we're we're burning a whole lot of cycles so if there are no consumers what happens
+25:51
+with the producer that's encountering a full buffer is it's busy running release acquire
+25:56
+release acquire as fast as it can and it's wasting cpu cycles to do nothing so this is a form of busy
+26:02
+waiting okay and so this isn't really going to help us much
+26:08
+now you almost you you might also ask well will this work on a single core uh and the answer is well if you think
+26:14
+of the idea of trying to acquire a lock when um you know when somebody else has
+26:20
+it as you've got to go to sleep then what happens there is we go into the scheduler we talked about
+26:26
+last night and in that scheduler at that point we effectively relinquish the lock
+26:32
+excuse me effectively relinquish the cpu and at that point we somebody else gets to run which could
+26:39
+potentially be the consumer in which case if uh they're ready to run they'll dq and then when we get to run again we'll
+26:45
+acquire the lock and enqueue so this is actually going to work on a single core
+26:50
+and it's also going to work on a multiple core but this really is wasting a whole bunch of
+26:55
+cpu time so this isn't great either um
+27:01
+and uh so what else are we going to do so notice that if we actually go to sleep in an acquire
+27:07
+we're not wasting cpu the problem with this solution is we're spinning where
+27:12
+if there's only the producer a single producer and the buffer is full then we release
+27:17
+and acquire and release and acquire we just keep going wasting cycles forever and uh those
+27:23
+cycles potentially could be used by some other code that ultimately becomes a consumer
+27:28
+which will resolve the producer we call that a busy weight talk about that next time on monday
+27:34
+so that's this little busy weight symbol okay we're waiting we're waiting we're
+27:39
+waiting we're spinning we're spinning we're wasting cycles okay so we need something else and this
+27:45
+is really just indicative of the general problem that locks while they're generally powerful enough
+27:52
+to do pretty much anything aren't quite the right
+27:57
+high-level api to do what we want so we would like a way to do something like this that lets us
+28:03
+do a better job of managing resources than a lock okay and so higher level Higher-level Primitives than Locks
+28:11
+primitives and locks we're going to talk about a couple of them as we move forward in the next couple of
+28:17
+lectures but we can ask ourselves what the right abstraction is for synchronizing threads that share memory now clearly we said
+28:24
+that a lock could be used in a way that allows us to share memory under a wide variety of
+28:29
+circumstances but you have to admit that this particular spinning code here is not all that
+28:36
+intuitive and certainly isn't all that good use of resources so maybe we want something else and we want something as
+28:42
+high level as possible where i think of locks as lower level okay and so good uh primitives and practices
+28:49
+are going to be very important because the easier the code is to read and understand the more likely you are to have it
+28:56
+correct by design um and so this is important
+29:02
+okay and it's really hard to find bugs in uh multi-threaded code that shares
+29:09
+data and unix you know different variants of unix are pretty stable now
+29:14
+but it was very common that um unix systems would just crash every week or so
+29:19
+because of concurrency bugs and that was just what people accepted okay so synchronization is a way of
+29:26
+coordinating multiple concurrent activities and um we're going to talk uh about
+29:32
+in the next several lectures different ways of synchronizing that are a little bit more intuitive and more likely to be correct okay Recall: Semaphores
+29:40
+so that leads us to semaphores which is the topic i wanted to get to today in this special segment and if you
+29:47
+remember i met i introduced seven fours a bit uh a couple of lectures ago but a semaphore is a kind of generalized lock
+29:55
+the term comes from these uh traffic symbols that you see on railways okay and it's the main
+30:02
+primitive used in the original unix it's also used in pintos and several other uh operating
+30:09
+systems as well and a definition here is that a semaphore has a non-negative integer
+30:15
+value and supports two operations one which is uh down or p
+30:21
+is the is the uh standard thing to think about which is an atomic operation that waits
+30:26
+for the semaphore to become positive and then decrements it by one and notice for instance i said here that
+30:32
+it has a non-negative integer value so that could be zero or or higher and so what down or p does is it waits
+30:39
+for the semaphore to become positive so if the semaphore is zero and i execute down i wait and that
+30:45
+waiting is one where i go to sleep it's not a spin weight or a busy weight okay and then the moment that it becomes
+30:53
+non-zero okay or positive it then decrements by one
+30:58
+and and exits the down or p operation okay and then up is sort of the opposite
+31:04
+of that which is an atomic operation that increments the semi-four by one and if somebody's sleeping on p uh it'll
+31:12
+wake them up okay and that wake-up then will try to decrement by one and if they succeed
+31:18
+then one thread will get out okay and think of this as a signal operation think of p as a weight
+31:23
+operation and p stands for proberen and v for ferrogen which is uh probarion
+31:31
+is to test and uh fair hogan is to increment in dutch which is where dijkstra
+31:36
+uh named these from okay so semaphores are just like integers Semaphores Like Integers Except...
+31:42
+except uh well one there's no negative values so they're whole numbers
+31:48
+two only operations allowed are p and v so you can't actually read or write the values
+31:53
+except initially okay so you set it to an initial value and then your only interface is p and v
+32:00
+and the operations are atomic so if you have two p operations on two different threads there's no way
+32:05
+for them to decrement below zero so those whatever the implementation is and we haven't gotten implementation yet
+32:11
+it will ensure that there's no way for uh the semaphore to ever get below zero
+32:17
+and for instance the thread going to sleep on a p won't miss a wake up from a v so it won't be the case that there'll be
+32:23
+a thread sleeping with a p operation but the semaphore itself is one
+32:28
+or more okay those that uh interface is insured because p and v are atomic now posix actually has
+32:37
+a semaphore that gives you the ability to read the value after initialization but
+32:42
+technically this is not part of the proper interface okay so proper interface of semaphores
+32:48
+have only p and v after you've initialized but if you use the posix versions you
+32:53
+can read the value as well so the semaphore as i mentioned from the railway analogy
+32:59
+uh here is here's an example of a semaphore initialize the two for resource control so this is going to
+33:06
+start looking a little different than just locking so here's a semaphore there's two tracks
+33:11
+and a value of two basically says that we're going to only allow two uh trains
+33:16
+into the train yard switching yard at once so when the first one comes along it's going to come along the track and
+33:22
+execute a p operation on this semaphore taking its initialized value of two down to one
+33:28
+and uh we'll go from there so if you notice that first train came along it executed p that succeeded so it got
+33:35
+to keep going the next train that comes along will execute p and now the semi-4 is equal to
+33:41
+zero but that second one succeeded it's only when the third one comes along and tries to execute the p operation
+33:47
+that it gets stopped on p so this train here basically executes p
+33:52
+and the p hasn't returned yet okay or the down operation as it said in some
+33:59
+some interfaces hasn't happened yet so what would make it happen well when the train exits and executes v
+34:07
+then it's going to increment the uh so the v operation is going to increment the semi-4 and then that incrementing will
+34:14
+wake up uh somebody sleeping on the p operation at which point they will decrement back to zero and get to go so
+34:21
+if we let the train go this guy increments quickly to one then decrements and now we're back to where
+34:26
+we were so what's different here is that we have this idea
+34:31
+of more uh resources like two here this is basically giving us a way of
+34:36
+enforcing the fact that there's only two things that are in this uh rail yard whereas if you think about
+34:44
+what a lock is about mutual exclusion that allows only one thing into a critical
+34:50
+section okay so this is allowing two or more okay so there's at least two uses of
+Two Uses of Semaphores
+34:56
+semaphores one is mutual exclusion which is also sometimes called a binary semaphore or a mutex
+35:03
+which is really used like a lock okay and that's why if you look at how do you make a lock in posix they
+35:10
+actually call it a mutex so a mutex in a lock or a mutual exclusion uh
+35:16
+device is essentially a lock okay if i set the initial value to one
+35:21
+and then i say i try to do a sema four p on that semaphore the first one that comes through will
+35:27
+decrement it to zero and be busy doing the critical section any others that come through will now
+35:32
+encounter the fact that the semi4 is equal to zero and won't be able to get through and uh and therefore they will not be
+35:39
+able to go forward okay now another use of semaphores is a scheduling constraint
+35:46
+so for instance we saw earlier with the train the idea that we had a scheduling constraint of two
+35:51
+uh items that could be in the rail yard maximum here for instance if we set the value to
+35:56
+zero of the semaphore then we get this idea that we can allow a thread to wait for a signal
+36:02
+so if thread one waits for the signal from thread two what happens is thread two will schedule thread one when the
+36:08
+event occurs so here we go this is kind of like we set the semaphore to zero
+36:13
+and then join basically says well i'm going to try to do a 74p on the semaphore
+36:19
+assuming that this starts out at zero that's my initialization then the thread join operation is going
+36:24
+to sleep because it's waiting for that semaphore to become non-zero and then as soon as another thread
+36:30
+finishes that will increment the semaphore which will take it above zero which will wake
+36:35
+up the thread join and we'll get exactly the same behavior as a spread joint okay okay
+36:44
+so revisiting the bounded buffer here for a moment what we see is that we have correctness
+36:50
+constraints so the consumer has to wait for the producer to fill buffers okay or in the case of thinking about
+36:55
+this as a coke machine the uh you know you're a student you go to the coke machine there are no
+37:01
+coke bottles in there you gotta wait okay i don't know maybe it's really late so you take a nap in front of the machine
+37:07
+until there's somebody to fill the coke machine the producer or the guy bringing the coke bottles has to wait for the consumer to empty
+37:13
+the buffer so if they uh the delivery guy shows up and the machine's full in the in the instance of what we're talking about
+37:20
+here for a bonded buffer they're forced to wait until somebody buys a bottle of coke and then they can put their another another coke in
+37:26
+so we have uh two correctness constraints which are uh about resources the
+37:32
+consumer waits for the producer to fill buffers the producer waits for the consumer to empty buffers and then one more
+37:38
+constraint which is a mutex constraint to make sure that we have correctness on our cue itself and
+37:44
+don't have bad behavior and this is going to be just like a lock and it's going to be needed for the same
+37:49
+reason we needed to lock at the root of the red black tree in that earlier example which is for correctness
+37:54
+we want to make sure that the queue doesn't get screwed up okay and the reason again i just said
+38:00
+this but we need that mutual exclusion is because you know computers are stupid and if you have multiple threads both
+38:06
+trying to manipulate the the uh the reader and the writer part of the interface
+38:12
+then you're going to get um you're going to get bad inconsistent behavior and there might be
+38:18
+other more complicated things in this instance maybe the input puts things into a heap and
+38:23
+the output takes the uh the one with the smallest value out of the heap so there's many instances of this bounded
+38:29
+buffer that you could think of that are more sophisticated than just fifo all right so general rule of thumb you
+38:36
+got to use a separate semaphore for each constraint so we have a semaphore for the full buffer constraint a semaphore for the
+38:42
+empty buffer constraint and one for the mutex so that's three semaphores and we're going to start out with no
+38:48
+full slots because the machine is empty we're going to start out with a 100 empty slots because
+38:55
+the machine is empty right and the mutex we're going to start out with it set to one because uh we're interested
+39:02
+in uh using this as a lock or mutual exclusion and so then our code is pretty simplistic and straightforward
+39:09
+so the producer comes along and says oh let's first execute a semaphore p on
+39:14
+empty slots so what this says is if the number of empty slots is uh zero because they're the machine
+39:22
+is full we're gonna sleep here at that semi-four p okay so the producer can't actually add
+39:29
+any coke machine bottles to the coke machine if there are no empty slots assuming there were empty slots then
+39:35
+what the semaphore p does is it decrements the number of empty slots why because we're about to add another
+39:41
+uh we're about to add another coke bottle so there's one less empty slot
+39:47
+and then notice that we grab the mutex with a semaphore p and we release it after we're done and that's all to
+39:54
+protect this cueing operation we're going to enqueue a coke into the machine or enqueue an
+40:00
+item on the buffer okay and why do we have a m4p followed and of 74v
+40:05
+because the operation on enqueuing we don't we can't afford to have multiple threads screwing it up okay so
+40:12
+this is think of a mutex as a lock and the consumer is kind of the mirror image of this right so the consumer
+40:18
+say you're a student grabbing a bottle of coke says that if there are no full slots because the number of full slots is zero
+40:25
+this semaphore p is going to go to sleep otherwise if there's more than zero full slots
+40:30
+that means there's more than one and more than zero bottles of coke then the 74p operation will decrement the
+40:35
+number of full slots exit we have our mutex around the dq
+40:41
+operation so we grab the lock by doing a 704p and then we
+40:46
+release the lock by doing a sem4v and we correctly do a dq
+40:51
+okay and then um finally we when we're done we increment the number
+40:56
+of empty slots to tell the producer we need more okay and i forgot saying we increment the number of full slots down here in
+41:02
+the producer case okay so think of these uh as critical
+41:08
+sections okay or maybe just the in q and dq that are being protected by mutexes
+41:14
+okay so that's one use of semaphores then this producer when it puts a bottle
+41:21
+of coke in not only does it increment the number of bottles of coke by incrementing full slots
+41:26
+but if it turned out that there was a consumer waiting for a coke bottle then this
+41:31
+semaphore v on full slots will wake up uh an item that was sleeping on a 74p
+41:39
+okay and it could be by the way i'm sure some of you are thinking well what if there are uh five students sleeping on 74p what
+41:47
+happens is it might be the case that the symbol for v going from zero to one wakes them all up
+41:52
+but then the first thing they're going to try to do when they're awake is decrement the semaphore one of them will get a chance just
+41:58
+because of the scheduler to decrement it uh from one to zero and they'll exit 74p
+42:04
+and get to go on the rest of them will encounter that the 74p is back to zero already
+42:09
+and they'll have to go immediately back to sleep so this uh full slot increment will only wake up
+42:15
+one of the sleeping guys if in fact full slots went from zero to one when we did semaphore b
+42:21
+and then the flip side of this is this semaphore v on empty slots will wake up the producer
+42:27
+if it turns out that there is a producer sleeping on the fact that there aren't any empty
+42:33
+slots for the bottles of coke okay so this is
+42:39
+there to give you an idea that semaphores are a lot more sophisticated in what they can do and
+42:45
+they do they do both mutex operations uh like locking and they all and they do resource
+42:52
+operations where you get to track the number of resources and make an action based on that
+42:59
+okay so a little discussion about the symmetry uh of this solution so why um do we do Discussion about Solution
+43:06
+semi semi4p on empty buffer and 74v on full buffer for the producer
+43:11
+but the consumer does the opposite well that's because the producer is uh waiting when there's an empty
+43:18
+buffer and signaling that they've filled a buffer whereas the consumer is waiting when there are no full buffers but signaling
+43:26
+when there's a new empty buffer okay so we decrease the number of empty slots we increase the number of occupied
+43:32
+slots here we decrease the number of occupied slots and increase the number of empty slots
+43:38
+notice by the way i just want to say this that it's not we have two semaphores for
+43:44
+either end of the spectrum okay for whether we can add items
+43:49
+to uh to the front or not and whether we can remove them from the back or not those two semaphores uh are on opposite
+43:57
+ends of the buffer so we need two of them we can't just get by with a single uh semaphore that tells us how many items
+44:03
+are in there because uh then we wouldn't be able to sleep on one or the other side okay
+44:11
+so we need two one for each side of the buffer
+44:16
+the other thing to notice is is the order of these p's important so the producer did do
+44:22
+semaphore p on empty slots and then [Music] and then 74p on the mutex and then in q
+44:29
+and so on will this matter if i swap these and the answer is yes
+44:34
+this can actually cause deadlock okay why is that well if you look the producer comes in executes semaphore
+44:42
+p on the mutex okay so it grabs the lock and then it calls and says oh there are
+44:49
+no empty slots and so it goes to sleep we've now got a situation where the producer is sleeping
+44:54
+while holding the lock which means that if the consumer comes along and tries to add a bottle of coke or
+45:02
+tries to take away a bottle of coke excuse me what will happen is it'll execute semaphore p on full slots it'll
+45:08
+try to grab the mutex but it can't because the mutex has been grabbed by the producer after
+45:13
+just before it went to sleep and so the consumer will be permanently stuck all right and this is a bad deadlock
+45:20
+scenario okay and then you could come up with a cycle we'll talk more about deadlock
+45:26
+later in the term is the order of the v's important that's no and the reason is that um
+45:33
+neither of these uh block in any way what they do is they increment a value and possibly wake somebody up
+45:39
+so you can do those in any order okay what if we have two producers and two
+45:44
+consumers well if you look back at our solution back here what you'll find is this works for any
+45:50
+number of simultaneous producers and consumers and the threads will just go to sleep if
+45:56
+there's no space and so this is this particular solution works perfectly well for many producers and many consumers
+46:03
+okay especially the one producer one consumer case which we might have started with
+46:12
+okay um don't need to change anything so where are we going with synchronization 
+46:19
+so in the next monday and the the rest of this particular term
+46:24
+we're going to be going to various high-level synchronization primitives using atomic operations
+46:31
+um you're gonna see a bunch of hardware to help us uh we're gonna start with load and store
+46:36
+being um atomic and then we're going to disable interrupts
+46:41
+as a way of getting locking and then we'll talk about using test and set and compare and swap
+46:46
+and then we're going to start putting in some higher level primitives and what i mean by that is we already know what locks and semaphores are but we're going
+46:52
+to start talking about how do you build them okay and we'll talk also then about monitors and send and receive and so on
+46:58
+more sophistication and then we'll talk about shared programs all right so that's all i wanted in this
+47:04
+supplement um just wanted to talk to you a little bit more about locking and semaphores
+47:09
+we'll repeat some of this material on monday but i just wanted to give you a little bit of an extra heads up here
+47:16
+in case you were interested in learning something more about semaphores before your design dock was due
+47:21
+all right have a great rest of your day and we'll see you on
+47:27
+monday thank you

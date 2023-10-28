@@ -1,0 +1,1586 @@
+0:02
+welcome back everybody um to the second lecture of 260 or 162
+0:08
+why i'm getting ahead of myself here um so what i would like to do today is uh dive right into the material
+0:16
+and um let's try to keep comments during the actual lecture in the chat as actual questions and uh
+0:23
+let's see what we can do so uh as you remember from last time
+0:28
+uh we we're talking about what an operating system is
+0:33
+and um you know i think i hope i kind of mentioned by the end of
+0:38
+the lecture that it's really hard to say exactly what it is because not everybody agrees so we could kind of
+0:44
+ask what it does and that's what we did here we talked about how an operating system acts as a
+0:49
+referee illusionist and glue where the referee is managing protections on resources we'll talk a lot about that as
+0:56
+term goes on illusionist is the uh the notion that we're gonna somehow make it look like we
+1:02
+have a really clean set of resources that are much better than the axle ones are
+1:07
+and uh virtual machine technologies help in this in some sense and then the glue is kind of a set of
+1:13
+common services that basically make writing programs on top of an operating system much easier
+1:19
+and things that you're very familiar with are things like windowing systems and the file system so if you also
+1:26
+uh recall we started talking about for instance what the os might do for protection and what
+1:31
+you see here is an example of two processes we're going to say more about them as we go on today
+1:37
+uh that each think they have a machine that has all of the system resources to
+1:42
+themselves and has a set of virtual resources like threads address spaces files and sockets
+1:49
+that they can utilize any way they want and we can have more than one of these running at the same time
+1:55
+on top of the same physical hardware and that's the job of the operating system and one of the things that we did talk
+2:01
+about uh which we're going to bring up again today is this notion that program 2 which is
+2:06
+in green here is not allowed to talk or otherwise observe
+2:11
+modify process one's state not allowed to modify the operating system in ways that aren't
+2:17
+allowed not allowed to modify storage unless they're allowed so this is part
+2:22
+of the uh referee aspect of operating systems and we kind of said if process two tries
+2:28
+to do any of these things then typically uh the operating system will object and you might get a segmentation fault
+2:34
+uh with core dump or something like that where the process is essentially killed off
+2:39
+so um the other thing that we started to talk about is that the the world of hardware
+2:46
+is very complex and it's for very many good reasons and that world of complexity needs to be
+2:53
+managed in a way so that we can still write programs that function properly okay and the um
+3:00
+a good question that's in the chat right now was back on this previous slide of what a second instance of the same
+3:06
+program get its uh get a separate process and the answer is yes so if you recall a process was an
+3:12
+instantiation of a program and you can have multiple instantiations of the same program
+3:17
+so um among the examples of complexity i just wanted to show you here we kind of talked about the sky lake
+3:23
+uh processor series uh last time briefly and you can see that there's um the core
+3:30
+uh chip itself is um directly connected to really high bandwidth dram channels
+3:36
+and uh high speed graphics and so on and then there is this uh interface the direct media interface
+3:42
+to what's often um used to be called the south bridge but it's basically the
+3:47
+the uh chip that connects to all the rest of the i o and off of that we can have things like
+3:53
+high-speed io devices for pci express we can have disks we can have slow i o through usb
+3:58
+we can have ethernet hd audio pcie drives raid smart connect whatever and then
+4:05
+there's an even slow interface off of that that gives us bios and all sorts of interesting things so
+4:10
+really the reason that operating systems are so crucial is they provide a way to take this
+4:17
+complexity and manage it okay now a slide i didn't really get a lot of time to talk about last time was
+4:22
+this one which you can go to uh this link that i've got down the bottom here information
+4:28
+is beautiful.net slash visualizations million lines of code and it kind of talks about millions of
+4:33
+lines of code for different things that you're familiar with and if you look for instance one of the
+4:41
+things that's a constant of the universe is for instance that going to a later version of
+4:47
+something typically increases the size of that thing and the complexity of that thing tremendously so
+4:53
+for instance from linux 2.2 to linux 3.1 if you notice that's a that's an
+4:58
+increase of maybe a factor of six or more and the other thing to look at is things like cars which
+5:04
+we take for granted are getting very complicated in terms of millions of lines of code so this is almost 100
+5:10
+million lines of code in a modern car that uh boy when you're traveling at highway
+5:16
+speeds you want to make sure there aren't any bugs in that okay so we have a lot of complexity to
+5:22
+uh deal with and of course uh yeah i have no idea how many lines of
+5:27
+code in the 747 that's a really good question i would say a lot especially
+5:34
+especially the modern systems which are essentially flown by computer pretty much
+5:40
+if you think about ways in which the complexity leaks into the operating system
+5:45
+uh what you see for instance is that third-party device drivers which are uh written by companies other than the
+5:53
+os provider are often places where bugs happen and are the reason for
+5:58
+a high fraction of crashes okay and um you know you buy a device it
+6:04
+gives you a third-party device driver which you then install that device driver wasn't necessarily uh
+6:12
+written all that carefully although microsoft over the years has come up with vetting processes to try to make things better so as apple
+6:18
+so as the linux folks but you could think of a device driver as a reason to provide a nice clean interface and
+6:25
+ironically that device driver interface is one of the things that causes things to crash
+6:31
+holes in security models we'll talk a little bit later in the term about for instance spectre and meltdown these are
+6:37
+the two symbols for it but uh all of a sudden in late 2017 early 2018
+6:42
+everything people thought they knew about securing data in a kernel turned out to be wrong
+6:48
+because of the way that people were designing processors to do speculative execution
+6:55
+and basically you could extract data directly from kernel space in many instances
+7:01
+which is an issue the version skew on libraries can cause
+7:07
+problems and that's one of the reasons that docker is so helpful and we'll talk more about that as we go on and then of course there's
+7:12
+the invariable data breaches attacks timing channels uh et cetera okay
+7:20
+and you know the question in the uh one of the questions in the chat here is sort of why are device drive drivers
+7:27
+particularly vulnerable and it's really that uh they are the the part of the system that touches the
+7:34
+uh most complicated hardware and uh basically they're trying to put a clean
+7:40
+interface up to the software but what's inside of them is potentially very complicated okay and there's a lot of interesting
+7:47
+things that you can get just by googling for instance and i encourage you all to do that we'll talk more about device drivers when we get later
+7:53
+in the term so the operating system is really trying to
+7:59
+uh help abstract the underlying hardware and tame complexity all right and so you could think of
+8:05
+there's hardware uh underneath the operating system is in between uh
+8:12
+to provide a clean abstraction which we'll even call a virtual machine abstraction
+8:17
+to the operating system okay now the question about how do we quantify
+8:22
+uh reliability and so on there have been a number of attempts at that it's been hard
+8:27
+but if you actually look at people that have measured the root causes of a lot of crashes um something upwards of 50 or 60 percent
+8:35
+of them at one point in time were actually attributable to bugs in opera in device drivers
+8:41
+which is uh pretty spectacular so the way we uh deal with this
+8:46
+abstraction uh mechanism here or this virtualization mechanism is again we're providing various
+8:54
+resources that are better than the hardware versions so instead of processors we're going to provide threads talk about that today for the
+9:01
+first time instead of memory which is a bunch of dram pieces we're going to provide address spaces
+9:07
+instead of disks or ssds which have blocks we're going to produce a file system
+9:12
+instead of networks we're going to have a nice clean socket interface instead of machines uh we're going to have processes all
+9:20
+right and this is going to be a an ongoing discussion throughout the next
+9:25
+several weeks where we talk about how the operating system virtualizes the hardware pieces to give you a much
+9:31
+cleaner environment the bios was asked about in the chat is typically a way of
+9:39
+providing a set of standardized services on top of hardware and part of the bios is a legacy to old
+9:47
+days in ibm pcs but some of it also provides firmware that can get updated and help
+9:53
+the hardware be a little bit more reliable thereby making the operating system's job better
+10:00
+okay and yes device drivers run in supervisor mode which is one of the reasons except for micro
+10:05
+kernels which we'll talk about later in the term as well so the operating system as an illusionist is really
+10:12
+part of our topic today we're going to talk about the four uh interesting uh functions of the
+10:19
+operating system that really are leading to this illusionist idea and we're mostly going to work on the thread
+10:24
+and process uh concepts today okay and um
+10:29
+basically as an illusionist the os is going to try to remove hardware software quirks
+10:35
+as a way of fighting complexity and optimize for convenience utilization and reliability to help the programmer all
+10:42
+right and for any os area you pick it file systems virtual memory networking scheduling etc
+10:49
+you can ask the questions of what hardware interface do you have to handle and what software interface are you going to provide
+10:55
+and oftentimes the hardware interface talks about a set of mechanisms that the
+11:02
+operating system exploits to provide a set of uh clean mechanisms and policies up to
+11:07
+software and we'll use that terminology as we go throughout the term okay and um
+11:13
+yes it is true that complexity is a very hard thing to measure and to uh talk about in a quantitative
+11:20
+sense but certainly you know what it means in a qualitative sense and it's that qualitative sense that
+11:26
+tends to get in the way of people knowing that their systems are going to function properly
+11:31
+now so today we're going to basically talk about four fundamental os concepts we're going to start with talking about
+11:37
+what a thread is and a thread is going to fully describe a
+11:43
+program state or a linear execution context it's going to have a program counter
+11:48
+registers execution flags a stack etc this is going to be very familiar
+11:54
+hopefully to all of you uh based on 61c and then we're going to now then move
+12:00
+off into address spaces either with or without translation which are a set of memory addresses accessible to the program
+12:07
+and we're going to talk about how with the right mechanism we can provide a much cleaner behavior than the
+12:13
+underlying hardware and then we're going to introduce what processes are and
+12:19
+finally we're going to talk about a particularly important hardware mechanism for the early parts of this class which is dual mode operation which is
+12:26
+the fact that a typical processor has at least two different modes which we may loosely call kernel
+12:32
+mode and user mode and we exploit that to give us our better virtual machine behavior
+12:38
+okay yes so um moving forward now so what's the bottom line we're going to
+12:43
+run programs and that uh we're going to learn how to write them and compile them so you guys
+12:49
+get to do that uh right away with uh with uh homework zero and um project
+12:55
+zero starting tomorrow and then once they've been uh written then we're going to talk about how
+13:00
+things get loaded into memory okay after their executables pulled off the file system it's loaded into memory
+13:07
+we're going to talk about the stack and the heap getting put together for that particular process
+13:13
+and then we're going to transfer control which is really means the program counter of the processor is going to be pointing at
+13:20
+instructions in the user code of that process and then the execution will start
+13:26
+okay and uh and then of course the operating system is going to provide services like file system and so on to
+13:32
+the program and uh and it needs to do all of these things while protecting the os and the process from other processes
+13:40
+okay and other users all right
+13:46
+so fred's uh can be thought of in the following way
+13:51
+and uh we'll talk a little bit later about uh threads and their heaps but if you look um
+13:57
+for instance here back in 61c you got to learn about processors and the processor
+14:03
+was something that started out with having a program counter as you recall and a memory that it could read
+14:08
+and in that memory was a set of instructions okay and so that program counter would point into the memory
+14:13
+and allow the processor to fetch the next instruction if you all remember so we'd pull the instruction in
+14:19
+from memory we would decode it and then we would feed it to the execution pipeline which uh the
+14:26
+one that we often talk about 61c is the five execution pipeline for a risk style
+14:31
+processor and after things were decoded they would feed a set of registers and enalu to do
+14:38
+actual operations and uh execute as desired and at that point you'd go on to the
+14:44
+next uh instruction and so on and increment the program counter okay
+14:49
+and so um this is hopefully familiar to everyone from 61c
+14:56
+and if it isn't i would suggest that you guys go back and review a bit but let's talk a little
+15:02
+bit about our virtualized version of what we said there so our first os concept is going to be a thread
+15:08
+of control and a thread is really a single unique execution context and it's got a program
+15:14
+counter registers execution flag stack memory state and so now all of a sudden you're going to say well wait a minute
+15:20
+is that just what you had on the previous slide okay and if you look uh
+15:28
+yes what you learned about was a very simple uh fetch execute cycle in 61c
+15:35
+once we get to uh something we want to provide to other people to users in particular we need to
+15:42
+virtualize it and so the thread is going to be like a virtualized version of your 61c processor and a thread is executing on
+15:50
+the processor or core so by the way i'm going to intertwine processor and core until we
+15:55
+uh can make that a little bit more clear later but it's executing when it's resident
+16:01
+okay and the processor registers so we may have many threads but on a given core only one of them is
+16:07
+resident and has control of the program counter and registers at any given time okay
+16:13
+so what does resident mean let's just be very clear so the registers have the the context of the thread or the root
+16:19
+state includes a program counter currently executing instruction the
+16:25
+program counter is pointing at the next instruction in memory and all the instructions are stored in
+16:30
+memory the resident state includes intermediate values for ongoing
+16:36
+computations so typically once you get into pipelining which you started to learn about 61c
+16:42
+there's a lot of pipeline state involved in an ongoing execution if you're really
+16:48
+interested in that i would highly suggest something like 151 or 152 where you learn a lot more about
+16:56
+interesting pipelines and speculative execution we'll be talking a little bit about that throughout the term but that's more
+17:02
+of a hardware architecture class but um resident also means that there's a stack pointer that has a pointer into memory
+17:08
+which is the top of the stack and um pretty much the rest of the thread is in memory so there's some
+17:14
+things in the registers that and the rest is in memory okay and you'll see how that looks in a second
+17:21
+so a thread is suspended or no longer executing when it states not loaded in
+17:26
+registers okay so it's kind of the opposite of resident and at that point the processor state is
+17:32
+pointed at some other thread so the thread that's that's suspended is actually sitting in memory
+17:38
+and uh not yet uh executing or not executing at all
+17:44
+while something else is executing so uh program counter is not pointing at the next execution from this thread
+17:50
+because it's pointing at the execution of the current thread okay now uh here is
+17:58
+another view of what happens during execution this is another kind of 61c view if you look here here is uh the set
+18:05
+of addresses which we're going to call an address space a little bit later in the arc uh in the lecture that um from 0 to 2 to
+18:12
+the 32nd minus one and what it has in it is a set of instructions that are going to be
+18:18
+executed and what you see in pink here is your processor okay and um let's hold off on questions
+18:25
+about where the state's stored when the thread's not running the way a thread is different from a
+18:30
+process if you can give me a few more slides we'll get to that as well but it's basically the process has
+18:36
+a protection state associated with it so if you look at the set of registers and the pipeline
+18:42
+that's the processor and this might be the currently running thread which means our execution sequence
+18:47
+fetches an instruction at the program counter decodes it executes it writes it back to registers
+18:53
+grabs the next instruction and repeats so this is a wash and repeat kind of scenario
+18:59
+and so for instance the program counter might start at instruction zero and then goes to one and two three and four as we're going
+19:07
+and this in essence is what it means to execute okay this is the the basic uh
+19:15
+von neumann machine that we're all very familiar with uh that you learn about in 61c and that
+19:20
+we're going to take for granted because we're going to put an operating system on top of it the one thing that's going to be a
+19:26
+little different from uh what you're used to is rather than risk 5 which is kind of what they do in 61c
+19:34
+we're going to use a more common processor called an x86 uh which is the intel processor and
+19:40
+probably all of you who have laptops these days all have x86s on them um i understand that uh apple is
+19:47
+basically punting the x86 in some of the upcoming generations but we're probably all using the same
+19:52
+processor and the set of registers are a little different from the risk 5 processors you're used to so
+19:58
+there's smaller number of execution registers but there's also a lot of
+20:04
+other things like segment registers and so on which we'll talk about over time
+20:09
+but if you notice on the left here we have risk 5 which had say 32 registers associated with it on
+20:16
+the right we have x86 which has a much smaller number of registers that you can actually
+20:22
+execute on and then a bunch of other state now the question about what an execution flag is
+20:30
+came up in the chat and a lot of different processors have the following uh associated with
+20:37
+them if you subtract two uh registers to get a third not only does it give you the result of
+20:43
+that subtraction but then a set of flags gets set like did
+20:48
+when you subtracted those two registers was the result zero so that's like the zero flag
+20:53
+or was it greater than or less than zero so there might be a greater than flag so those flags are then subsequently
+21:00
+things that you can actually make branches on branch decisions on so you might branch of equal and the way that's
+21:07
+going to work is with an execution flag so um take back take a look
+21:12
+in some of the supporting things that we have for you on the resources page and i believe in a section maybe on
+21:19
+friday they'll talk a little bit more about the x86 as well but uh you're going to get very familiar
+21:25
+with x86 okay so the question is are execution flags
+21:32
+like the control logic from 61c the answer is no so think of uh execution flags
+21:38
+are like a bunch of little one-bit registers that hold some of the comparative results of what you just did
+21:45
+okay so they're they're they're tiny result registers and you can save and restore them
+21:50
+uh during a contact switch on certain processors and if you look here see the e flags so those for instance
+21:56
+are some of the flag registers that represent the results of execution
+22:02
+so how do we get the illusion of multiple processors we talked last time about you know doing
+22:08
+a psa ux or some other uh task manager on your laptop
+22:16
+and uh if you look you'll find that there are hundreds of processes that are just running uh
+22:22
+mostly sleeping but they're all available on your current processor
+22:28
+and so how does that work so for the next uh i will say couple of
+22:35
+weeks let's mostly assume that a physical processor has only one core
+22:41
+on it or one thread of execution in the hardware at any given time and we will we will um
+22:48
+graduate to multi-core processors a little bit later but for now what we've got here is we
+22:54
+want to have multiple cpus or the illusion of multiple cpus running
+22:59
+at the same time so we can have multiple threads running at the same time we're going to have them all share the same memory
+23:05
+so that the programmer's view is well i just have a bunch of things running and they all share memory okay um
+23:13
+and the uh question is kind of how do we get the illusion here and this is not
+23:20
+complicated it's kind of what you would think we're going to multiplex that hardware in time
+23:25
+okay so threads are virtual cores and uh what i show you here is assuming
+23:31
+again for a moment that we have only one processor or one core in the system then the way we get the illusion
+23:37
+of magenta cyan yellow running at the same time is we just multiplex we run from
+23:43
+cyan's thread for a little while and then from magenta's thread for a little while then cyans then yellow and so on
+23:49
+and we repeat and so over time we get this multiplexing of the same physical hardware
+23:56
+okay and um the contents of a virtual core or thread is what well clearly each one of
+24:03
+these virtual cpus needs to have a program counter and a stack pointer and uh
+24:09
+all of the register state that we're used to if we were running that thread on a
+24:15
+single processor in 61c okay so there's registers
+24:21
+you might ask where is it the thread itself well if it's currently executing so for
+24:28
+instance if we're in a period of time where magenta is running then it's in the
+24:33
+processor itself and when it's not running it's saved in memory that state
+24:38
+is called uh thread control block or tcb okay um now
+24:47
+let's continue on this illusion for a moment here so consider this multiplex view and time so at t1
+24:54
+uh vcpu one is running a t2 uh cpu uh the blue one is running
+25:01
+so what happened between one and two anybody want to hazard a guess
+25:16
+so good so what happens is a contact switch is the high level answer um the low
+25:23
+level answer would be some event okay so the os
+25:28
+got to run somehow between uh pink and blue all right and what happened during that
+25:34
+contact switch is we saved all of magenta's uh pc stack pointers all the other
+25:40
+registers in their thread control block in memory we loaded the pc stack pointer et cetera
+25:46
+from vcpu to and we returned to run the the cyan one okay
+25:54
+so um interesting questions here that are coming up so first of all
+26:01
+one question was does each uh thread here get its own
+26:06
+cash and the answer is no okay so typically in general it's no
+26:13
+typically uh there's one cache per core and so uh they're all kind of
+26:19
+sharing the same cache so as you could imagine if you switch too quickly
+26:24
+then nobody gets advantage of the cache okay and um yes the cache or the tlb
+26:31
+uh in a primitive processor has to be flushed when you switch more advanced ones it doesn't we'll talk
+26:37
+more about that as it goes on uh the cache itself is typically in physical space
+26:43
+and you're switching from one thread to another uh you just change page tables and so you don't actually
+26:48
+have to flush the cache and we'll get we'll get into that you guys are way ahead of me on this um another question is how long does
+26:55
+this take well this can take uh something of the order of a few microseconds
+27:01
+and um you want to make sure that the time to switch isn't uh so long that you're spending most of
+27:07
+your time switching okay that would be a thrashing scenario that could be pretty bad
+27:12
+okay um so the other question which is great you guys are on top of things
+27:18
+wouldn't it be better to say run the magenta one to completion and then pick up the blue one so
+27:25
+that would be a yes on efficiency but not so great on responsiveness okay
+27:31
+because the the poor task that's trying to run in that cyan or blue thread
+27:38
+wouldn't get to run for a very long period of time potentially okay so we're going to talk about those
+27:44
+issues when we get into scheduling okay so you can already see how you're all asking the right questions there's
+27:49
+some very interesting ones here okay but let's move a little forward here
+27:55
+um what triggered the switch well we've already said things like a timer went off or a voluntary yield we'll learn about
+28:02
+that uh very soon where uh the magenta one maybe decided to ask the operating system to do some
+28:07
+io at which point the os said oh okay let's uh let's schedule somebody else okay
+28:14
+and uh the question about how many registers there are is going to depend vastly on which
+28:21
+processor you've got so yes there are 32 integer registers on a risk five which you guys are used
+28:27
+to and yes there are some floating point ones as well on an x86 there's a much smaller
+28:34
+number of registers and so when you don't have registers in the processor you got to keep things in
+28:39
+memory so you spend a lot of time going back and forth so good questions so
+28:46
+um now that we've started talking about how to get the illusion of multiple
+28:51
+things we can start looking at uh
+28:56
+what this model gives us and the model gives us the following we may have a bunch of memory that's in
+29:02
+blue here and we could think of each one of these virtual processes you know green yellow orange
+29:08
+has their own stack and heap and data and code and they're all laid out in
+29:14
+memory somehow and what we need to do is somehow keep track of where everything is
+29:20
+okay so the thread control block is that where everything is so when we switch
+29:26
+from green to yellow the first thing we're going to do is save out all of green's registers
+29:31
+into its thread control block which is by the way in part of the kernel memory which i'm not showing here okay
+29:38
+the question about in-flight instructions that's in the chat's an interesting one so typically what
+29:43
+happens when you get an interrupt is you end up flushing the pipeline so mostly in-flight state is all squashed
+29:51
+when you switch okay we'll talk more about that a little later too
+29:57
+where are the tcb stored they're stored in memory for now we're going to say they're stored in the kernel i want to say for
+30:04
+now because we're going to talk about user level threads and some pretty interesting things in a couple of weeks excuse me but for
+30:12
+now let's assume they're in the kernel and if you're you know you're start working on pintos
+30:18
+which by the way you are we're going to release project zero tomorrow uh you should take
+30:24
+a look at thread.h and thread.c right away you'll start to see how it is that pintos which is the operating system
+30:30
+we're using for the projects implements threads okay
+30:36
+all right so let's talk about some administrivia you should be working on homework zero
+30:42
+okay it's due thursday already okay uh and
+30:47
+you know the um the reason for homework zero is really
+30:52
+to make sure that you have uh experimented with everything and you're ready to go
+30:58
+so you get to experiment with gdb you get to experiment with compiling you get to work on your tools okay you
+31:05
+get to learn about git if you're not sure about it you get your virtual machines up and running
+31:11
+okay and so um we're gonna have project zero up
+31:18
+tomorrow i know originally it wasn't up until thursday but we're pushing that a little forward project zero is a chance for you to
+31:24
+really get going on the pintos projects and it's intended to be done on your own so do not do this
+31:30
+with potential partners do this on your own and it's really about everybody who's
+31:36
+going to participate in a group learning some basic things about how to run the projects okay
+31:42
+and so again i suggest you get moving on that right away as well
+31:48
+i did want to say something about slip days on projects and homeworks
+31:53
+this term because of the
+31:58
+you know because of the virtual nature of this class and things are complicated and difficult to get moving we're uh we're upping the number of slip
+32:05
+days to four for both homeworks and projects uh but when you run out of slip days and you don't get any uh credit for
+32:12
+things that you're slipping on so i would suggest that you bank okay uh the
+32:19
+bank your slip days don't use them up right away um because you may want them later in the term
+32:26
+okay tomorrow is uh an optional review session for c and uh actually i think
+32:31
+we're billing it as for a bit of c plus plus as well uh there's a zoom link that's going to be announced um
+32:37
+it may be already up on piazza uh it will probably record it um but i would consider attending
+32:45
+uh and in that we've got people are gonna go over some of the basic things about c that you're gonna wanna know okay
+32:54
+uh c plus plus is not really required for this class uh in
+33:00
+answer to the question that's in the in the chat there you're really going to use c okay but uh it doesn't hurt
+33:08
+to look at what we've got for c plus plus it well as well not really required means that
+33:15
+the the work you're doing in pentos is in c um and uh friday
+33:23
+that is four days from now is drop date okay so it's an early drop date class
+33:31
+and it's very hard to drop afterwards so if you're not interested in the class you should uh
+33:38
+drop sooner rather than later so that people can be pulled off the wait list okay and
+33:46
+the thing that you need to do is if you have friends who are either on the wait list or in class but they haven't been doing
+33:52
+any work there are in danger of being put into the class
+33:59
+without them knowing okay and you may you may think that that's ridiculous but it happens every term
+34:04
+somebody wasn't paying attention and they end up three quarters of the way through the term and discover that
+34:11
+they're in the class and they can't drop okay it's very hard to drop
+34:16
+late uh without burning one of your you know your one and only late drop date
+34:21
+so for late drop class so uh just try to make a decision on that okay
+34:29
+any questions on that part
+34:37
+okay it is true that berkeley does not uh have a mainstream c plus plus class uh
+34:43
+in the computer science department there's lots of great languages out there uh
+34:49
+and so uh somebody who knows c uh is at least i would say a third of
+34:55
+the way to c plus plus uh but uh you may end up learning c plus on the fly for other classes like
+35:02
+184 for instance okay so just to remind you from last time you
+35:09
+know this virtual class that we're in here is challenging and uh for everybody okay
+35:17
+and things are um considerably different uh starting off
+35:23
+remote not even starting off uh physically and so that means that we've got to
+35:30
+figure out how to re-establish uh the people
+35:35
+interactions and collaborations that we would have if we were in person okay um how do you recover collaboration
+35:43
+without direct interaction that's going to be challenging and so i'm asking everybody here i'm putting out a plea
+35:49
+to do your best to talk to people more than you would in a real term
+35:56
+okay you gotta have more meetings uh drink coffee with your friends on
+36:02
+zoom more often or with your uh groupmates okay this is important um and
+36:09
+you gotta figure out how to bring people along virtually okay it's very easy in this world where um i heard umesh
+36:15
+bazarani described what we're doing right now as we flatten the world graph okay so
+36:20
+everybody's equidistant from everybody else and as a result nobody's close to anybody okay yes i've
+36:27
+become a flat earther for uh with respect to this class cameras as i've mentioned before are
+36:34
+essential components of this class so what we're trying to do is uh make sure that people maintain
+36:40
+their interactions okay and we're gonna need it for exams and discussion sessions design reviews
+36:46
+et cetera okay and um have a camera plan to turn it on
+36:52
+and let's try to keep that human interaction going okay um the uh
+36:59
+we need to bring back personal interaction um humans are not good at interacting via text only you can kind
+37:05
+of see what happens with twitter in the public life is is
+37:10
+really not a great thing and so let's do everything with uh in person as in person as we can get
+37:17
+with a camera interaction okay and uh you're gonna have required attendance at the
+37:22
+discussion sessions design reviews et cetera with the camera turned up okay now
+37:32
+uh the other thing i wanted to remind you guys of is the collaboration policy all right
+37:39
+you gotta um you know if you're explaining a concept to somebody that's okay if you're discussing algorithms or
+37:46
+testing strategies with other groups that can be okay if you're discussing maybe debugging
+37:51
+approaches with other groups but kind of at an abstract level that's okay
+37:57
+if you're a large allowed to do searching for generic algorithms like hash tables
+38:03
+okay these are all okay what you're not allowed to do is uh share code or test cases with other
+38:10
+groups okay and we track that okay we have a mechanism to compare people's code
+38:17
+with other people's code from earlier terms and in the class and so on just don't do it copying or reading
+38:24
+another group's code or test cases just don't do it copying or reading online code or test cases from prior
+38:30
+years or other members of your group just don't do that okay
+38:36
+uh helping somebody to debug in detail in another group don't do that either okay because what happens is
+38:42
+um if you know you're helping somebody debug you're now not only looking at their code but
+38:48
+you're importing your code kind of conceptually into their code and we have had situations where
+38:54
+debugging essentially caused the person that was being helped code to to uh match against the other code and
+39:01
+both groups got in trouble so just just say no okay
+39:06
+um we're uh compare all project submissions against prior year submissions and
+39:12
+online solutions and so this is it you know just just don't do it and
+39:17
+also don't put a friend in a bad position by asking for help that they shouldn't give you okay all right good
+39:25
+now are there any other administrivia questions
+39:39
+nope okay um
+39:46
+now let me see there was a question oh there was a good question uh in the in the chat from before i
+39:53
+started the break which was you know why not uh just kill off one stage of the pipeline at a time
+39:59
+you know it turns out oops sorry that um it's very difficult to uh restart pipelines
+40:06
+uh if you try to save some of the state and restart it that's called precise exceptions
+40:12
+uh the question of precise exceptions if you can save part of the state and restore part of the state that's an
+40:18
+imprecise exception turns out that gets complicated very rapidly it makes getting correct os code
+40:23
+really hard so in general they don't do that okay and i will mention that a little bit
+40:28
+later when we get into page fault hammer page fault as well okay
+40:34
+now so uh if people could turn off their cameras
+40:40
+during class that would be good please so uh the second os concept we're going to talk about today
+40:46
+is address spaces okay and um the simple idea
+40:53
+is that it's the set of accessible addresses and the state associated with them so if
+40:58
+you think back to 61c you've got uh let's say a 32-bit address
+41:04
+from zero up to fffffffffff and this is the view that a processor has of memory
+41:11
+now that's not to say that there's uh dram in all of these spaces it's just that this is the processor's view of
+41:16
+what addresses are available and so for a 32-bit processor by the way i'm gonna make you guys all
+41:22
+know about powers of two so if you don't know them yet you should start learning them um but two to the 32nd for instance is
+41:29
+four billion approximately okay 10 to the ninth to the 64
+41:34
+is 18 quadrillion so that's a lot of addresses okay but um
+41:40
+if you think of the address space as all of the the potential places that the processors
+41:46
+could go and then there are ones that actually are backed by dram then there's some state associated with them
+41:53
+and the question might be well what can you do when you read or write to an address well perhaps it acts like regular memory
+42:01
+or perhaps it ignores the write entirely or perhaps the system causes an i o
+42:07
+operation to happen that's called memory mapped io or perhaps it causes an exception it's possible if you try to read or write
+42:13
+somewhere in the middle between the stack and the heap that i'm showing you here and there's no memory assigned to that
+42:19
+process you get a page fault okay or maybe the act of writing to
+42:25
+memory communicates with another program okay so um
+42:31
+there's a lot of uh a lot of possibilities here okay
+42:38
+now uh so am i saying oh i meant quintillion
+42:45
+there didn't i okay thanks for the catch uh so um in a picture i'll fix that slide
+42:52
+by the way so in a picture the address space is kind of like this okay so here is your
+42:58
+61c processor registers okay the program counter points to some address and the stack pointer
+43:05
+points to some address typically the bottom of the stack and um other registers might point to
+43:11
+things in the heap or et cetera and
+43:16
+the fact that the pc can point to an address and it can fetch from that address means that we can have a
+43:22
+processor that actually executes an instruction at that address okay so whatever we come up with with
+43:28
+our threading and protection model it's going to involve accessing the
+43:33
+address space okay and so what's in the code segment
+43:39
+um well it's in the code segment's code that's not too surprising what about the static data segment
+43:45
+anybody have any idea what would be in the static data segment so many of you have started looking at
+43:52
+gdb great static variables yup global variables et cetera things that are um explicitly
+44:00
+declared rather than allocated with malik good yup string constants all of those
+44:06
+things are typically in the static data and that's loaded at the point where the program's first loaded while the process
+44:12
+is being created what's in the stack segment
+44:19
+anybody remember what is on the stack yeah local variables okay we're going to
+44:24
+go through this more but you should look back at 61c and recall what the stack's about
+44:30
+right so the stack is when you do a recursive call to a function
+44:35
+the variables that were of the previous function are pushed on the stack and then the stack pointer moves down
+44:40
+and then when you return you uh pop them off the stack and stack pointer moves up so i also see locals that's correct so
+44:47
+local variables the uh how do we allocate it well we'll
+44:52
+talk more about that one of the things that's going to be a very cool thing the operating system can do once you've got virtual memory
+44:58
+is you can start the stack off with just a couple of of pages and then as uh the stack tries
+45:05
+to grow it's going to cause page faults and the operating system will then be able to add more physical memory to the stack
+45:12
+okay and the same is true of the heap so the heap is when you allocate things with malik or so on or
+45:17
+you do linked lists all of those things typically lay in the heap and the heap is als also starts out with less
+45:24
+physical memory than maybe the program ultimately needs and as the program
+45:29
+starts to grow you get page faults which will allocate things on the heap okay so you don't have to worry about having caught
+45:34
+all that now but i'm just giving you some ideas okay what's in the heap segment well i already said that that's things that you
+45:41
+have allocated with malik think of structures with pointers think of
+45:46
+linked lists think of all sorts of things okay there's a rather amusing comment in the
+45:52
+operating system that they are really convoluted magic um maybe on the other hand i'm hoping
+45:58
+that by the end of the term you'll see that they're just very clean magic okay
+46:04
+all right certainly validating parts of the operating system can be easier to
+46:10
+validate than a compiler now so our previous discussion of
+46:15
+threads is what i would call very simple multi-programming okay all of these vcpus
+46:22
+share the same non-cpu resources the only thing we virtualized with our
+46:27
+current threads are the registers the program counter the stack pointer
+46:33
+nothing else so that means they all share all the rest of memory they all share
+46:39
+i o devices they all share everything else okay and that could be an issue
+46:46
+now the question that's on the the chat which i find interesting uh here right now is can they uh each assume
+46:53
+they have infinite stack or heap uh that's a really tricky question that we'll have to
+46:59
+uh defer a little bit more um for for a week or so but the short answer is
+47:05
+that uh if they actually are threads and they're saying in the same address space then the threads can mess
+47:11
+each other up by overwriting each other's stacks but that's actually uh
+47:18
+sort of a design feature okay if on the other hand you don't want that to happen you put these in separate processes so
+47:24
+hold on for the rest of the lecture on that part okay now the os's job is going to be
+47:30
+making the virtualization be as true as possible given the resources and whether it's a
+47:37
+process or not so um so if each thread can read or write
+47:43
+every other thread's memory maybe their data maybe their security keys and so on
+47:49
+could it overwrite the operating system well so far i haven't given you anything that
+47:55
+would prevent you from overriding the operating system and uh back in the early days of personal computing
+48:02
+okay we're talking about some of the original ibm pcs some of the original macintoshes
+48:07
+which were these weird-looking square boxes uh the early days of windows definitely
+48:13
+all had this problem okay that uh yes we provided the ability to have
+48:19
+illusions of multiple threads at the same time but they were all in the same address space and they could overwrite each
+48:24
+other okay so we want to do better okay so is this an unusable environment
+48:31
+well depends on your definition of unusable it's certainly not very secure okay and it's not even very secure
+48:38
+against your own bugs okay and we'll talk a lot about that but you'd like a system
+48:43
+that uh when you put a buggy piece of software up and run it it doesn't crash everything else that would
+48:49
+be kind of a minimum requirement i would say okay so this approach as i said was used
+48:55
+the very early days of computing it's used on some embedded systems still
+49:00
+macos you know windows 3-1 windows me a lot of those different ones basically
+49:08
+had this view okay however it's risky you know one of my
+49:16
+favorite things to do you'll find out my favorite number is pi um because
+49:22
+why not i mean it's a great number uh but it goes on forever but what's
+49:27
+interesting is you can imagine that the magenta one decides to compute the last digit of pi
+49:32
+and it never gives up the cpu locks out the timer interrupts and now uh blue and
+49:38
+yellow never run okay that's a system we do not want to have and that is a system we used to have okay
+49:43
+i worked on windows 3 1 systems where you put the wrong application in there and all of a sudden
+49:49
+you know everything locked up so that's rather undesirable so no protection
+49:55
+so the operating system has to protect itself from user programs and there are lots of reasons for this
+50:01
+right from a reliability standpoint uh compromising the operating system generally causes it to crash of course
+50:07
+it does security you want to limit the scope of what malicious software can do privacy i want to limit each thread to
+50:14
+the data it's supposed to access i don't want my cryptographic keys or my you know
+50:20
+secrets to be leaked and also fairness i don't want a thread like that one that
+50:26
+decided to compute the last digit of pi to be suddenly able to take all of the
+50:31
+cpu at the expense of everybody else okay so there's lots of reasons for protection and the os
+50:39
+must protect user programs from one another okay prevent threads owned by one user from impacting threads owned by
+50:44
+another one um all right so let's see if we can do better
+50:50
+okay so what can the hardware do to help the os protect itself from programs well here's a very simple idea in fact
+50:58
+very simple that so simple that little tiny iot devices can do this with very few transistors
+51:05
+and the idea is what i'm going to call basin bound and so what we're going to do is we're going to have two registers a base register and a bound register
+51:12
+and what those two registers talk about is what part of memory is the yellow thread allowed to access
+51:19
+okay what part of memory is the yellow thread allowed to access now that we're still going to call this
+51:24
+by the way i've got this uh sorry zero at the top and ffff at the bottom i've swapped this for you guys but um the
+51:33
+we are going to be able to put two addresses one in base and a length or an address inbound depending on how you do
+51:40
+it and now we're gonna see whether we can limit yellow's span to just the uh those range of addresses
+51:47
+okay we're still gonna say the address space is from zero to all f's it's just that a big chunk of that address space
+51:54
+is not available to the yellow thing okay and so what happens here is a program
+51:59
+address that fits somewhere in the the valid part of the program
+52:04
+what really happens is the program has been relocated it's been loaded from disk and relocated
+52:10
+to this portion of memory one zero zero and so now when the program starts executing it's working
+52:17
+with program counters that are in the say one zero one zero range which is kind of right uh where the code
+52:24
+is and hardware is going to do a quick comparison to say is this program counter greater
+52:31
+than base or is it and is it less than bound okay and these are not
+52:39
+physical uh excuse me these are still physical addresses these are not virtual addresses yet we'll get to that in a
+52:45
+moment okay and this allocation size is uh challenging to change
+52:53
+in this particular model okay because in order to get something bigger we might end up having to copy a lot of the
+52:59
+yellow to some other part of memory that's bigger so you can see that this is just a very primitive and simple thing
+53:06
+okay but what it does do is it gives us protection so the yellow
+53:11
+code can run it could do all it wants inside the yellow part of the address
+53:16
+space but it can't mess up the operating system or anybody other anybody else's code okay all right and uh whether base and
+53:25
+bound are inclusive or not that's sort of a simple matter of whether you include equals or not so let's
+53:30
+not worry about this obviously base is inclusive in the way i've shown it here um so the other thing is for every
+53:37
+time we do a uh lookup we make sure that we're less than bound so it's not inclusive on the top in this particular
+53:44
+figure and greater than or equal to base and if that's true we allow it to go through and if it's not true
+53:49
+then we uh do something like uh kill the thread off or something okay
+53:56
+now the address here has been translated if
+54:03
+you look this is what it might look like on disk it's got you know it's code starts at address zero
+54:08
+there's some static data after the code maybe there's a part of the heap or stack that's going to be in there once
+54:14
+it's loaded but in some sense it looks like everything started zero and however when we load it into memory
+54:21
+we relocate all the code so that it starts at address 1000 is runnable from that point
+54:27
+and as a result things uh execute properly so this is a compiler based loader based relocation okay
+54:36
+but it allows the os to protect and isolate okay it needs a relocating loader now
+54:43
+this by the way was what a lot of early systems did is they did relocation
+54:48
+okay and had some basin bound possibilities to work so for instance the early some
+54:54
+of the early machines by cray had this this behavior okay notice also that
+54:59
+we're using the program counter directly out of the the processor without train
+55:04
+changing in any so we're not changing any of the the latency through transistors because we're not adding any
+55:11
+uh extra translation overhead as well okay and the gray part up here might be
+55:16
+the os yes now if you remember in 61 c we talked
+55:22
+about relocation um so for instance if you do a jump and link to the printf routine um what that translates into is
+55:30
+a relocatable code where maybe the gel op code is uh hard-coded but the printf
+55:38
+address is not until things get actually loaded and then this gets filled out so this might be a relative address
+55:44
+until the linker and loader pulls it into memory okay all right
+55:50
+so we can do this with the loader okay but a number of you have started to ask
+55:56
+more and more about virtual memory well here's another version of virtual memory that is actually well it's uh the
+56:02
+previous one was a hardware feature because in hardware we're preventing uh
+56:07
+the program when it's running in user mode or as a user from accessing the os so that's a
+56:12
+hardware based check okay it's not software all right now the uh a slight
+56:20
+variation on the basin bound is this one where we actually uh put a hardware adder in here okay and
+56:27
+this hardware adder one way to think of this is that addresses are actually translated on the fly
+56:32
+so now we take our yellow thing off disk and we load it into memory and it might still be at address 1000
+56:39
+but the difference is that the program is now the program counter is now uh
+56:47
+executing as if it were operating in this uh code that starts from zero but in
+56:53
+fact what happens is by adding the base address to the program counter we get a translated address that's now up in the
+57:00
+space where yellow actually is okay all right so this particular
+57:07
+uh version of this is uh it's very simple and it doesn't require page
+57:13
+tables or complicated translation okay so this is a hardware relocation so
+57:18
+on the fly the program counter which is operating as if we're in the yellow region we add a base to it
+57:24
+and the thing we actually use to look up in dram is the uh new address the physical
+57:31
+address that we get from this virtual address added to the base pointer
+57:37
+okay and can the program touch the os once again no because if the program address goes
+57:44
+negative we can catch that uh and so that would be below the base address and if it goes too too large
+57:49
+above the bound then we would also be outside of yellow and so we basically protect
+57:55
+uh the system against the yellow okay and so um once again we're still doing
+58:02
+checks here now can i touch onto the programs no because the bound catches
+58:08
+it so one way to get at this
+58:14
+is also with segments okay so in the x86 code or x86 hardware we have segments
+58:21
+like the code segment the stack segment etc which are hardware registers that
+58:29
+have the basin bound coded in that segment so a code segment is something which has a physical
+58:35
+starting point and a length and then the actual instruction pointer that's running
+58:40
+is an offset inside of that segment so the the code segment is very much like this base inbound
+58:47
+because we do this addition on the fly and checking for the uh the bound
+58:52
+okay and the question about where does the base address how do we decide what the base address
+58:58
+is how do we decide what the bound is well that's the os is basically doing a best fit of the
+59:04
+current things it's trying to run into the existing memory
+59:10
+now a different idea which they did bring up in 61c which
+59:16
+everybody's clearly familiar with is this idea of address-based translation so notice that what we just
+59:22
+did was a very primitive version of translation where we took every address coming out of the processor
+59:28
+and we added to it a base and we checked it against the bound and
+59:33
+that translation now is just add a base and check about
+59:38
+but um the thing we could do that's even more sophisticated is we could take every
+59:44
+address that comes out of the processor and go through some arbitrarily complicated translator and have it look up things in memory so
+59:54
+uh if you look at uh how that might be so let's think for a moment
+1:00:02
+what was the biggest issue with this so there's several issues not the least of which to grow the space
+1:00:09
+for the yellow process or thread i haven't told you how to distinguish those yet we would have to
+1:00:15
+um copy the yellow thing somewhere else okay and and what
+1:00:21
+we're going to do is then when yellow finishes and goes away we've got a hole we've got a fill and so there's a
+1:00:26
+serious fragmentation problem so we'll talk more about that in an upcoming lecture but what we're going to
+1:00:32
+do is we're going to break the address space which is all of the dram into a bunch of equal sized chunks all
+1:00:38
+pages are the same size so it's really easy to place each page in memory and the hardware is going to translate
+1:00:44
+using a page table okay this is 61c okay special hardware registers are
+1:00:49
+going to store a pointer to the page table and we're going to treat memory as a bunch of page size
+1:00:55
+frames and we can put any page into any frame etc we're going to talk a lot more about
+1:01:00
+this don't worry uh in upcoming lectures and this is another 61c idea
+1:01:06
+okay but just roughly speaking so just from a high level don't worry about the details yet
+1:01:12
+but if we take something like a program counter or registers
+1:01:20
+that are pointing at memory we go through a page table to translate them that's going to give us a part of memory
+1:01:26
+and now we can do interesting memory management okay now by the way i am the reason i'm
+1:01:32
+covering all of these ideas is i'm giving you something to think about okay and we're gonna in in the upcoming
+1:01:39
+lectures we are going to fill in details on this okay but this is some part of the story okay so instructions operate on virtual
+1:01:46
+addresses um and these are you know instruction addresses load store addresses etc
+1:01:52
+they get translated to a physical address and this is the dram so the processor is looking in one address
+1:01:57
+space a dram and another okay and any page of the address space can be
+1:02:03
+any page size frame and memory etc this is going to be great once you get a better handle on this because it's going
+1:02:09
+to not have the same fragmentation problem that the base inbound did that we talked about earlier
+1:02:15
+okay now the third os concept that we want to talk about today is a process
+1:02:22
+and a process is really an execution environment with restricted rights so if you remember we talked about our
+1:02:29
+simple virtual threads having this problem that everybody had access to everybody's memory well we started to note how mechanisms
+1:02:36
+for translation might protect us okay and so the idea of a protected
+1:02:42
+chunk of memory that's owned exclusively by an entity
+1:02:48
+in an os that's called a process okay so the process has an execution environment with
+1:02:54
+restricted rights and one or more threads okay so it's a restricted
+1:02:59
+address space and one or more threads it owns some file descriptors and file system
+1:03:04
+context we'll talk more about that as we go on and it's going to encapsulate one more or more threads for sharing in a unique
+1:03:12
+environment okay and the good question uh is how do we how do we protect this
+1:03:19
+there's a question on the chat which partially addresses this which is of course if you have two processes
+1:03:25
+and their translations point to different physical memory then kind of by design they can't
+1:03:30
+uh get at each other's data because there's no way for a processor running process a
+1:03:36
+to even address the data in process b okay and we're gonna that's the advantage of translation
+1:03:41
+we'll talk a little bit more about that a lot more about that in upcoming lectures
+1:03:47
+so a process is an address space with one or more threads okay and the application program when
+1:03:54
+you start it up typically executes as a process so we'll talk about fork and exec and
+1:03:59
+how do we create processes but the upshot is we create a restricted address space environment and
+1:04:06
+then we can run one or more threads in it and now all of a sudden we've got a process and that becomes
+1:04:11
+our unit of protection uh for the first couple of weeks of the class
+1:04:16
+okay and the page table is really going to translate between virtual addresses and physical
+1:04:22
+ones and it can do both in a forward and a reverse fashion so we're going to talk about page tables in quite a bit of
+1:04:28
+detail so don't worry about the details yet they're they're going to be coming just think of the high level idea of
+1:04:34
+translating for now so why processes well because we're protected from each other and the os is protected
+1:04:41
+from them and processes provide that memory protection abstraction okay and there's this
+1:04:48
+fundamental trade-off between protection and efficiency so if you have a bunch of threads all in
+1:04:54
+the same process then yes they can communicate really easily because they share the same memory so they can communicate by one of
+1:05:00
+them writes in memory the other one reads from it but they can overwrite each other okay so there are times
+1:05:07
+when you want to have high performance parallelism where you want a bunch of threads in a process
+1:05:13
+but then when you want protection you want to limit the communication between processes
+1:05:18
+so communication is intentionally harder between processes and that's where we get our protection from
+1:05:24
+so here's a view of two different types of processes here's a single threaded one and a multi-threaded one
+1:05:30
+so uh the only difference between these two is that the multi-threaded one has more than one thread running
+1:05:36
+if you notice this box that i show here for the single threaded process for instance is the protected address space so
+1:05:43
+everything that's going on inside here cannot be disturbed by something going inside in a different process
+1:05:50
+and in this example since there's only one thread we only have sort of one stack and one heap and
+1:05:57
+the code and data kind of live in there and this protected environment is great for the thread
+1:06:03
+nobody can disturb it but if it needs to communicate it needs to figure out how to communicate outside of its process
+1:06:09
+a multi-threaded process actually has a different stack for each thread because
+1:06:14
+you need a stack to have a unique thread of execution it has a separate set of registers for the
+1:06:20
+thread control block so that when we switch from thread to thread to thread to give that illusion
+1:06:26
+of multi-processing we need to switch out the registers from the first thread
+1:06:32
+so that we can load them back from the second thread okay so threads encapsulate concurrency
+1:06:38
+the address space is the protection environment you could kind of think of threads as
+1:06:43
+the active part in the address space is the protected part that may or may not help you
+1:06:49
+but the address space which the protected address space is really going to keep buggy programs or
+1:06:56
+malicious ones from impacting each other okay and why do this multi-threads per process well
+1:07:02
+there are many reasons you might do this one is parallelism so if you actually have multiple cores it's possible that
+1:07:07
+by having many threads in the same process you can have many things working on the same task at once
+1:07:13
+you learned about parallelism in in some of your early classes like 61a the other reason might be
+1:07:19
+concurrency so a good reason to have many threads in a process could be well most of them are sleeping
+1:07:24
+but thread a deals with mouse input thread b deals with window movement threat c deals with io
+1:07:31
+to disk or network or whatever and so that concurrency is a situation
+1:07:36
+where most of the threads are sleeping most of the time but it's a much easier programming model
+1:07:41
+to think of things as a thread that runs for a while does some i o going to sleep and then wakes up when
+1:07:47
+the i o is done and as you get more familiar with threads and how they work
+1:07:52
+you'll be able to figure out kind of you'll have a better idea why that's helpful
+1:07:57
+um so the question of is there a parallelism efficiency advantage you'd get from a process
+1:08:03
+that you couldn't get from a thread so keep in mind that a process has threads in it so think of the
+1:08:09
+process is the container and the threads are the execution element okay and yes
+1:08:15
+these are a little bit like fibers but a little more heavy weight okay
+1:08:21
+so why do we need processes for reliability security privacy okay bugs can over
+1:08:27
+only overwrite memory of a process that they're in malicious or compromised processes can't
+1:08:34
+mess with other processes now of course if the operating system is compromised every all bets are off but we'll even talk
+1:08:41
+about later in the term we'll talk about how to uh set up situations where even if the operating system is a bit
+1:08:47
+compromised the uh the things that are running in it might still be secure
+1:08:52
+okay mechanisms to give us protection and isolation well
+1:08:58
+we already talked about the fact that we need some hardware mechanisms for address translation we showed you the very simplest which
+1:09:04
+was an adder in the hardware we we hinted at something much more complicated like page tables or whatever
+1:09:12
+but also we have to worry about well if we have page tables why can't process a change
+1:09:19
+its own page tables to point at process b because that would destroy all of the
+1:09:25
+protection okay and so that leads us to our fourth mechanism which is we need the hardware to support
+1:09:31
+some privilege levels of some sort and so that's the idea of dual mode okay so hardware
+1:09:36
+provides at least two modes okay and um the two modes are kernel mode and
+1:09:44
+user mode okay or supervisor mode and uh certain operations end up being
+1:09:51
+prohibited when you're running in user mode so when you're in user mode you can't for instance change which page table
+1:09:56
+you're using that's something only the operating system in kernel mode can do you can't disable interrupts okay so
+1:10:02
+that way a process that's decided it wants to compute the last digit of pi can't prevent other ones other processes
+1:10:09
+from getting cpu time when the timer goes off okay you're also prevented from interacting directly with hardware et
+1:10:16
+cetera thereby not being able to breach files on disk and now the question is
+1:10:22
+what's our carefully controlled transitions between user mode and curl mode things like system calls interrupts
+1:10:28
+exceptions okay and so you could think roughly speaking that we have user processes
+1:10:33
+they make a system call into the kernel that's a transition from user mode to kernel mode that's very well controlled we'll talk more
+1:10:39
+about that and then the kernel does a return back to user mode for the user to run
+1:10:45
+okay and so this is a typical unix system structure monolithic unix system structure where
+1:10:52
+uh kernel mode represents code that has secure access to
+1:10:58
+all sorts of resources the it controls the hardware directly and then of course user mode is
+1:11:06
+something that uh it's all of your programs and your libraries and so on and so
+1:11:11
+user mode is your application but then it uses services from kernel mode and that's the operating system
+1:11:17
+kernel okay so for instance here's an example where we've got
+1:11:24
+hardware got kernel mode and user mode the hardware might execute or exec
+1:11:29
+a new process okay and then later we'll exit and return to kernel mode okay
+1:11:38
+a system call from user mode would go into kernel mode and then it might return later or an interrupt might cause user mode to
+1:11:44
+go into the kernel which then might check out the hardware somehow and then eventually do a
+1:11:50
+return from interrupt an exception which is something like you divided by
+1:11:55
+zero or a page faults an exception might go into the kernel and then eventually return okay now there's additional layers of
+1:12:03
+protection than just the two i talked about here and we'll when we get into talking about virtual machines
+1:12:08
+and actually containers like docker and so on we'll talk about how to put more layers than just the two but for
+1:12:15
+now we're dealing with dual mode okay now
+1:12:21
+tying it all together uh
+1:12:26
+we can tie it all together very simply okay um and give me uh
+1:12:35
+so tying this all together uh is the following so if you notice here i have two
+1:12:41
+processes a green and a yellow one okay and uh yeah that was like a page full
+1:12:47
+and uh if you look at uh the os here is the gray code and if you notice
+1:12:53
+our system mode right now is kernel mode so it's red and uh it's on and when
+1:12:59
+we're in kernel mode with simple branch and bound what you see here is that there may be base and
+1:13:04
+bound registers but they're being ignored because in system mode we have access to the full address space
+1:13:10
+okay and let's take a look so the os is going to load a process
+1:13:16
+okay what that really means is it's going to take this uh a register which we're going to call the
+1:13:22
+user pc load it with a pointer to the code
+1:13:27
+to the starting part of the yellow code and if you notice uh there's going to be a bound or
+1:13:34
+an uh potential uh top of of that uh area and what we're gonna do is we
+1:13:41
+load the the yellow off of disk we set up these registers okay but notice by the way since the os
+1:13:47
+is running uh the pc is still pointing to gray not to yellow okay but what we're going to do is then
+1:13:53
+we're going to execute a return from interrupt or return to user and that's going to
+1:14:00
+start us running the yellow code now the question is why does stack grow up in these diagrams that's because i've
+1:14:06
+got year 0 and fff reversed so the lower part of the date of the address is up top here
+1:14:13
+in the higher part is uh on the bottom sorry about that um but notice right now the the kernel has
+1:14:20
+full access to everything if we um now do a return to user
+1:14:27
+what's going to happen is um that we're going to activate this yellow one okay so the
+1:14:32
+privileged uh instruction is to set up these special registers like the basin bound registers are going
+1:14:39
+to get set up and so on so notice we've set base to the beginning we've set bound to the end
+1:14:44
+we've set up some special registers we've set up the user pc and we're going to do the return to user
+1:14:50
+mode and that's going to basically do two things one it's going to take us out of system mode which is going to activate these base
+1:14:57
+and bounds and it's going to cause the user's pc to be swapped in
+1:15:02
+for the existing kernel pc and now all of a sudden after i do that voila we're running in user mode okay
+1:15:10
+why do i say we're running in user mode the answer is that um right now because
+1:15:15
+we're in system mode not we're not in system mode we're in user mode the base and bound are active
+1:15:21
+and so the code that's running can't get out of this little container okay all right and um
+1:15:29
+coming back so how does the kernel now switch so now we've got this guy running what do we do
+1:15:35
+well we're going to have to take an interrupt of some sort and say switch to a different process okay so um the first question we have to ask
+1:15:43
+before we uh figure out what the switching is involved is how do we return to the system
+1:15:49
+all right and i showed you some opportunities there a little uh a moment ago but we have three so for instance system
+1:15:55
+call uh is one where the process recov requests a system service that actually
+1:16:00
+takes it into the kernel okay another is an interrupt okay this is the case where an asynchronous event
+1:16:06
+like a timer goes off and takes us into the kernel and a third one is like a trap or an exception um it turns out that these
+1:16:13
+could be examples where uh we get a page fault or where we divide by zero
+1:16:19
+okay now the interesting question that's on uh an interesting question in chat which
+1:16:25
+i don't have a lot of time to answer right now is uh was what if a program can
+1:16:31
+needs to do something that can only be done in kernel mode the answer is you got to be really careful so one answer would be you can't
+1:16:38
+you got to do only the things that are provided as apis from the kernel that's why the
+1:16:43
+set of system calls is so important to make sure it's general enough for what you want to do
+1:16:48
+the second answer gets much more interesting which is typically not something we talk about at this term
+1:16:54
+in 162 but we could maybe and that's where we have a an interface for downloading
+1:17:01
+specially checked code into the kernel to run in kernel mode uh in a way that it
+1:17:06
+doesn't uh compromise the security but uh that's a pretty interesting topic for
+1:17:12
+a different lecture so we could we could uh invoke any of these things system
+1:17:17
+call interrupt or trap exception to get us into the kernel so that we can do a switch so let's assume
+1:17:22
+we do an interrupt okay and these are all unprogrammed control transfers so how
+1:17:27
+does this work we're going to talk a lot more about this in the next in another lecture
+1:17:32
+but the way this works to have the interrupt interrupt into a well-defined part of
+1:17:38
+the kernel is we're going to actually have that interrupt the timer interrupt look up in a table that we have put in
+1:17:44
+there when the the os boots and pick the interrupt handler and that interrupt handler is now going to run and make a decision about
+1:17:51
+whether it's time to switch from process a to process b and this is by the way the topic of lecture in a
+1:17:58
+week or so okay so we're getting close to that those topics so um so let's continue here's our example
+1:18:07
+the yellow code's running and if you notice the program counter again is in the yellow code and so on
+1:18:13
+and how do we return to the system maybe an interrupt or io or other things we'll say an interrupt for this
+1:18:19
+and what happens at that point is we now back in the kernel so notice that we're at system mode
+1:18:24
+we're running the pc is the interrupt vector of the timer and we've got these registers from the
+1:18:30
+yellow which uh have been saved as a result of going into the interrupt
+1:18:35
+and so what we're going to do is we're going to save them off into the thread control block we're going to load from the thread control block for green
+1:18:42
+okay and then here's by the way somewhere in the kernel is the yellow thread control block
+1:18:48
+and then voila we return to user and now the green one's running so really this idea of swapping between
+1:18:55
+processes and using dual mode execution is pretty much shown by this example i just showed
+1:19:01
+you there which is you run for a while at user mode the timer goes off you save out the registers you load in other ones you
+1:19:07
+return to user again and you just keep doing that back and forth all right and the question about how the current
+1:19:14
+process knows if there's an interrupt the answer is it doesn't what happens is the interrupt goes into the kernel
+1:19:20
+and saves all of the state and the yellow code in a way that when it's restored and starts executing again it
+1:19:26
+doesn't know okay all right in a typical time
+1:19:31
+period for how frequently the timer goes off uh it's typically like 10 or 100
+1:19:37
+microseconds between timer ticks okay now
+1:19:43
+we're uh we're now officially out of time but i want to leave you with one more concept what if
+1:19:48
+we want to run many programs so now we have this basic mechanism to switch between user processes in the
+1:19:54
+kernel kernel can switch among the processes we can protect them but these are all kind of mechanisms
+1:20:01
+without sort of policy right so what are some questions like how do we decide which one to run
+1:20:06
+how do we represent user processes in the operating system how do we pack up the process and set it aside
+1:20:13
+how do we get a stack and heap et cetera et cetera all of these are interesting things that we're going to cover
+1:20:19
+um and you know aren't we wasting a lot of memory all of these things okay and um so there is a process
+1:20:25
+control block just like the thread control block don't worry uh we'll get to that but that's where we saved the process state
+1:20:32
+and inside of that will be the thread control blocks for all the threads that are there and then the scheduler is this
+1:20:38
+interesting thing which some might argue this is the operating system which is every time or tick it says it looks at
+1:20:46
+all the ready processes picks one runs it and then uh the next time or tick it runs the next one and so
+1:20:52
+on and part of that process is unload and reload unload and reload with the
+1:20:59
+some task called the scheduler selecting which is the right one based on some policies
+1:21:04
+all right so we are done for today so in conclusion there are uh four fundamental os
+1:21:09
+concepts we talked about today the execution context which is a thread okay this is what you learned about in
+1:21:15
+61c didn't call it a thread because it wasn't properly virtualized yet but it's basically something with program counter
+1:21:21
+registers execution flags stack we talked about the address space is the visible part of the uh
+1:21:28
+to a processor it's the visible part of the addresses and once we start adding translation in now we can make protected
+1:21:34
+address spaces which are protected against other uh processes we talked about a process being a
+1:21:40
+protected address address space with one or more threads and we talked about how the dual mode
+1:21:45
+uh operation of the processor hardware is what allows us to
+1:21:52
+multiplex processes together and give us a nice secure model all right so there we go that is uh
+1:21:59
+in a nutshell a modern os so um that'll be the end of this class there'll be a final uh
+1:22:05
+in several months and oh wait i'm just kidding i hope you guys have a great night and we will see you on wednesday
+1:22:15
+ciao thank you

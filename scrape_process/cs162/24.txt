@@ -1,0 +1,1724 @@
+0:03
+well welcome everybody uh to cs162 we're getting down to the
+0:08
+very end here um and uh there's no class on wednesday
+0:13
+just so you all know um i would like to pick up where we left off and we were talking about a number of
+0:20
+things in extending operating systems out to the network as a whole and so we talked
+0:27
+about the distributed consensus making idea and that was basically a situation which
+0:34
+you have several different nodes spread throughout the network they all propose a value some nodes might crash or stop responding but
+0:41
+eventually all the nodes decide on the same value from some set of proposed values so
+0:46
+that's the general consensus problem there's a simpler version which is distributed decision making
+0:52
+and that's where you choose between true and false or commit and abort or
+0:57
+one of two options and essentially the job of all the nodes that are participating in some protocol here for
+1:03
+consensus are basically collaborating and eventually coming up
+1:08
+to exactly the same decision um equally important to the
+1:14
+initial process of making consensus is making sure that it's recorded for posterity and so that's basically um
+1:22
+you know how do you make the decision sure the decisions can't be forgotten so the simplest thing of course is
+1:28
+recording on disks but in a global scale system you could start talking about replicating much
+1:33
+more widely um somewhat like a blockchain application so the particular
+1:39
+type of distributed decision making that we spent a little time on talking last time was two-phase commit
+1:45
+and basically the key behind two-phase commit is there's a stable log on every participant
+1:52
+to keep track of whether a commit is going to happen or not and if machines crash in the middle of
+1:58
+the protocol and they wake up they can look at the log to see what they've committed to in the past
+2:03
+the two phases of course are the prepare phase is the first one where the global coordinator requests
+2:10
+that all participants make a decision to either commit uh or not
+2:15
+and um so basically you ask each participant what they want to do they either say commit or abort
+2:22
+and they make sure to record their decision in the log as we mentioned so that if they crash in the middle they can come up and they will never
+2:28
+come up with a different decision than the one that they've committed to so to speak and then during the commit phase if
+2:35
+everybody has said commit then the coordinator will tell everybody to go ahead and do the actual commit
+2:41
+at which point they all record that the final decision was commit and they go forward and of course if any one participant
+2:48
+decides to abort then they all abort and the crucial idea here is either it's
+2:54
+atomic atomic decision making either everybody decides to commit or everybody decides to abort and uh
+3:01
+there's no mixing of the two okay and so that was kind of uh the simplest example of this
+3:07
+and we talked about some of the downsides of two phase commit among other things being that a crashed
+3:12
+machine can prevent everybody from moving forward and so then we started talking about alternatives after that
+3:19
+okay um let's see here so the log is basically
+3:26
+a crucial part of that so if you go back and look at several of the slides that i had walking through the protocol you can see how the
+3:32
+log make sure that we always have that atomicity property of everybody decides to do commit or everybody decides to do abort
+3:40
+the second topic that we just started with uh toward the end of the lecture was we
+3:46
+were talking about network protocols and we mentioned that there are many layers in the network protocols
+3:51
+there's the physical level which is the ones and zeros could be optical phases it could be any
+3:58
+number of things we talked about the link level which is packets being sent on a single link
+4:04
+with their formats and error control for instance we talked about network level communication where you put a bunch of
+4:10
+links together for a path we talked about transport level we just started about that which is for reliable
+4:16
+message trans uh message delivery and we're going to spend a lot a good chunk of today
+4:21
+figuring that out as well and so this is a rough diagram to keep in your mind here
+4:27
+the physical and link layers down at the lower level can be uh any number of technologies like ethernet
+4:33
+or wi-fi or lte or 5g or whatever you like and those get you one hop in the network
+4:41
+ip typically gets you more hops okay so once you got the ip protocol then you could route from
+4:47
+here to beijing for instance as long as you knew the right ip address things would be forwarded hop by hop
+4:53
+through the network above that level is the transport layer where we actually start
+4:59
+doing better than just talking about machine to machine communication we can actually start talking about process to
+5:04
+process communication and then of course you build applications on top okay rpc stands for remote procedure
+5:11
+call we'll show you that a little bit later in the lecture okay so um
+5:18
+and a lot of things are built on top of remote procedure calls so we'll talk more about that so this layering uh is building complex
+5:26
+services from simpler ones and each layer provides services needed by higher layers
+5:31
+uh that utilize those services so this is uh something that you've known for all the time you've been in computer
+5:36
+science at berkeley layering can be a good thing the physical link layer is typically very
+5:42
+limited so it's one hop and not only is it one hop but it's it's uh unreliable typically there's a maximum
+5:48
+transfer unit so somewhere between 200 and 1500 bytes are very common
+5:54
+um it's only uh high performance networks inside of cloud uh processing that might have what
+6:01
+are called um larger packets that might be 9 000 bytes or so but typical 1500 is the max
+6:08
+you see routing is limited uh with a physical link uh possibly through a switch
+6:15
+okay what we're gonna try to figure out now in the next uh
+6:20
+bit of the lecture is if we have these limited messages that are of limited size how do we
+6:28
+basically build something we can use so the physical reality is packets the abstraction is one of messages so we
+6:34
+can build our decision-making algorithm so we can build distributed storage which we'll hopefully get to by the end
+6:40
+of the lecture today um the physical reality is that packets not only are they limited in size but
+6:47
+they're unordered so sometimes the packets might arrive in a different order than you sent them
+6:52
+the typical abstraction is that random ordering is not good for us we'd like things to be ordered
+6:58
+physical reality is that packets are unreliable remember when we talked about the end to
+7:04
+end uh philosophy we said um gee the network ought to not do things that the endpoints still have
+7:10
+to do anyway and so uh datagram networks where the packets are not guaranteed to make it to
+7:16
+the destination are the typical thing in the middle because at the end points we have to have some reliability protocols
+7:23
+talk a little bit about that today physical reality is that packets go from one machine to another
+7:28
+which is only sometimes useful it's much more useful to be processed to process
+7:35
+the reality is that packets only go on one link over the local network we'd like to route them anywhere
+7:41
+the reality is that patrick packets are asynchronous they kind of go when they can we'd like them to be
+7:47
+more synchronous so that we know when something is completed and then of course packets are insecure
+7:52
+and we'd like them to be secure so the reality of the physical pieces on the left are one
+7:58
+ones that we would like to be able to basically hide under a virtual communication
+8:04
+abstraction giving us a much cleaner messaging abstraction okay now just i showed you this last time but
+8:10
+i just want to pop this up really quickly ipv4 for instance basically has a header
+8:18
+that's wrapped around data so you put this on the front of it and this 20 bytes have a bunch of fields
+8:24
+including the source and destination address so where am i going where am i coming from
+8:29
+and then a protocol which i have highlighted in red here is typically what type of ip packet is
+8:35
+this and we'll show you a couple of those now my process to process
+8:40
+the question is do i mean on different machines i certainly mean process to process on different machines is
+8:46
+something we would like to achieve sometimes you use the ip protocol abstraction and go
+8:52
+to from process to process on the same machine um and uh but by the you know the thing
+8:59
+that's much more interesting here for this discussion is going from one machine to another okay and from one process on one machine
+9:06
+to another process on another machine so now doesn't the protocol field
+9:13
+violate abstraction somehow you might think of it that way but it
+9:18
+turns out it gives you enough information that when an ip packet comes in you can put it
+9:24
+and de-multiplex it to the right protocol handlers and so that's kind of a minimal
+9:30
+call it an abstraction violation if you like but it's kind of a minimal requirement there in order to very
+9:36
+rapidly process incoming ip packets now protocol can be tcp it could be udp
+9:43
+it could be icmp could be any number of things so today we're going to talk about udp and tcp yes in particular
+9:52
+how do we build process to process communication from machine to machine so looking back at this header again
+9:58
+notice that it's 32-bit source address and destination address so the source is where i'm going let's say
+10:04
+that's in beijing somewhere the destinations where i am that's my local machine these are two machines they don't say anything about
+10:11
+which process is on those machines like a web browser for instance or a web server doesn't say anything about um who would
+10:18
+like to communicate okay and um so the the simplest thing we can do
+10:24
+is called udp which is a type of process to process communication we get by taking this ip header this is the one i
+10:31
+showed you earlier 20 bytes and adding a udp header which
+10:37
+basically has a source and destination ports these are 16 bit numbers a length for the data and a checksum but
+10:44
+these two ports the source and destination ports are part of that five tuple if you remember when i said
+10:50
+you create a socket from machine to machine remember it was source address destination address source port
+10:56
+destination port and protocol so all five of these things that you see here
+11:02
+together work okay uh to give you a unique connection between two processes
+11:07
+udp is very simple okay it's another type of datagram but one that basically goes from process to process
+11:14
+and so if you see here this is ip protocol 17 which was we put a 17 in that header
+11:19
+it's a datagram so it's fully unreliable uh as we use it it goes from source to destination and
+11:25
+it's really low overhead and it's really low overhead because we just put a few
+11:30
+extra bytes eight bytes on top of the ip header to get the um the udp header okay
+11:37
+and it's often used for high bandwidth video streams and so on and it's a very good way to sometimes
+11:43
+overuse network bandwidth if you're not careful because there are no restrictions on how many
+11:50
+packets you can try to force into the network and so a number of uses of udp can be
+11:55
+considered anti-social almost if you use them incorrectly all right and we'll we'll see how tcp is
+12:02
+is different than that so all right now here's this layering that we just
+12:08
+talked about seeing the gray at the bottom here is the physical uh you know ones
+12:13
+and zeros and the data link layer above is that link to link and so basically
+12:20
+going one hop goes over the the data link physical combination here to
+12:26
+go from say a host to a router to a destination host but that's not going to get us very far
+12:33
+without being able to route so this actual hop the data link physical gets us some host data to the router or from the router to
+12:40
+host b it's this network layer on top that's doing ip for instance that decides how
+12:45
+to go hop to hop to hop using routing tables to get you from your source to your destination
+12:50
+above that is going to be the transport layer which is going to be for instance udp or tcp and then applications on top
+12:57
+of that and of course applications are the ones that open the sockets so the reason i've got these arrows the
+13:02
+way i do here is you think when you're writing your application that it's communicating
+13:08
+directly with an application at the destination in reality what's going on is your
+13:13
+application sends uh something through a socket and it really goes through the different
+13:19
+layers in host a it goes across the physical and data link layers
+13:24
+to the router which goes up to the network layer the router makes a decision of what next hop to go and so on and eventually you get to the
+13:31
+destination host and then it comes on up through the application through the various layers in the operating system at the host side
+13:38
+and eventually into the sockets and the application so these these
+13:44
+arrows represent communication but at an abstract level it's only the very lowest ones that represent
+13:50
+direct connections okay and so the way we can look at uh
+13:57
+for instance this communication is we can think well we've got an application with some data
+14:02
+what happens is it goes through a transport layer where we wrap a transport header around it so that's like the udp uh ports for
+14:09
+instance and then we wrap a network header on it which adds the ip address and so on and then we put a frame header which is
+14:15
+the um the mac addresses for let's say ethernet like i said and then uh
+14:21
+that goes down the physical layer there's some bits that are transmitted the other side and then things are unwrapped
+14:26
+so this is like adding an envelope that then you put it inside another envelope inside another envelope
+14:32
+it gets transmitted and then you pull it out of the envelopes and eventually get back to the other application
+14:38
+okay um so uh this wrapping is something that
+14:45
+is basically this layering that we're using for abstraction it can get expensive and sometimes uh
+14:52
+really high performance routers are going to completely violate all of these layers and they'll squash everything out
+14:57
+and process everything at once in parallel in an fpga or whatever but it's important to try to understand
+15:03
+the process as the way i've given it to you here where it's putting a series of envelopes together
+15:09
+and then taking the series of envelopes apart and the other thing i wanted to point out here is this from the network layer
+15:16
+to the network layer this is machine to machine it's really this transport layer that
+15:21
+hands off to the right process okay so that's where we demultiplex based on port and then eventually the
+15:27
+right application gets it because we've de-multiplexed it at the transport layer once we've gotten
+15:32
+through the network layer
+15:38
+questions now um let's look at
+15:45
+these transport protocols a little bit so transport protocols are things that we put on top of ip
+15:52
+we gave you udp earlier that's protocol 17 that really means that you put a 17 in that red field i showed you earlier
+15:58
+this is a no frills extension of best effort ip to be processed to process rather than
+16:04
+just machine to machine like ip is uh tcp which is something um which we'll
+16:10
+talk in more detail about in the next number of slides is more reliable okay it's so it's got
+16:16
+connection set up and tear down you discuss you discard corrupted packets
+16:22
+you retransmit loss packets you make sure there's flow control so you never overflow anybody's buffers
+16:28
+there's congestion control so that if too many people are trying to use a link in the middle everybody fairly backs off
+16:34
+and so on and so that's going to be a slightly different animal than udps and furthermore tcp is
+16:41
+a stream which i'll show you in a moment there's a lot of examples obviously there's eight bits there in that protocol field
+16:47
+so there's many different things other than udp and tcp there's for instance dccp which is
+16:54
+another datagram protocol there's rdp for the reliable data protocol there's
+16:59
+sctp which is a pretty cool multi-stream version of tcp that isn't
+17:04
+used all that much but so there's many different things you can put in that tc in that protocol field so
+17:12
+just to flash back to i don't know a month and a half ago we were talking about this
+17:19
+client server example for a web server and if you remember we talked through the various
+17:24
+setups and and so on where server gets a listen port the client connects and then there's a
+17:29
+socket that's set up and so on and ultimately once everything's set up
+17:35
+we somehow are able to write and read through the socket and everything just works reliably as a stream and so we're
+17:42
+going to talk about how that works now the question here uh that's in the chat is sort of how much how many
+17:47
+uh non-tcp and udp protocols are actually used you know they um they're used for a lot
+17:55
+of things that you might not normally encounter like for instance if you're
+18:01
+if you have a an encrypted vpn from point a to point b uh some of the one of those protocols is
+18:08
+used basically for um for uh the encrypted packets
+18:14
+and there's other versions uh port 500 that's actually a udp so that's not that's a udp packet
+18:20
+but that's used to set things up and then it's in the encrypted beauty the encrypted ip after you're done
+18:26
+there's a number of other protocols there that are actually used uh in ways that help manage so they're
+18:32
+around the outside of the typical connections uh that you run into but obviously tcp and udp are
+18:38
+extremely common but once you get into another thing i guess another good example would be when you get into some
+18:44
+of the streaming multimedia uh then when you get into streaming multimedia
+18:50
+connections those are also um other protocols so data link is talking about
+18:58
+the uh the part of the protocol that gets you one hop that's part of the networking protocol
+19:04
+data gram is just a packet that gets tossed through the network and that
+19:09
+miter might not make it all the way so those are different things data link is the layer in the networking layer data gram is the
+19:16
+thing that we're sending it's a packet so back to our sockets here let's take a look at kind of what is
+19:22
+involved in this middle part here and actually communicating and then we'll talk about setup and tear
+19:27
+down so the problem of getting reliable delivery is that all physical networks
+19:32
+garble or drop packets we said that already um so the physical media media um
+19:38
+has lots of problems like the packets might not be transmitted or received it might be that multiple people trying
+19:44
+to talk at once in which case there's an exponential back off that has to happen um if the if you transmit close to the
+19:51
+maximum rate you might get more throughput but you might start losing packets okay and so
+19:57
+there's sometimes there's this trade-off between throughput and and
+20:02
+absolute reliability there's also if you're in a very low uh power scenario you might transmit
+20:10
+an extremely low voltage right on the edge of a bunch of errors uh occurring but you put a heavy forward
+20:17
+error correction code on it to make up for that and so there's there's a lot of playing with the fact that these packets are unreliable
+20:24
+okay and if you remember from the end and principle again if we put reliability by re-transmitting
+20:30
+on the end points it means that things don't have to be perfect in the middle and in fact we may not want them to be perfect we just want
+20:36
+them to be good enough that we can re-transmit and get the data through eventually
+20:41
+the other thing that's going to be a big deal is congestion so if too many people try to go through too small of a pipe in
+20:46
+the middle of the network then they're going to have to stop dropping start dropping packets because
+20:51
+the routers will have more input than they can for their outputs and so they're going to have to drop packets that's kind of the
+20:57
+ip idea okay so um and there's many options i kind of give
+21:04
+here uh insufficient queue space uh a broadcast link with hosts going at
+21:09
+the same time buffer space the destination rate mismatches you're sending it too fast
+21:15
+and so on can cause congestion and then the way we so we want to start with that
+21:21
+we have to start with that we want to make reliable message delivery on top of that so what are we going to do so we're going to need to
+21:27
+have some way to make sure the packets actually make it so that every packet's received at least
+21:32
+once and every packet's received at most once um and that because uh if we get
+21:38
+duplication that we're not aware of or we get dropping that we're not aware of then all of our applications that are
+21:44
+relying on that are going to start having problems okay or they're going to have to do the all the work on their own and this is a
+21:52
+level of uh this reliability is common enough need that we're going to want to make
+21:57
+sure that we can do that in a common facility like tcp rather than having everybody roll their own
+22:03
+okay and we're going to show how dealing with misordering the network
+22:08
+and dealing with dropped packets and dealing with duplication are actually handled by similar mechanism so
+22:15
+that'll be nice so tcp is really a stream okay so the
+22:21
+idea is you this is the alphabet right a b c d so you stream the alphabet in
+22:26
+you know or your bites in on one side they show up on the other side uh every bite that goes in comes out uh
+22:33
+the other side and you know we don't see duplication and the other thing about it being a
+22:39
+stream is there's really no um we're not packetizing it it's just you send bytes in and bytes come out
+22:46
+and if you care about packets it's going to be up to you to to make a packet protocol where you
+22:51
+say well every message in my connection it's going to start with a length and then the data is going to be after that
+22:56
+and now i've got a packet okay but that's that's up to you you the user to packetize on your own
+23:03
+um now of course underneath the covers is all the ip packets but this trend the tcp view is really that bytes
+23:09
+go in and bytes come out okay and there may be many routers in the middle and it just works
+23:15
+okay now this is a protocol 6 in that little red ip protocol point that i showed you
+23:20
+earlier uh it's a reliable byte stream between two processes on different machines over the internet
+23:27
+okay and we get read write flush etc and you know that's exactly with our web server web client
+23:33
+example that we gave you with sockets the sockets are going to be the things that connect
+23:39
+on either end of the tcp and this is basically going to talk about what's inside
+23:46
+inside that process so some details which we're going to go into in a bit but um since the underlying
+23:54
+system is uh got a you know a limited packet size and so on it's going
+23:59
+to be up to tcp to take your large streams worth of data and fragmented into lots
+24:05
+of little pieces sometimes in the middle of the network ip will fragment into further pieces
+24:10
+and so we're going to need to make sure that after we've fragmented it we can reassemble it at the other side and we
+24:15
+can reassemble it in order it's going to use a window-based acknowledgement protocol and i'm going
+24:22
+to show you a lot more about that in a second to minimize the state at the sender and receiver and make sure that
+24:28
+the sender never sends more data than the receiver has space for and the sender never sends things so
+24:33
+quickly that it clogs up the routers and prevents other people from using this okay and so this
+24:40
+windowing is going to be important for both reliability and for being a good citizen
+24:45
+in the network and obviously automatically re-transmitting loss packets
+24:51
+okay and being a good citizen so without further ado so one of the
+24:58
+problems is dropped packets how do we deal with that and again we've said multiple times that
+25:03
+we all physical net networks can carbon or drop packets and so ip can garble or drop packets as well
+25:11
+and so that means we gotta build reliable message on top of that
+25:16
+and so the question is how are we gonna do that well the obvious thing to do or maybe not so obvious one
+25:22
+the thing that we do is typically use something called acknowledgements okay and so the idea here is you've got
+25:29
+a communicating with b and so a sends a packet to b and then b sends an acknowledgement back
+25:35
+okay and what is the acknowledgement good for well it says first of all b got it it says hi i'm b and i got this
+25:43
+packet okay and assuming that we put a check sum on the packet then b can also detect
+25:49
+garbled packets and just throw them out and um in those instances you could imagine b
+25:55
+sending back a knack or a negative acknowledgement in fact what happens is b just treats a garbled packet it's one that just never
+26:02
+arrived and uh so that's going to cause the other mechanism to come into play so if
+26:07
+a sends a packet to b which gets lost along the way or garbled eventually there'll be a timeout at a
+26:13
+and then a will send the packet again and eventually we get an ack okay so
+26:21
+some questions about this if the sender doesn't get an act does that mean the receiver didn't get the original message
+26:28
+what do you think so just because a doesn't get an act
+26:33
+back okay right so i see no i see unknown i say who knows good this is very
+26:39
+philosophical tonight so just because you don't get an act doesn't mean that a
+26:44
+uh didn't successful successfully transmit something to be like for instance the act could have
+26:49
+gotten lost on the way back so what that means is once we do a timeout and re-transmission suddenly we've got duplication as an
+26:56
+issue okay so um what if the act gets dropped or the message gets delayed same idea
+27:03
+so now all of a sudden we've got issues here now i see somebody asking about byzantine
+27:08
+so we're going to assume here in the moment that the network is trying to do its best to act in the way it's supposed to
+27:17
+so we're not going to worry about malicious components in the middle or b being malicious so let's just look at the underlying
+27:22
+message transmission and then the way we get byzantine agreement on top of that
+27:28
+is we build something on top of unreliable messages but let's at least see whether we can
+27:33
+get our messages to make it from a to b all right so um what we've just talked about here
+27:41
+is what i would call stop and wait so we send we wait for an act repeat okay this is like you know put it
+27:47
+into the washer turn it on wash repeat over and over again right so uh we call the round trip time is the
+27:54
+time from the sender to get to the receiver and the act to get back the round trip time uh represents
+28:01
+basically twice of the transit time of course and um the receiver we can talk about a
+28:08
+one-way path which is the time from when the sender sent it to when the receiver got it and so two times d is going to be our
+28:15
+round trip time okay and uh
+28:20
+we keep doing that and as you can imagine the problem with this is there's a lot of lost opportunities
+28:26
+here because we have one packet kind of going at a time okay
+28:32
+and how fast can we send data well we can actually use little's law of all things if we've got a b
+28:40
+bandwidth and at times a round trip time kind of tells us something about the number of packets that are uh on the
+28:47
+wire or waiting in the queue but in fact uh we've set this up so that we only have
+28:53
+one going in at once and so the bandwidth is basically one packet per round trip time
+28:59
+and this depends only on latency not on the network capacity so it doesn't matter you could you could basically have
+29:05
+strings and two cans on it on either side here for all that matters because you know we're not sending very
+29:10
+fast this doesn't have to be a gigabit link okay in fact you could do this computation pretty simply like suppose
+29:17
+the round trip times 100 milliseconds uh the packet's 1500 bytes you come up with about 120 kilobits per second
+29:25
+which is pretty slow okay so this is clearly the stop and weight is clearly
+29:30
+not what we want to do we got to get some more packets going okay so if you have 100 megabits per
+29:36
+second link you're wasting a lot of it you know almost almost a thousand times
+29:42
+so um and the other thing is how do we know when to time out and and re-transmit
+29:47
+right so here's a case where the sender sent something they act didn't make it or it got lost somewhere along the way clearly the timeout needs
+29:54
+to be at least as long as the round trip time before we start resending uh because otherwise you know we'll
+30:00
+resend before getting the act back so that's not so good so we're going to need to be estimating
+30:05
+this time out somehow with knowledge of the round trip time and um
+30:10
+you know if there are if the timeout is too short you get a huge amount of duplication it's too long then the packet loss
+30:17
+really becomes disruptive even if you just happen to lose one packet you wait a huge amount of time to
+30:22
+keep going um you're going to really suffer for your communication okay so and then how to deal with
+30:29
+duplication i mean here's a situation maybe where the act just got delayed and we went and retransmitted but then the act comes in
+30:35
+and we get another ack and now we got two copies at the receiver
+30:40
+okay so how do we deal with message duplication well we put a sequence number in okay
+30:46
+and this is a very simple b bit sequence number where the sequence number is either a zero or a one
+30:53
+and the idea is the sender is going to keep a copy of the data in its local buffer until it
+31:00
+sees an ack for that sequence number okay and then furthermore the receiver
+31:07
+is going to track uh packets and by having exactly two options a zero or a one
+31:14
+then the receiver can figure out if the um if there's a re-transmission because it'll see two packet zeros in a row
+31:20
+and it can know to throw one out because it's a duplicate okay so that when we start putting some
+31:25
+numbering acknowledgment numbering or sequence numbering onto the packets we can start getting rid of duplication at the
+31:33
+receiver and figuring out how long the sender needs to hold on to things to retransmit
+31:39
+okay we're going to call this the alternating bit protocol so the pros of this of course it's very
+31:45
+simple it's one bit the con is really uh if if the network can delay things
+31:51
+arbitrarily then you and you had a packet zero that might gots might have gotten stuck in some router
+31:57
+in the middle and then got transmitted later you might not be able to disambiguate uh
+32:02
+the um duplication with only one bit so clearly that's a problem and furthermore we're still doing one
+32:08
+packet at a time in the network so this this doesn't look great so what should we do here
+32:13
+to up our bandwidth and deal with
+32:20
+more unexpected delays in the network
+32:32
+okay don't wait and send more packets all right i'll buy that but that would seem to make the problem
+32:37
+of disambiguating uh duplicates of the receiver worse
+32:42
+so what else do we have to do
+32:53
+okay yep we want to sort packets later so what do we need in our sequence numbers yeah so we're going to need more than a bit right
+33:00
+because one bit you know distinguishing between packet zero and packet one and then repeating with packet zero
+33:06
+that's clearly not enough okay so we need a bigger space larger space of acknowledgements okay so
+33:12
+that seems simple right it's sequence numbers um and now we've got pipelining possibilities because we don't have to
+33:17
+wait for each act before we send more okay so here's here's what we had before
+33:22
+you know sender sends receiver receives but now we have the potential
+33:28
+to have many outstanding packets and many received packets
+33:34
+in a way that basically allows us to fill up the network okay so if you look during this round trip time what you see is during that
+33:42
+round trip time we have many packets that are on their way to the receiver and many acts that are on their way back
+33:47
+and as a result we can actually fill up the network pipe and start getting our actual network
+33:53
+bandwidth back rather than something that depends on the round trip time okay so the acts also are going to serve
+34:00
+a dual purpose here so one if assuming that every one of these outgoing packets has a unique sequence
+34:07
+number on it then um clearly we can confirm that a particular packet got back here because
+34:12
+we see its sequence number and we can do deal with ordering so if we have packet 0 1 2 three four five six
+34:19
+seven whatever and they arrive out of order we can reorder them at the receiver side back into sequence number order
+34:26
+and deal with misordering okay and so the acts uh in addition to this reliability aspect also help us with
+34:33
+ordering okay so this seems like we're going into a good possibility here
+34:38
+now how much data is in flight well if you take round trip time times whatever your actual bandwidth is
+34:44
+okay that's going to give you uh the window the sending window that basically makes sure that you um
+34:51
+you have a lot of data out in the network and um basically lets you fill up the pipe uh
+34:58
+both in the forward and reverse direction okay and so b in this case is bytes per second remember this is the
+35:05
+something uh we learned in chemistry in uh high school basically you got to match up your your um
+35:11
+units so round trip time is in seconds b is in bytes per seconds the total here
+35:17
+is in bytes so in this case w send is how many bytes do i want to have in the network uh at once in order to make sure that
+35:26
+nobody is waiting for packets okay and so this w send is like the sender's window size
+35:33
+and packets in flight if we wanted to count packets instead we could take this sending size divided
+35:38
+by the packet size and that tells us how many packets we need to have outstanding to fill everything up okay
+35:45
+so how long does a sender have to keep packets around so that's an interesting question right um ah so uh
+35:54
+let's uh so the question is how long do we need to hold on to this and the answer is well until we know
+36:01
+that a particular packet has been acknowledged right and so certainly we need to have enough buffer space in the sender
+36:07
+to have at least a round trip time probably a little bit more in order to allow us to lose some packets and cause
+36:14
+some re-transmission okay now the other question is would a timeout result in starting over from the
+36:19
+beginning um well what do you think do we need to resend every packet if we
+36:27
+lose just one
+36:37
+so good so it seems on the face of it that we'd want to only send the ones that haven't been act
+36:42
+and because we have labeled every packet with a sequence number then in principle we could figure out
+36:48
+which ones haven't been received and which ones need to be acknowledged again okay and so that's certainly
+36:54
+plausible for us now it depends on your protocol whether you
+37:01
+always have the ability to individually transmit packets or not
+37:06
+or whether you have to go back and do a certain range of them or whatever but at least in principle we have enough information to resend
+37:14
+only the things that were lost okay now how long does the receiver have to keep the packet's data
+37:20
+so the data at the receiver side certainly has to be there long enough to do reordering so if we
+37:25
+get a bunch of the later packets we need to make sure we have enough space to absorb the early ones so that
+37:31
+we can wait absorb the early ones and then send them an order to the actual application at
+37:36
+the receiving side so we need to have enough space for that and
+37:42
+also we're going to need to store data until the application's ready so perhaps it hasn't it's you know it's busy doing something else
+37:48
+and it hasn't executed a read against the socket yet so we need to hold on to data at the receiver as well
+37:54
+and then of course you have to worry about the following what if the sender is blasting packets at the receiver and the receiver just
+38:00
+is too slow and as a result a bunch of the data that was sent actually made it to the receiver only to
+38:06
+be thrown out at the receiver so that seems like probably a bad idea right
+38:11
+so here's a bunch of interesting questions okay so let me talk a little administrivia here
+38:16
+just remember um got a midterm not this thursday because uh folks are
+38:24
+going to be hopefully over indulging in food on thursday but next week from thursday is going to
+38:31
+be midterm three okay and uh camera and zoom screen shattering
+38:37
+just like in midterm two we'll mail out all your links there's gonna be a review session link that will come out in the next day or so
+38:45
+and everything up to lecture 25 so it's this lecture and the next monday's lecture
+38:51
+and we have no lecture on wednesday this week okay and lecture 26 will be a fun lecture so
+38:58
+if there's any topics in particular you want to cover let me know and i don't think i have too much more
+39:04
+to say on this i have
+39:11
+so question about is this closer to a final or closer like midterm too
+39:16
+as i think i've said before is every midterm is in principle cumulative uh in the sense that you need
+39:22
+to not have forgotten everything that you learned but we will certainly focus on material
+39:27
+uh in the last third of the class but we certainly will potentially ask you questions that
+39:34
+would require you to have not forgotten everything from earlier parts of the term
+39:41
+now um i'm not going to go in this in great detail but uh please be careful with collaborations
+39:47
+uh i realize we're getting down to the end of the term but remember that um explaining things to
+39:54
+something at a high someone at a high level and discussing things at a high level but not sitting
+39:59
+down line by line going through everything um you know if there's a lot
+40:05
+of individual syntax transfer on homeworks and pro in between project groups it's probably
+40:12
+too much sharing okay and so just be careful all right and don't get don't get friends into trouble by asking
+40:18
+them for their code over and over again because you'll put them in a bad position as well of having violated our
+40:25
+policy so try not to do that okay i've talked about this last couple of lectures so i don't want to go into
+40:31
+it in greater detail so let's
+40:38
+keep going on this a little bit so i think the idea of having a big acknowledgement
+40:43
+space or big sequence number space and sending a bunch of messages into the network to
+40:48
+uh get pipelining sounds like a good idea but if you remember here when we
+40:53
+set up um cues or pipes between processes
+40:58
+on a local machine we had a queue in the middle and we had blocking because the queue had fixed capacity
+41:04
+so if you wrote and uh the queue was full the writer would actually get put to sleep
+41:09
+or if you went to read and there was nothing in the queue the reader would get put to sleep and so we would we would like to have
+41:16
+something similar to what we had with pipes but across the network and
+41:21
+using tcp the question is how do we go about that okay so buffering in a tcp connection we
+41:27
+have process a and process b there's a send q on a side and a receive cue for that
+41:34
+particular stream and then there's also one going the other direction so typical if you
+41:40
+remember sockets are bi-directional and when we set them up we have cues on both sides
+41:46
+and we want to make sure there's proper blocking so no data gets overwritten or otherwise lost
+41:52
+okay and so a single tcp connection needs four in-memory cues
+41:57
+as we just said here and the window size for a connection is sort of
+42:03
+how much remaining space it has in the received queue so for instance in this case if this received queue
+42:09
+has a hundred bytes left in it the the host is really only allowed to send
+42:14
+another 100 bytes until things start becoming acknowledged because
+42:19
+we never want the host to basically overwrite the received queue and furthermore just in acknowledging
+42:26
+that they've been received is not enough because the received queue could still be full because host b hasn't pulled things out
+42:32
+so what we really need to say is we need some way to for the receive queue on either side to tell the sender
+42:39
+how much space it's actually got left in its queue and make sure that the sender never sends more than that and that'll prevent
+42:45
+us from overriding at the destination okay and so host advertise its window
+42:50
+size uh at the receive queue in every packet going the other direction it keeps
+42:55
+saying well here's how much i have in my queue now here's how much i have in my queue now and as a result we can do this
+43:02
+buffer management so that we never overflow a host or lose data
+43:09
+okay so the idea is we're going to build a sliding window protocol so the tcp sender knows the receiver's window size
+43:15
+tries never to exceed it packets that it previously sent may arrive filling the window up but we want to
+43:22
+make sure there's never more in transit then there is buffer size at
+43:27
+the destination and you're allowed to keep sending data as long as there uh there's enough space guaranteed
+43:35
+at the destination okay and i'm going to show you how that works in a second here so the idea here
+43:41
+is i'm not i'm going to talk about packets of space at the receiver even though normally it's fights
+43:47
+and so the window size to fill is uh you know we have a let's say we have a bandwidth of packets
+43:53
+per second times the round trip time is going to tell us how much we want to have in flight at
+43:59
+once and this is a form of little laws again a little law again to figure out sort of how much we can go with
+44:05
+but for instance here's a case where we have an unoc act packet which we're going to call packet one that got sent
+44:12
+another uh packet so now the send window is got it says that one and two are
+44:19
+outstanding here this says one two and three are outstanding and we're gonna assume that we're not allowed more than three
+44:24
+packets at the destination eventually what happens is because one came in
+44:30
+in order um we've received it and we potentially sent it up to the application
+44:36
+at that point the receiver will say well i actually now have space in my destination for another one
+44:41
+okay at which point we'll send another one and so on okay and so this explicit tracking of
+44:48
+uh and here the receive queue is basically never um holding on to anything it's sending it up so each one of these acts is
+44:55
+basically saying well i still have three available i still have three available i still have three available but you can imagine if the receiver was
+45:02
+basically um uh holding on to it but the application the receiver wasn't
+45:08
+absorbing it then this queue would start filling up now what if you never get an act from the receiver so what happens in that
+45:13
+case is that if we go back to this point
+45:19
+um this sender will stop sending because it only knows that it's got three packets worth of space
+45:25
+and it'll stop and if there are no acts that comes back then at that point i'll resend
+45:31
+i'll start resending from the earliest one that's missing so i'll start rescinding one and then two and three over and over
+45:37
+again waiting to finally get an act back and once i got an ack then i can go forward so the the
+45:44
+short answer to what happens if you never get an ack is you you go up to the point at which the receiver has enough buffer space and
+45:50
+then stop timeout doesn't necessarily it it might
+45:57
+reset a little except for the fact that if i time out at this point i'm going to keep resending stuff that's
+46:03
+in my send buffer and when it gets to the receiver the receiver knows that there is space for it because it's the
+46:10
+first slot in the receiver's buffer queue so i'm never going to get past sending packets one two or three
+46:16
+until i get one of them actually act and then i can send back four so it isn't a full reset on timeout it
+46:23
+really is a oh some of the stuff that i thought that you thought you sent must not have gotten there because i got
+46:29
+a timeout i'm going to resend things okay so the difference between timeout
+46:35
+and acknowledgement is timeout is a resend acknowledgement is moved forward and notice how this window here is
+46:41
+advancing so once i've got this first act now i've got two three and four here are in my
+46:47
+sending sliding window and uh at the receiving side potentially i've
+46:53
+got um these guys have came come in here but i'm forwarding things up as quickly as i
+46:58
+can and so we're never building up any buffer space at the destination i'm going to show you in a moment what
+47:03
+happens if you do build up at the destination now here we go so tcp
+47:09
+windows and bytes not packets okay so if you look
+47:16
+we can think of the space of sequence numbers now in tcp is not a packet count
+47:22
+it's a byte count so what you can imagine remember tcp is a stream so there's a continuous stream going in
+47:28
+we have an arbitrary sequence number that we start at and then we can look at this space of
+47:34
+sequence numbers where each sequence number represents another byte in the stream
+47:39
+okay and so we have the set of sequence numbers representing bytes that have been sent and already acknowledged
+47:46
+we have the set of bytes that have been sent but not acknowledged and the set bytes that haven't been sent
+47:51
+yet but this is a continuous stream from the initial sequence number incrementing by one each time
+47:58
+and then at the receiver we have the same set of sequence numbers okay and so we have this side our are
+48:05
+parts of the sequence numbers that have been received and potentially given to the act the application here we have ones that
+48:12
+have been received and are being buffered and these are ones that have not yet been received yet
+48:18
+so this buffer here in the middle is the thing that we want to make sure we never overflow
+48:23
+okay and i'm going to show you how that works in a moment okay
+48:28
+all right questions so we're not acting on packets we're
+48:34
+acting on bytes and that means we can act a whole group of bytes at once by giving the sequence number of the end
+48:41
+of the bytes let me show you and this is this is where packets come back into play but here's an example of
+48:48
+uh the receiver's uh receive queue this is an acknowledgment
+48:55
+that came back from the receiver to the sender okay and what it's saying here
+49:01
+is uh we're on sequence number 100 is the next sequence number that i'm
+49:06
+expecting and there's 300 bytes worth of space in my queue okay and so now we're going to send
+49:13
+a packet in tcp that says here's sequence number 100 it's got 40 bytes in it so that means
+49:20
+that after this packet's received what i acknowledge is i'm going to acknowledge 140
+49:26
+is my sequence number because i've received 40 new bytes from what i had before and furthermore
+49:31
+notice that what i'm saying here is that the um the buffer now only has 260 bytes free
+49:37
+no longer 300. and as i go again you'll notice that the number of bytes free keeps going down so what that tells the
+49:43
+sender is that the buffer on the receiver side is filling up and it's never going to send
+49:49
+out more into the network than it knows is available so at this point at 210 it knows that
+49:57
+sequence number 190 it can do another 210 bytes above 190 and be okay
+50:03
+okay now here's an example where something happened to a packet in here the one that was sending between
+50:09
+sequence number 190 and 230 and it's got lost somehow but we sent another one which was sequence number
+50:15
+230 with size 30 and we got back an acknowledgement which might not be what you expected if you look here what you
+50:22
+see is the acknowledgement says well the the uh latest most sequential um thing i've received
+50:29
+is it's sequence number 190 okay and there's 210 after that that's
+50:35
+available so this particular base tcp protocol acknowledges the sequence number that
+50:42
+represents a solid set of bytes up to that point and ignores holes and other things that might have
+50:49
+been received beyond it okay now um this is useful
+50:56
+if you can imagine because what it really says is it's yes it's uh it's got back us
+51:03
+you know it got back some data and received some data but it doesn't make sense necessarily to acknowledge this fully
+51:09
+yet because uh it's not useful to anybody in the streaming protocol now let's look a little further you can
+51:15
+see that this continues for a while and we haven't changed anything about our acknowledgments and the reason for
+51:21
+that is we're missing bytes between 190 and 230 and eventually there'll be a timeout we're
+51:26
+going to re-transmit the missing data and if you notice what happened there we fully filled in the
+51:32
+hole because the buffer at the receiver is doing the right thing and the acknowledgement that comes back now is oh i've received everything up to
+51:38
+sequence number 340 and by the way i only have 60 left and so then we can finish this up
+51:44
+etc and at some point when we start feeding these up to the application
+51:49
+because they did a read of 40 or 30 or whatever it is then these acknowledgements will start
+51:56
+coming back and saying oh here there's more space in my buffer so if you ever wondered why when you set
+52:01
+up a tcp channel and you start sending data and the other side freezes and doesn't the other
+52:08
+application isn't absorbing the data then the tcp channel will literally shut down because
+52:14
+it knows that there's no buffer space at the receiver all right so um
+52:22
+all right and at that point basically we've shut down because we've filled up all the buffer space and the application at the receiver side isn't absorbing any
+52:28
+and so the sender is is stopping at that point and the way this worked out for us is all of the information we
+52:36
+need is in this cue size at a given sequence number and so that'll allow us to put in as
+52:42
+many bytes into the network as we want in a way that won't violate this notion
+52:48
+that all the bytes in flight would fit in buffer space at the receiver so we have enough information to never
+52:53
+violate that the only other thing now is to only send enough data out into the network to try to meet that round trip
+53:00
+time times bandwidth requirements it's actually the bandwidth is the slowest link in the middle
+53:06
+and no more because otherwise we'll start causing congestion
+53:12
+okay so here's a question so during the time
+53:19
+when the 190 packet's missing let's just go back here what if the sender sends too many packets and causes the receiver buffer
+53:26
+to be full since um so the thing here is it's not going to send
+53:32
+uh too much it's not going to send 210 bytes past the one it's sent it's
+53:38
+sending 210 up to 210 bytes past the 190. so it knows that this is the space that's
+53:43
+free and it's that means it knows that past 340 it doesn't have
+53:49
+more than 60 here available so it's not going to send anything past what would fit in this and it's up to the receiver to re uh
+53:56
+order based on sequence numbers to put things back in the buffer okay now what if you already go beyond 400
+54:02
+before re-transmit again that's not going to happen because uh we are never going to get the
+54:08
+go ahead to transmit beyond 400 until the the buffer space opens up here
+54:15
+because when we get to this point we will never have sent
+54:20
+beyond 400 because uh we will know that that would bring us down to past
+54:26
+zero and so it'll never happen and it's only when this opens up again after these have been absorbed by the
+54:31
+client that we can start sending again good so congestion is an issue so congestion
+54:39
+is because we have too much data flowing through the network okay and if you look all of this different data is all using shared links
+54:46
+and so ip's solution here is to draw packets and the question might be what happens to a tcp
+54:51
+connection well you end up with lots of re-transmission so if you drop lots of packets what you saw there is
+54:57
+you end up with lots of re-transmissions by the way i should say back here on this particular example i want you to notice that the sender
+55:05
+knows where the data was missing because it knows that it was at
+55:10
+uh sequence number 190 and the moment it sends that missing data notice that the acknowledgement went way all the way up
+55:16
+to where uh it is still missing and so um at that point the sender is not going to
+55:22
+re-transmit this remaining stuff it's going to pick up where it left off and so we don't get duplication there
+55:27
+okay and there are protocols that let you know more about more holes than
+55:33
+one at a time but we won't go into that now so with congestion we need to limit congestion okay and so
+55:40
+why do we get congestion well there's shared links in the middle and there's too much data going into the
+55:46
+shared link and so whatever router is at one of these shared points starts dropping packets
+55:51
+and so what we really want to do is we want to back off so that we don't send too much data and so we want to
+55:58
+back off so that everybody that's sending together the rate uh doesn't exceed the
+56:04
+rate of the router and outgoing links okay and so that's a congestion avoidance property
+56:11
+and so we can really figure this out like how long uh should a timeout be for resending messages um so clearly if it's too long
+56:18
+we waste time if the message is lost if it's too short we re-transmit even though an act will arrive
+56:24
+shortly so we need to be tracking the round trip time clearly but there's a bit of a stability problem
+56:30
+here so if there's more congestion then acts are delayed and you start getting timeouts which send more traffic
+56:36
+which cause even more congestion and you start um getting this positive feedback loop
+56:42
+that causes uh everything to break down okay and so you got to be very careful
+56:47
+to choose the sender's window size not the receiver but the sender how much data it's going to allow to be
+56:53
+outstanding so as to avoid congestion to avoid this positive feedback loop and
+56:58
+obviously the amount of data the sender can have outstanding has got to be less than what's at the receiver so we don't
+57:03
+over flood it but it's probably going to be less because we're going to be trying to match the amount of data we have in the
+57:09
+network with the round trip time and the bandwidth of the slowest link in
+57:14
+the middle so we're going to try to match the rate of sending packets with the rate of the slowest link
+57:21
+there's an adaptive algorithm which is going to adjust the sender's window size and there's a lot of interesting things
+57:27
+a lot of interesting algorithms that have been developed over the years to deal with that i have one up on the reading for
+57:33
+for tonight the van jacobson paper starts talking about this a little bit if you're interested but the basic technique is going to be
+57:40
+i'm going to start small and i'm going to slowly increase the window uh until i start getting acknowledgments
+57:47
+missing so once i've got that to be too big i know that i'm sending too fast i'm going
+57:53
+to back off and that's the basic way that these adaptive algorithms try to get
+57:58
+enough data in the network to make maximal use of that slowest link but without causing congestion okay
+58:06
+this is called slow start which is uh you start sending slowly and uh typically what happens is when
+58:12
+you start receiving um uh when you start receiving acts being lost then you cut in half and you work
+58:19
+your way up and so typically there's the sawtooth uh behavior as it's trying to adapt and figure out what the right
+58:26
+amount of data to be in the network um the cool thing about these kind of adaptive algorithms is that if a new
+58:31
+person comes along all of a sudden the ac the axe will be lost you'll start losing packets
+58:37
+both uh will back off until they hit a situation where they're both equally sharing the link in the middle and that's kind of
+58:44
+the way these congestion avoidance algorithms work and so you can take a look if you actually measure
+58:50
+what tcp does you get this typical sawtooth behavior around around the right bandwidth
+58:57
+for that middle link so the question here is aren't ax more more
+59:02
+likely to be timed out with smaller windows i'm not sure i fully understand there the acts are coming back
+59:08
+in the other direction and the acts are basically reflective what's
+59:16
+happening is when you see that the same act comes back over and over again you know that the data you sent out got lost and so that's
+59:22
+that's the notification that the forward uh packets have been lost and that's the point at which you make
+59:28
+some decision to back off the amount of data you have in the network
+59:34
+okay now so if you recall the setup remember
+59:42
+this where you request the connection the server socket's got is listening um it takes the connection it constructs a
+59:49
+new five tuple style uh of connection between two sockets and then it lets you go
+59:56
+and so remember the five tuple is a source i p address destination ip address source port destination port
+1:00:03
+and protocol like tcp and that setup is really setting up a tcp
+1:00:09
+channel okay and so what does that mean so to establish we have to open a connection
+1:00:15
+that's a three-way handshake then we do what we've just been talking about which is transmitting data back and forth and then we tear everything
+1:00:21
+down when we're done okay and so here we're back to this client server but now let's look at
+1:00:27
+this part which is the setup okay and it's really a three-way handshake so
+1:00:33
+the client uh so the server is causing a calling listen over here the client calls connect which sends a a
+1:00:41
+request over all right and it looks like this it's a syn synchronous bit is set in the header it
+1:00:48
+proposes a sequence number for communication from client to server the server accepts the connection it
+1:00:56
+sends back um an acknowledgement on that forward sin and a new sin for the other direction
+1:01:03
+okay with its proposed sequence number all right and then finally there's an act coming back so this last ack is
+1:01:09
+acting the server's uh connection um from server to client
+1:01:15
+so it's three uh three messages and when you're done you've both agreed on a sequence number in the
+1:01:21
+forward direction the starting sequence number in the reverse direction and you both agreed that this is a connection that's going forward okay
+1:01:29
+great
+1:01:36
+the other thing is just to show you the shutdown so shutdown's actually a four
+1:01:42
+uh hop thing here so when host one is done it sends a fin bit in the header
+1:01:48
+the host uh acts the fin bit but it also or acts the fin bit and it sends its own fin bit um
+1:01:55
+so this is a finnex excuse me and the remaining data uh and then eventually it closes things
+1:02:01
+down with the fin and you get a fin echo in the other direction so there's actually four uh control messages to shut down
+1:02:08
+okay and then eventually after a timeout everything's deallocated so
+1:02:17
+all right and i'm not gonna um not going to go any further on this but just like regular files if you have multiple file
+1:02:23
+descriptors open on a socket then the sockets only really shut down when all of them close
+1:02:30
+okay so how do we actually program a distributed application so we need to synchronize
+1:02:36
+multiple threads on different machines um so if you remember uh this is from
+1:02:41
+last time i was talking about messages and so now we've got this idea
+1:02:47
+of how to build a reliable stream in both directions
+1:02:52
+and so the question is now what next well suppose we want to build
+1:02:57
+an application on top of this well one of the things that comes up is what's the data representation
+1:03:03
+so an object in memory on one side has a very machine specific binary representation
+1:03:09
+that may mean nothing at the other side so if you're trying to send data from host a to host b and you want it to
+1:03:16
+be understood on host b what are you going to do well you're going to have to agree on some
+1:03:22
+standardized way of communicating with each other okay and so the absence of shared memory
+1:03:28
+externalizing an object require us requires us to basically take an object which think of a linked list for a
+1:03:33
+minute right it's a bunch of uh objects that are all linked together with addresses and all that sort of stuff
+1:03:39
+and we need to serialize that into bytes so that it can be sent over the uh over the link okay and the
+1:03:46
+serializing into bytes and then marshalling it together into an object the object together into a
+1:03:51
+message and then sending it off uh is what you do at the sender side on the other side
+1:03:57
+you unmarshal so you take it apart and you deserialize it back into a local representation on the
+1:04:03
+other side and it's possible that the two communications are um or excuse me the two hosts have
+1:04:10
+different representations like one might be big endian and the other small indian i'll remind you what that is for a moment
+1:04:16
+so this serializing and marshaling process has to be done in a way that allows the two hosts
+1:04:22
+to communicate no matter what their representation for various things are okay
+1:04:27
+so simple data type let me just show you this for instance suppose you got a 32-bit integer and i want to write it to a file so
+1:04:33
+let's back off from sockets for a second you open the file okay that's all find dandy
+1:04:39
+and then you have a couple of choices one you could actually print it out as an integer in ascii text
+1:04:46
+the other is you could write it as a binary in with four bytes okay and those two things
+1:04:54
+look very different in the file and the person the person the application that reads it back in uh
+1:05:00
+needs to know which it is otherwise it's not going to be able to interpret them okay so neither of these two things are wrong but the receiver
+1:05:06
+needs to be consistent okay and this gets even more tricky when you're going across the network
+1:05:12
+because if i'm trying to send you know a four byte number 32 bits
+1:05:18
+across the network how do we know that the recipient has x in the same way
+1:05:23
+okay like for instance if you remember from 61c they talked about indian-ness like several of these
+1:05:30
+different types of machines are big endian the number are little indian and the question is sort of how do we
+1:05:38
+match those up if we're trying to communicate okay here's a good example of a of a
+1:05:43
+little endian machine where we take a an integer uh ox12345678
+1:05:48
+and then we uh we scan through the uh in memory representation and what you
+1:05:54
+see is these the first byte of that in memory representation is a seven eight so it's actually the uh the least
+1:06:01
+significant bite of the integer is actually in the first byte in memory so this is clearly
+1:06:07
+a little endian machine okay and you can write this endianness
+1:06:14
+routine on your own and try running it okay and see what you get so what endianness is the internet well
+1:06:20
+the internet has chosen big endian as the standardized network byte order and so typically what
+1:06:25
+happens is when you're sending something across the internet you actually put network byte order uh you put things in network byte order
+1:06:32
+and then the other side unpacks them from network byte order into its local host order
+1:06:38
+so um so you have to decide on wire ending this we just decided for instance if we're talking across the network it's
+1:06:43
+typically big endian and then we convert from the uh native endianness to the on wire format that's
+1:06:50
+in the source side of the communication and then we unpack it on the other side from the on wire endianness
+1:06:56
+to the local format now a downside of this perhaps is the fact
+1:07:02
+that if you take two little indian machines and they communicate over the network they're both going to uh convert
+1:07:08
+and uh convert to and from big endian to make that communication happen
+1:07:15
+so the question is what's the is there a rationale for big endian versus little endian on the web or do you mean in
+1:07:20
+different processors
+1:07:26
+uh you know the web if you're asking why why it was big endian network byte order
+1:07:33
+um i think the good thing about big endian is you can look at uh numbers in
+1:07:41
+if you were to take a hex dump of some memory and you look at a big endian number you can just read it directly out
+1:07:46
+so big endian kind of has that nice property that it's uh it requires a little bit less brain
+1:07:52
+gymnastics to read through a memory dump that would be my my only
+1:07:59
+explanation of why that was preferred i don't know i guess at this point it's all about
+1:08:04
+standards and so i could just say well it is what it is and we got to stick with it but um i think probably people like big
+1:08:11
+endian because you can read it directly out now i grew up with little indian processor assembly language design when
+1:08:17
+i was younger and so um i'm not as
+1:08:22
+thrown for a loop when i see little indian numbers because i rescrambled them in my brain and it mostly works okay
+1:08:27
+but anyway i think that's the reason people like the big endian because you don't have to re-scramble
+1:08:33
+what about richer objects like lists and whatever what do you do well if you want
+1:08:39
+to transfer a linked list of structures from point a to point b you got to come up with some
+1:08:46
+standards for serializing that so that they can be packed and unpacked and there's lots of serialization
+1:08:53
+formats there's json and xml you name them in fact if you were to google data serialization you'd find a
+1:09:00
+whole bunch of different types of serialization so there are many languages there are many serialization
+1:09:06
+formats so of course this is a new issue with standardization you have to make sure
+1:09:11
+that when you're using a serialization mechanism from point a to point b you actually do the right thing
+1:09:16
+to uh to do that serialization okay now um so
+1:09:24
+raw messaging where you just send a message from one side to another and then you build something out of it
+1:09:29
+is pretty low level for programming um you have to do a whole bunch of stuff on your own and you also have to deal with
+1:09:36
+machine representation by hand calling the things we said back there the alternative is a remote procedure
+1:09:42
+call idea which you call a procedure on a remote machine and the idea is to make communication
+1:09:47
+look like an ordinary function call and you're going to automate all the complexity of translating between representations
+1:09:53
+okay and so uh for instance the client might call a remote file system read rutabaga and
+1:10:00
+at the remote side the thing reads the file rutabaga and sends the results back
+1:10:07
+and as far as the client and even the server is concerned they're just executing
+1:10:13
+a function call and getting a return okay so that's called a remote procedure call
+1:10:19
+and that concept here is pretty simple so here's a client it wants to execute this function of two
+1:10:25
+arguments which turns out it's going to be on a remote machine what's going to happen is to call it's
+1:10:30
+going to go through what's called a stub which is going to marshal all of these arguments v1 and v2
+1:10:36
+and put it into a standardized serialization format of some sort send it to the receiver the receiver
+1:10:42
+stub is going to unpack it call the the function on the server side server is going to give a return value
+1:10:49
+we're going to go back the other direction okay and then return at the client and
+1:10:54
+if you notice um really these stubs are things that are just linked into the
+1:11:01
+client and the server like regular uh library function calls and
+1:11:07
+they have this nice property that when you link function f with this stub what really happens is
+1:11:13
+when you call f it ends up sending and receiving messages okay and the server when it links with the server stub
+1:11:19
+is really going to end up giving its functions to be called by remote clients and
+1:11:26
+however when you write the code inside the server you're going to just be writing normal functions okay and so this is
+1:11:33
+this is basically the this is basically the idea of remote
+1:11:40
+procedure calls so as far as the client's concerned they're making a procedure call but it's happening remotely
+1:11:45
+okay and so really we can talk about the client stub interacting with handlers
+1:11:50
+that send messages across the network on multiple machines and that this is really a machine machine boundary
+1:11:57
+okay and really there's also a application application boundary so we're going to wrap some ports in here
+1:12:04
+as well now can you use rpc for inter-process communication on the same
+1:12:09
+machine absolutely okay and what's kind of cool about this that's a good question is really that
+1:12:15
+you could start out with this server on the same machine and then if the machine got overloaded you could migrate the server to another
+1:12:22
+machine and as long as you clean up the packet handling stuff so the packets are
+1:12:27
+now directed at that remote machine instead of the local one you don't even have to change the code all you see is a
+1:12:33
+change in performance okay now um
+1:12:38
+so the way that this implementation works in general is request response message passing under the covers this
+1:12:45
+stubs on both sides are providing glue on the client and server side to glue functions into the network
+1:12:52
+so the client stub is marshaling the arguments and unmarshaling the return values where marshaling is putting into a
+1:12:58
+packet taking out of the packet they're also responsible for doing the data representation serialization we
+1:13:05
+talked about the server stub does the the opposite okay so marshalling involves converting
+1:13:12
+values to canonical form serializing the objects copying them to be passed by reference
+1:13:17
+etc and so some details here
+1:13:24
+there's an equivalence really between you know the parameters of the function call go into a request message the
+1:13:31
+result is a reply message the name of the procedure is typically passed in the request message
+1:13:37
+and is used to decide at the receiver stub which function gets called there are mailboxes on either side so
+1:13:43
+you need to know both the ip address and the port on each side in order to do this connection
+1:13:50
+the interesting part about this is there's a stub generator which is really a compiler that generates stubs
+1:13:55
+so what you typically do is you define your rpc with a interface definition language or
+1:14:01
+idl which contains among other things the types of arguments the return values etc the output is going to be stubs in the
+1:14:08
+appropriate source language and when you you design
+1:14:14
+your interface by writing in the idl and then when you produce out of the compiler you now have code that you can
+1:14:20
+link in it both to the client and the server side and now you're able to do rpc
+1:14:26
+okay um so the way we deal with cl cross-platform issues is exactly what we
+1:14:32
+just talked about we're going to convert everything to and from a canonical form and this is where your particular type
+1:14:38
+of rpc so there are many types of rpc out there will define as part of it what is the
+1:14:43
+canonical form or what is the way that things are serialized okay so that's a part of the rpc package
+1:14:49
+so how does a client know what they're connecting to typically you translate just like with
+1:14:55
+regular dns and ip you're translating the name of the remote service into a network endpoint
+1:15:00
+remote machine port maybe some other information and the process of binding is the
+1:15:06
+process of converting basically a user visible name for that service like a file server or something else
+1:15:12
+into a network endpoint like an ip address and port and then connecting it all up and so
+1:15:18
+then once you do that now the client can just be doing procedure calls and they're going to the remote machine okay and this is another word for naming
+1:15:25
+and you could either compile in the destination machine or you could have a dynamic
+1:15:32
+check at runtime now the question is when are the stubs initialized so the stubs get linked into the program and they get
+1:15:38
+initialized kind of before you actually start actually executing code that has the rpc
+1:15:43
+in it so there is this initialization process which you would call into the rpc library to do the initialization
+1:15:49
+stuff and once it's now connected then you can make your calls so um this dynamic binding uh is good
+1:15:57
+because most rpcs use dynamic binding via some name service just like
+1:16:02
+if you're interested in you know www dot you go to a dynamic dns service to find
+1:16:09
+the current i p address there's most rpc systems have a dynamic binding service
+1:16:14
+where you say what service you're interested in certain file service of a certain name and it will figure that out for you
+1:16:21
+through a binding process and decide what the actual ip address is and so on what the port is why do we do
+1:16:28
+this one and we can do access control to basically dot even give back the names of machines if people
+1:16:34
+don't have access the other is failover so if the server fails we can basically
+1:16:42
+fail over to another one just by changing the binding if there's multiple servers you can have
+1:16:48
+flexibility of binding time so i mentioned uh last time or time before that google
+1:16:53
+does this a lot when you go and do a google search and you do it from northern california
+1:17:00
+versus i don't know boston you're going to get different places for google um in fact you're even going to get
+1:17:06
+different times of the day you might get different service server names or the same server name different ip addresses from the google
+1:17:13
+resolution and what they're doing is they're balancing load that way and so that's why a dynamic rpc service is good
+1:17:19
+that way as well okay i think that's all i wanted to say
+1:17:24
+there so what are some problems with this idea so this seems really cool different failure modes in a distributed
+1:17:31
+system than on a single machine so you know think about the number of different failures if your
+1:17:38
+maybe a user level bug causes an address space to crash at the other side or a machine failure
+1:17:43
+kernel bug causes all processors on the same machine to fail or some machine is compromised by a
+1:17:48
+malicious party so in the old before rpc what you'd end up with
+1:17:53
+is a crash as a crash as a crash pretty much everything fails after rpc you're now reaching out to
+1:18:00
+different services on the network and it could be that you get partial failures because only some of them are
+1:18:05
+working okay now the question here does rpc usually run over tcp uh it either runs over tcp
+1:18:13
+or if it runs over udp which it can occasionally it's got to have its own reliability
+1:18:18
+protocol underneath to make sure things work so it often running over tcp is
+1:18:25
+certainly the simplest thing for it to do so before rpc the whole system would
+1:18:30
+crash and die after you got partial failures okay and so you end up with an inconsistent
+1:18:36
+view of the world and you're not sure if your cache data got written back or not you're not sure if
+1:18:41
+your server did what you want and so the handling of failure gets much more complicated in an rpc world
+1:18:48
+but you gain the ability to have your services handled from many places
+1:18:55
+okay so the problem that rpc is the solution to again is that our pc basically gives you a
+1:19:01
+nice clean uh way of looking at remote communication
+1:19:06
+just as a file as a system call excuse me strike that it basically lets you look at remote
+1:19:12
+communication as a procedure call and that procedure call you don't have to worry about marshaling
+1:19:18
+the arguments you don't have to worry about serializing you get the return value back and so your code is nice and
+1:19:24
+clean it looks like a bunch of function calls okay the downside is you need to make sure
+1:19:30
+that you are able to track failure modes carefully and i will point out by the way that
+1:19:36
+there are a lot of services that use rpc precisely because of the cleanliness of
+1:19:42
+its interface and because it's very easy as i said to migrate where the services are from the
+1:19:48
+local machine to remote machines without changing any of the programming
+1:19:53
+it's just that there are potentially more complicated failure modes that you have to be careful about
+1:20:00
+and you can do all sorts of interesting things with distributed transactions and byzantine commit and stuff we've already talked about to
+1:20:05
+make your rpc uh much more much less failure phone
+1:20:12
+so rpc is not performance transparent right so the cost of a procedure call is very much less than the cost of same
+1:20:19
+machine rpc which is very much lost less than network rpc so there's overheads of
+1:20:24
+marshalling and stubs and kernel crossings and communication that come into play so there is a cost to rpc but the
+1:20:31
+transparency of location is a pretty powerful benefit and so while
+1:20:36
+programmers need to be aware that rpc is not free it still is used in a
+1:20:41
+large number of circumstances and for one thing that i will point out here is um
+1:20:48
+now we have a new way for uh communication between domains um we talked about shared memory with
+1:20:54
+semaphores and monitors we talked about file systems we talked about pipes and now remote procedure calls can be a
+1:21:00
+way to even do local communication and so uh you can use this communicate between
+1:21:07
+things on the local machine or remote machines and just to give you a few there's many rpc systems
+1:21:13
+there's corba the common object request broker there's a dcom which is distributed com
+1:21:20
+you'll see that in windows machines a lot there's rmi which is java's remote method indication there's
+1:21:25
+a lot of different ones out there and one thing i will point out is uh in
+1:21:30
+the early 80s i would say there was this notion of microkernels
+1:21:36
+which we haven't talked a lot about in this this term yet but um basically this monolithic kernel that
+1:21:44
+we've been talking about pretty much puts all the protected code into uh the
+1:21:49
+kernel address space and applications run on top of that and they make system calls into the kernel the micro kernel is a
+1:21:56
+little different the only thing that's in the kernel itself is uh thread multiplexing address space
+1:22:03
+control and an rpc service and so in addition to regular applications all of these things
+1:22:08
+that we used to think belong inside the kernel we now put as processes running on top of the micro kernel and
+1:22:15
+using rpc to communicate with one another and so if the application goes to read a file what happens is it doesn't open by doing
+1:22:23
+an rpc into the microkernel which then um talks with the file system
+1:22:28
+that file system does the open sends back a handle to the application etc and so the application is reading and
+1:22:34
+writing from the file system but doing so uh basically through an rpc
+1:22:39
+mechanism to other user level uh processes okay and why do this well
+1:22:45
+um fault isolation so if there's a bug in the file system it won't crash the whole the whole um
+1:22:50
+microkernel right it's only going to crash part of what's going on or if there's a bug in the windowing system okay or other parts of the kernel
+1:22:58
+we basically have isolated the ability of faults to propagate because we we isolate them in their own
+1:23:04
+user level address space and we use rpc back and forth okay and it enforces a level of
+1:23:10
+modularity as well okay so this is a good example of using rpc
+1:23:16
+on local machine to to help with the overall structure in
+1:23:21
+the kernel okay all right now if you'll bear with
+1:23:26
+me for just uh one or two more slides i want to set the stage for what we'll talk about on monday
+1:23:32
+once we've got a good messaging service and a good way to do uh you know uh
+1:23:39
+serialization and deserialization across the network we can now start talking about how to
+1:23:45
+build distributed storage and the the basic distributed storage problem is the following
+1:23:51
+we have a network with a lot of storage in it so you guys can start thinking about all the cloud storage that you
+1:23:56
+have out there and we have a series of clients that are all using that storage
+1:24:02
+and the we can start asking some interesting questions about this so
+1:24:07
+first of all why bother with this well this is the ultimate sharing scenario because
+1:24:13
+these clients can be using that data that's in the middle of the network no matter where they are so they could be
+1:24:19
+in the the west coast here using some data and then they get an airplane and uh hopefully are careful with their
+1:24:25
+social distancing and their masks and they get on the east coast and now they can read their same data or
+1:24:30
+they can can be uh traveling and their data can be read and written while it's going and so this
+1:24:36
+idea of network attached storage is a very powerful one okay but it's a little different than
+1:24:41
+the type of file systems that we've talked to in this term about in this term so far so among
+1:24:46
+other things there's a what's colloquially called the cap theorem
+1:24:52
+okay this was from eric brewer in the early 2000s and the idea is that there can only be three
+1:24:57
+there are three ideas okay consistency availability and partition tolerance and you can only have two of them at a
+1:25:03
+time in any real system so what consistency means is that changes to a file or a data
+1:25:10
+base or whatever appear to the same uh to everybody in the same serial order that's consistency availability says you
+1:25:18
+can get a result at any time and partition tolerance says that the system will keep working even when the
+1:25:24
+network gets split in half okay and the problem that you encounter when you have a distributed system like
+1:25:30
+uh distributed network storage is you start worrying about partition tolerance
+1:25:36
+uh you know what happens if the network is split and you know if you are going to be able
+1:25:42
+to keep going while the network is split then you're going to lose one of consistency or availability
+1:25:47
+okay so you can't have all three at the same time this is also otherwise known as brewer's
+1:25:52
+theorem so you can think pretty easily think about this for a moment so suppose
+1:25:58
+that i want to always have availability so i can always use my file system and i
+1:26:03
+want to be able to deal with partitions when the network is split you can see why consistency might not
+1:26:09
+work right because if i split the network in half and these clients over here are busy writing data and these clients over here
+1:26:16
+are busy writing data then i'm not really getting consistency because the file
+1:26:21
+not consistent it's got two different views of it on different coasts okay so that's one example of being able
+1:26:27
+to only have two things if i want to have consistency and partition tolerance for instance i want
+1:26:33
+to be able to make sure i always see a consistent view but i can deal with partitions in the middle can anybody explain to me why i
+1:26:40
+lose out on availability when i do that
+1:26:49
+why would i lose out on availability
+1:26:55
+yep the reason i lose out on availability is because to be consistent and deal with splits in
+1:27:01
+the network then i can't write anymore and so it's no longer available to write because i can't allow there to be an
+1:27:06
+inconsistent view very good all right so we're going to pursue this next monday on our last official class we're going to talk
+1:27:13
+a lot about distributed storage solutions like the nsf and our nfs and af-s
+1:27:19
+we'll talk about key value stores and um and probably in the final lecture on wednesday
+1:27:26
+of uh a week next week which won't be responsible for on the exam but we'll talk about things like
+1:27:34
+cord and can and some of the other distributed storage systems out there
+1:27:39
+all right so in conclusion we talked a lot about tcp which is a reliable byte stream between two
+1:27:44
+processes on different machines over the internet so you get basically a stream and it doesn't matter whether it's local or
+1:27:50
+remote you get the same view of it and we talked about how to use acknowledgements with windows based
+1:27:56
+acknowledgement protocol and congestion avoidance to make sure that this works well and
+1:28:01
+represents good citizenship we talked about remote procedure calls which is how to call a procedure on a remote
+1:28:07
+machine or in a remote domain and give us the same interface as procedures
+1:28:12
+but remote okay um we started talking about the
+1:28:17
+distributed file system and the cap theorem okay and next time we're going to talk about uh virtual file system layer and
+1:28:23
+cache consistency and how we can basically build a file system into the network all right
+1:28:30
+i'm going to end there i hope everybody has a great thanksgiving we will see you a week from today back
+1:28:38
+on monday and i hope everybody gets a little bit of a break and enjoys themselves

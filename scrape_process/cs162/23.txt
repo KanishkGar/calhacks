@@ -1,0 +1,1668 @@
+0:03
+welcome back everybody uh to cs162 we are going to pick up where we left off on this rainy
+0:11
+day in the bay area uh if you recall from last time we were talking about
+0:17
+communicating entities using a protocol and um a protocol being a set of
+0:23
+well-defined message messages with semantics and one of the things that you often do with a
+0:29
+protocol as we mentioned is basically uh produce a replicated state machine on either side of a
+0:35
+connection and so for instance i showed you this where we have state machines that might
+0:40
+be here at berkeley and in beijing for instance and the idea of the protocol was to make
+0:45
+sure that any arc that was taken on one side was also taken on the other and um these state machines could be
+0:52
+everything from uh copies of files to uh something much more interesting like
+0:58
+what's the state of uh running physical system uh replicated on both sides and um
+1:05
+as we mentioned a protocol basically has a syntax which is how the communication is actually
+1:10
+specified and structured as well as semantics what do each of the communications mean
+1:16
+all right and typically there's stable storage on either side so that if either side crashes you can
+1:22
+pick up where you left off and today we're going to talk about one use of that stable storage to allow us to do decision making
+1:32
+okay so the other thing we started talking about was this idea of distributed applications
+1:38
+and a distributed application is going to be something where the individual pieces are spread all
+1:43
+over the network potentially and the question is how are we going to program something like that and
+1:50
+for instance you're going to need to synchronize multiple threads on different machines but you don't have shared memory so test
+1:56
+and set and all of the synchronization primitives we talked about in the first part of the course are not
+2:01
+really available to you and so what abstraction basically is to make use of
+2:07
+messages which is pretty much what you've got and sending from one side to
+2:14
+the receiving on the other and the nice thing about messages is they're already atomic so you either receive the message or you
+2:20
+don't and one of the ways you make sure that you you don't receive a corrupted message of
+2:25
+course is you put checksums or something on it but this atomicity the either receive or don't can be turned into all sorts of
+2:32
+interesting communication primitives which will lead among other things to the ability to build decision making on
+2:38
+top of the network which we'll talk about in a little bit so the interface to
+2:44
+this kind of message based communication protocol is there's typically a mailbox
+2:50
+with an address of some sort mbox which is a temporary holding area for messages
+2:56
+and it has in it both the the destination and the potential cue
+3:03
+things are going to put in so you could imagine this like a post office with a lot of post office boxes the m box itself is going to be not only
+3:10
+which post office but which box to put it into and then of course their send and receive primitives send says
+3:16
+send a message to a certain mailbox and receive basically says um take something out of the mailbox and
+3:23
+put it into the buffer and usually that's specified in a blocking sense so that threads sleep
+3:28
+until they receive something but of course all of the asynchronous primitives we talked about earlier in the term are available typically as well
+3:36
+so um when should send return so when a client does a send
+3:42
+of a message there's a real question about when it should return to the client
+3:48
+uh should it return only when the receiver gets the message so that might be a case where i've not
+3:55
+only know that the message was received at the other end but there's an acknowledgement that could take a long
+4:00
+time maybe when the message is safely buffered in the destination um okay that way we took the receiver
+4:08
+out of the loop or right away if the message is already buffered on the source node and going out so there's a lot of possibilities here
+4:15
+as well and really questions are kind of
+4:20
+have two parts to them when can the sender be sure that the receiver actually received the message that's an overriding question but also
+4:26
+when can the sender reuse the memory that contains the message and what we'll see
+4:32
+in the latter part of the lecture here is this question becomes comes up because if a message gets
+4:38
+garbled on the way to the destination we need to retransmit and typically the sender then needs to hold on to the message for long enough
+4:44
+that the retransmission can happen so mailbox really provides a one-way communication from
+4:51
+t1 to t2 and really there's a buffer that's a combination of various storage
+4:57
+areas in the network it's very similar to a producer consumer kind of thing where send is v and
+5:03
+receive is p however you can't really tell in this case whether the sender or the receiver is local or not
+5:11
+so we can use send and receive for a producer consumer style of communication
+5:16
+not surprisingly so the producer might do something like this where while one it prepares a message sends it
+5:23
+off and goes in a loop the other consumer will be while
+5:28
+receiving uh do something and then process the message and so uh this the only way this is any
+5:36
+different from some of the synchronization examples we gave earlier in the term is really that there's a network in
+5:42
+between and so the physical separation here could be great but other than that it looks a lot
+5:47
+pretty similar to some of the producer consumer code that we wrote
+5:52
+earlier there's no need in uh for the producer consumer to keep
+5:58
+track of space in the mailbox because it's all handled by send and receive in particular if there's no
+6:03
+space for some reason send a block on the way out and of course receive will block if there's nothing in the buffer
+6:10
+and so all of that's taken care of for us under the covers this is going to be one of the roles of the tcp window
+6:16
+and we're automatically going to track the size of the buffer space at the receiver so that we don't
+6:22
+send so much that the receiver overflows um so what about two-way communication
+6:29
+obviously two-way communication is pretty standard for everybody that's just two of these things in opposite directions
+6:35
+so this is a request response uh you basically set up a mailbox on either
+6:40
+side one for the outgoing messages the reception and the other for receiving the in-going messages
+6:47
+it's also called client server as we mentioned earlier and so here's an example of a file service where the
+6:52
+client basically says something like send read rutabaga into the server's mailbox and the server
+6:59
+sends a response back and the client basically goes and does a blocking receive on the client mailbox
+7:06
+for the response okay and the server sits here and uh in an
+7:12
+infinite loop i'm not showing that here for now but it waits to receive the request decodes it figuring out what it is reads
+7:18
+the file into an answer buffer sends it back so this idea again of send and receive primitives in both
+7:25
+directions let us construct all sorts of interesting things okay now one thing that's buried in all
+7:31
+of this which i'm not going to talk about today i'll talk about it next time is the encoding of uh the send and
+7:38
+receive commands you know how do we make sure that the uh
+7:43
+the server understands the proper ordering and encoding of numbers from the client et cetera
+7:49
+that's going to be an interesting discussion so let's talk about consensus making so
+7:56
+the consensus problem really is that all nodes in the system now where a node is a distributed uh
+8:02
+a node is some item on the network and can be distributed from other nodes so all nodes propose a value some nodes
+8:09
+might crash and stop responding but eventually all of the remaining nodes
+8:14
+decide on the same value from the set of proposed values so this is like it's like everybody's going to vote on
+8:21
+which value they want and we're going to come up with a result which is going to be the result of that
+8:27
+decision making and this has got to work across a network and it's got to work in a way that
+8:32
+is resilient when nodes crash so distributed decision making is really
+8:38
+choosing simply between two and true and false so the consensus problem i mentioned up here is more general it's
+8:44
+about a value but we can do a lot if we just choose between true and false or commit and
+8:49
+abort etc and that's typically called distributed decision making
+8:55
+and what's going to be very important in all of this is yeah we can make the decision but if we don't record it down
+9:02
+then nobody will know in the future what it is that we came up with and so there is a durability aspect to this
+9:07
+so how do we make sure the decision cannot be forgotten this is the d of typical acid semantics in a regular database
+9:15
+and in a global scale system the question about how to make something durable and long lasting
+9:23
+gets into what we talked about last time things like raid uh erasure coding et cetera massive
+9:28
+replication or even blockchain which i'll mention briefly in a little bit
+9:34
+so let's start with an interesting decision-making uh problem so this is typically called
+9:40
+the generals paradox you have two generals they're on separate mountains and they can only
+9:46
+communicate via messengers and the messengers are riding horses down one mountain and back up the other one
+9:51
+and the messengers unfortunately can be captured and so the question is really how do we
+9:57
+coordinate an attack so that if both armies attack at
+10:03
+different times they're gonna all die if they attack at the same time they win and so the trick here is simply how do
+10:10
+we make sure that everybody decides on the same time okay now i did see a chat of sms here so
+10:18
+we'll assume that sms is not available because that's an out-of-band communication mechanism so let's assume that they have to use
+10:25
+horse horse message system the hms so this was this general's paradox was
+10:32
+originally named after custer who died at little bighorn because he arrived a couple of days too early
+10:37
+um so let's let's look at this problem for a moment um can messages over an unreliable
+10:45
+network really be used to guarantee that two entities do something simultaneously that's our question so notice the simultaneity here is
+10:51
+important remarkably the answer is no okay because
+10:57
+even if all the messages get through you have to allow for the fact that they didn't and
+11:02
+so you're not quite sure here okay so here's the two sides and uh first guy
+11:08
+says oh 11 am okay and he says yep 11 works and then so 11 it is
+11:15
+yeah but what if you don't get this ack and back and forth and it turns out there's no way to be sure that the last message gets through
+11:22
+uh and so the the lack of reliability of the messaging basically is the paradox here makes it impossible
+11:29
+to agree on an actual time such that everybody goes through okay now of course um in real life
+11:37
+you could use a radio or something some simultaneous or out of band communication
+11:42
+in this particular domain where we don't have any out-of-band communication it turns out you just can't do this
+11:48
+for simultaneity okay so clearly we need something other than
+11:55
+simultaneous as our requirement okay and what would that be
+12:01
+um well two-phase commit is basically an alternative so we can't
+12:07
+solve the general's paradox i.e the simultaneous action let's solve a related problem so the
+12:13
+related problem is a distributed transaction where two or more machines agree to do something or not do it atomically
+12:20
+so there are no constraints on time just that it will eventually happen okay so the constraints on time have
+12:27
+been removed because we're just basically saying that eventually
+12:34
+something will happen and everybody will agree this atomicity constraint though is an interesting one
+12:39
+that i wanted to say something about which it says suppose we have 20 elements in the system
+12:44
+all 20 of them will decide to do it or all 20 of them will decide not to do it but you'll never get
+12:50
+some of them doing it and some of them not doing it and that's our distributed two-phase commit
+12:56
+so two-phase commit was originally developed by uh touring a winner touring a winner jim
+13:03
+gray you see here on his boat he was the first berkeley cs phd in 1969
+13:09
+and there's a lot of important database breakthroughs that are also from jim gray
+13:14
+he is a an amazing alum of berkeley as well uh and unfortunately uh a number of
+13:20
+years ago he disappeared in his sailboat in the bay and nobody ever found him so
+13:26
+but um there's a picture of him in happier days and uh he basically developed the protocol
+13:32
+called two phase commit and it's sort of the basis for a whole bunch of other protocols so i want to make sure we all know about this so
+13:40
+one of the most important things we need to start with is we have to make sure that once an entity in the system or a node makes
+13:47
+a decision they won't go back on that decision and so we need to have a persistent stable log on each machine
+13:53
+to keep track of whether a commit has happened or not and if a machine crashes when it wakes up the first thing it does is it checks
+14:00
+its log to recover the state of the world at the time of the crash okay
+14:05
+so the prepare phase of two-phase commit there's gonna be two phases no surprise there is that the global
+14:11
+coordinator requests that all participants promise to commit or roll back the transit
+14:16
+transaction and participants record their promise in the log and then they acknowledge
+14:22
+and if anybody votes to abort the coordinator is going to say abort in its log and tell everybody to abort
+14:28
+and the only way that it will actually commit is if all of the participants basically
+14:36
+say okay so the commit phase basically is after all the participants
+14:42
+respond that they're prepared the coordinator will write commit to its log and then it'll ask all the nodes to
+14:48
+commit and uh to act them and after it receives all the act then it can write
+14:53
+that it got commit to its log so notice that there's going to be the use of the log at several parts of this
+14:59
+to make sure that once we've made a decision we don't do something different later
+15:06
+okay and the log is really used to guarantee that all machines either commit or they don't
+15:12
+so two phase commit algorithm has one coordinator n workers or replicas a high level
+15:18
+algorithm description could be that the coordinator asks the workers if they can commit if they all reply vote
+15:24
+commit then the coordinator broadcast global commit otherwise the coordinator broadcast global abort
+15:30
+and notice that there's all sorts of things that could go wrong here
+15:35
+such that a a worker that we asked whether they want to commit maybe they just go offline and never come back
+15:42
+if we time if the coordinator times out and doesn't hear from somebody then it's just going to go ahead and
+15:47
+abort so basically what we can do is we can make sure that
+15:54
+it's truly out atomic either everybody commits or everybody aborts and there's no
+15:59
+halfway and we can deal with all of these different failure conditions which is kind of what we want to do
+16:04
+okay and the workers are going to obey the global messages whatever they happen to be
+16:09
+and we're using as i said a persistent stable log in each machine to keep track of what you're doing if the machine crashes and when it wakes
+16:15
+up it checks its log to recover the state of the world at the time of the crash and then keeps going
+16:21
+okay and so the setup is the coordinator initiates the protocol asks
+16:27
+every machine to vote two possible votes commit or abort and we commit the transaction only if
+16:33
+there's unanimous approval so preparing again that prepare phase
+16:40
+the worker either agrees to commit or abort so if it agrees to commit the
+16:45
+machine basically is guaranteed it's going to accept the transaction it's recorded in the log so the machine
+16:50
+will remember this decision if it fails and restarts so once it's written in the log that
+16:56
+it's decided to commit then it could crash and come back up and crash and come back up and as long as it keeps looking in the log it can remember
+17:02
+what decision it made and it won't make a different decision and similarly if a machine has said that
+17:08
+it will abort it records that in the log so that if it crashes and comes back up it'll never make a different decision
+17:15
+now if a worker was offline or crashed they'll come up and they'll notice that it never made any decision
+17:22
+at that point it can ask the uh coordinator what to do next or it can
+17:27
+just assume abort and send in a board up those are two options but notice that if it actually makes a
+17:33
+particular decision it's going to record it in the log
+17:39
+so to finish everything up the commit transaction when the coordinator learns that all machines have agreed to commit it
+17:45
+records the decision in the log applies the transaction informs the voters the voters to go forward
+17:50
+if it aborts it's because at least one machine voted to abort or didn't respond it records the
+17:58
+decision to abort in its local log and uh doesn't apply the transaction and it informs all the voter
+18:04
+voters that we're gonna abort okay and notice that um because no machine can take back
+18:10
+its decision exactly one of these two things happen either we commit or we abort on all machines
+18:19
+okay questions
+18:29
+now this is a fairly simple primitive but it's very powerful because it says i can take a bunch of nodes
+18:34
+and i can make sure they all do the same thing and and from that you can build all sorts of
+18:41
+interesting things distributed file systems you can build other types of distributed decision
+18:48
+making etc how is the coordinator decided that's a really good question we're going to
+18:53
+assume right now that the coordinator has is distinguished somehow because uh
+18:58
+they've been um compiled with code that says they're the coordinator in a real system things get much more
+19:05
+interesting where there's a voting process to choose the coordinator and real systems basically have a choice
+19:12
+of coordinator and then the coordinator goes ahead and coordinates but that's a good question so
+19:20
+i hate to mention it but oops here's a question if one machine keeps crashing the whole
+19:25
+system will never commit yes that is absolutely correct and yes that's very bad
+19:31
+you have correctly analyzed the one of the chief weaknesses of this algorithm so i will say that again later but
+19:38
+you've already preempted me on that that's right so this uh particular algorithm is subject to
+19:44
+one machine that's uh faulty basically keeping everything from committing that's correct
+19:53
+so um there is a midterm last one coming up um five to seven as
+19:59
+as uh before materials all the way up to lecture 25 which is uh monday 11 30. um that's
+20:07
+the last lecture that is going to be on the midterm is the one after thanksgiving um cameras and zoom screen sharing again
+20:14
+just like with midterm two and um there will be a review session we haven't announced it yet i'm not
+20:20
+entirely sure when that'll be but it'll probably be the week after thanksgiving on tuesday or something like that
+20:26
+lecture 26 is going to be a fun lecture so if there's some topics you'd want to know something about let me know
+20:32
+i will pick a set of topics if i don't hear enough suggestions so um you're welcome
+20:39
+to email me lecture suggestions all right and i don't have a lot we're actually in the
+20:45
+middle of due dates and everything and we're uh don't have anything else to say
+20:53
+i did want to report repeat one thing i said last time briefly is pre please be careful of the collaboration
+20:59
+policy if you remember as i mentioned explaining a concept to somebody in another group
+21:04
+is okay if you explain a concept uh discussing algorithms or testing strategies is okay
+21:12
+uh discussing debugging approaches all of these things at a high level is okay searching online for generic
+21:19
+algorithms like hash tables okay where this strays into problems is if you're sitting
+21:25
+working with somebody and you start discussing back and forth explicit details about the homework that
+21:31
+is going to be not okay okay so for instance sharing code or test
+21:36
+cases with another group copying or reading another codes
+21:42
+groups code or test cases copying or reading online code or test cases from prior years
+21:48
+um helping someone in another group to debug their code or helping somebody else doing to do their homework
+21:55
+these are all things that are not okay okay and we um compare project submissions
+22:00
+against prior year submissions against um internet sources and against your code
+22:06
+and so uh you know just just say no to over collaboration
+22:12
+don't put a friend in a bad position by asking for help because both of you end up in trouble so
+22:20
+all right i just wanted to repeat that we've got a few cases on the fringe of
+22:27
+violating collaboration policy so okay
+22:34
+now let's uh before we leave the um before we leave two-phase commit i
+22:41
+wanted to just give you a little bit more graphic detail here just so you can see so let's look at um the coordinator
+22:47
+algorithm the coordinator basically says vote request to all workers the workers wake up
+22:53
+after waiting for vote request and then they make a decision if they're ready they send vote commit if they're not they vote abort
+23:01
+and they make sure that they record their decisions in on the disk in the log and then the
+23:07
+coordinator basically if it receives vote commit from everyone it sends a global commit otherwise it
+23:12
+sends a global abort and basically the workers in that second phase if they get a global commit then
+23:18
+they commit and if they get a global abort then they abort now notice i'm going to say more about
+23:23
+this but the notion of commit and abort is basically a yes or no decision and
+23:30
+what you're saying yes or no to could be arbitrarily interesting and complex okay so it could be here's a really long
+23:37
+complicated transaction making many changes to a file system that we have previously transmitted to
+23:43
+the workers and now all the workers are doing is making a thumbs up or thumbs down decision on well
+23:48
+whether to apply that to the file system or not so all we're really doing with the two-phase commit is we're making
+23:54
+this this decision of yes or no globally okay so here's an example of a failure
+24:02
+free so the coordinator says vote request each of the workers say commit let's say
+24:07
+the coordinator says global commit and we're good to go and this doesn't take any excess time
+24:15
+so the coordinator you could think of as having a state machine it starts in the init state receives a
+24:21
+start from some other part of the software sends the votes it waits in the wait state and then if
+24:28
+it receives all vote commit from everybody then it sends a commit
+24:33
+otherwise it sends an abort a very simple state machine okay um
+24:39
+the workers have a somewhat similar state machine but they sit in the init
+24:44
+phase waiting for a vote request and then at that point if they're going to commit they go to the ready state to
+24:51
+start the commit process which really means that they are going to tell the coordinator they're ready to
+24:56
+commit but now they've got to wait to find out what the decision was on the other hand if they've decided to abort then they tell the coordinator and
+25:03
+then they just go to the abort state and they don't really have to wait for any more information because
+25:08
+they know what's going to happen that's going to be an abort so uh just to give you a couple of
+25:15
+failure modes here that are kind of interesting right so um if a worker fails what happens well
+25:22
+the coordinator is sitting in the wait state waiting for the worker and they're gonna have to do something well at that point um
+25:29
+you know you're only what happens in weight is you're gonna get a timeout and you're just gonna treat that like an
+25:35
+abort and so that's easy okay um so here's an example where the
+25:41
+coordinator says vote request um some of the workers say commit
+25:46
+but this last one time it doesn't either because the message got lost or because the worker is crashed
+25:52
+at which point there's a timeout and the coordinator says well i didn't hear from everybody i'm just going to assume
+25:58
+there's an abort and it sends it a board out similarly the workers can deal with
+26:04
+coordination failure in a couple of ways so the worker waits for vote request and init
+26:10
+the worker could time out and just plain abort and the coordinator will handle that as an abort
+26:15
+um it could uh basically send off its response and never find out
+26:21
+what the global result is okay and at that point however the
+26:28
+worker has to wait because the worker can't just abort because if it's sent a commit it's got
+26:34
+to wait to see whether the coordinator is going to abort or not and so really
+26:40
+you can't just take a lack of response from the coordinator as an abort because it could be the
+26:45
+coordinator crashed and so you have to wait and potentially the coordinator has may have to crash reboot come back up
+26:52
+and eventually tell the uh worker what to do because we have to make sure that all the workers do the
+26:59
+same thing they're not allowed to make a decision on their own okay all right now
+27:05
+um the uh here's an example the coordinator
+27:10
+failing like it didn't send vote requests so they all time out and they abort um the here's another example of a
+27:18
+coordinator failure where the vote comes in there they vote to commit but the coordinator
+27:26
+doesn't receive them it restarts if it hasn't if it knows from its log
+27:31
+that it's never sent a global request then it can just their global abort or commit then it can just send a
+27:37
+board to everybody so how does the worker know the coordinator receive their commit
+27:42
+well they don't so there is there is that question if the coordinator never
+27:47
+received their commit then potentially the coordinator will treat that as a
+27:53
+as an abort on the part of the on the part of that particular worker
+27:59
+now you could put a retry protocol in here to do your best to make sure that the worker hears from you
+28:06
+and that's that's possibility but you would need to make sure that you didn't violate the uh atomicity
+28:12
+property of this
+28:18
+so the interesting thing about how does the uh coordinator make sure that each worker
+28:23
+got the global commit that it sends out so what's good about that is if the um
+28:30
+if the coordinator uh sends everything out and one of the workers doesn't receive
+28:36
+it the worker could time out and ask the coordinator
+28:41
+uh what's up at which point the coordinator could tell it so there is that ability there um this this example leads to an abort
+28:49
+simply because um we're assuming that this crash happened uh and the coordinator didn't properly
+28:56
+receive everything and so it's treating these all as a time out and it's just aborting now
+29:02
+what you can do here and everybody's thinking about this this is great is you can figure out how to optimize
+29:08
+this in many ways the the key semantics that you have to make sure that are true are the all or nothing basically either
+29:16
+everybody commits or everybody aborts but never partially and as long as you maintain those uh
+29:23
+proper that property then you can do various optimizations to try to make up for message loss
+29:29
+and a few other things like that but and and there are many optimizations including one where if you haven't heard
+29:35
+from the coordinator you talk to other workers and they can tell you what
+29:41
+the coordinator said because they know the coordinator said uh commit then commit is what
+29:47
+the worker should have gotten from the coordinator as well so there is a way to do a gossip protocol among workers
+29:53
+that also maintains the semantics but the key thing is you got to maintain the semantics
+29:58
+so and to that end durability is very important so all the nodes have stable storage
+30:04
+to store the current state stable storage is non-volatile storage backed by the disk that guarantees the
+30:10
+atomicity of the rights and uh and make sure that everybody
+30:17
+either sticks to their decisions or once they've heard of a decision
+30:22
+they keep remembering the decision so they can apply it okay and that stable storage is going to
+30:27
+be something like ssd or nvram or disk or whatever and then on recovery like i said
+30:35
+there are many you can look at the state machines and you can figure out all the different places to abort after you've recovered
+30:41
+based on the information in your log and what state you think you're in
+30:48
+okay so what does this two-phase commit tell us about well two-phase commit
+30:55
+is uh is a famous very simple first cut at distributed
+31:01
+decision making and why is it desirable well it's desirable for fault tolerance
+31:06
+you like the fact that a group of machines can basically come to a decision even if one or more of them fail during the process
+31:12
+uh the simple failure mode that it relies on is something that's often called fail stop which is that when a node fails it fails
+31:20
+by just stopping and not communicating anymore unfortunately if you get into more complex types of failures where a node
+31:26
+that's failing uh starts i don't know sending out corrupted messages or or or worse a malicious node starts
+31:35
+sending up intentionally uh bad messages that's no longer failstop and
+31:40
+uh two-phase commit will not work properly okay the other thing is after the
+31:46
+decision's been made it's recorded in a bunch of places so there's a nice replication here that if
+31:52
+if a node then subsequently dies you can always ask other nodes what the decision was that was
+31:57
+uh that they all came to so why is two-phase commit not subject
+32:02
+to the general's paradox remember we kind of said the generals weren't able to make a decision about time
+32:08
+and the answer is two-phase commits about the nodes eventually coming to the same decision
+32:14
+not necessarily at the same time so if you have a node that crashes comes back up crashes comes back up what
+32:21
+will eventually happen when it runs is it will come to that either commit or abort decision and it will apply that
+32:28
+properly but it may take a while okay and so we don't care how long it takes
+32:34
+what we care about is that it eventually is atomic now the again the question came up here
+32:41
+doesn't this assume the nodes will eventually come back up yes so this again this is the
+32:46
+simplest decision making and it has that unfortunate property that a permanently crashed node can
+32:51
+bring the decision making to a grinding halt okay so just uh keep that in mind we'll
+32:58
+talk about other options in a moment
+33:05
+so an undesirable face feature of two-phase commit is blocking which was of course just came up in the
+33:11
+chat so one machine can be stalled until another site recovers so you can imagine site b writes prepared to commit
+33:18
+sends a yes vote to the coordinator and crashes site a crashes b wakes up checks its log
+33:24
+realizes voted yes sends a message to site a asking what happened at that point b
+33:30
+can't decide to abort because the update may have committed so b is basically blocked until a comes back
+33:35
+up and so you have that scenario you can come up with very one various ones of them where um nodes are
+33:42
+stuck on other nodes and so that's an unfortunate property of two-phase commit so block site holds resources like locks
+33:49
+on updated items pinned pages etc until it learns the fate of the update
+33:54
+okay so that's a that's a fundamental problem with two-phase commit
+34:01
+what are some alternatives well there's three phase commit so it turns out i'm not going to talk
+34:06
+about that in detail today but there's one more phase and it actually allows nodes to fail or block indefinitely
+34:12
+and the rest of them can still make progress so that's that's an important uh property you can imagine if you have
+34:18
+a system with a lot of faulty nodes or if you have a system distributed across a geographic area
+34:24
+where it's quite possible that the networks are going to go down or that some of the nodes are going to
+34:29
+fail then you're going to want you're not going to want to use two-phase commit you're going to want to use at least three-phase commit
+34:35
+another alternative which is used by google and a bunch of others that's uh doesn't have the two-phase commit
+34:42
+blocking problem either is called paxos and paxos was developed by leslie lamport
+34:48
+um showed you his picture earlier uh there's no fixed leader in this particular situation so they
+34:54
+choose it chooses a new leader on the fly so it can deal with a failed leader that even one that fails in the middle it can
+35:00
+pick a new leader the interesting thing about paxos is the
+35:06
+way it's defined i think i i think i put up one of the original paxos papers is kind of fun
+35:12
+it's defined as a legislative assembly in ancient greece
+35:17
+and it's it's a little bit obscure in the way it was originally defined and it
+35:22
+can get pretty complicated in its normal use but google is actively using versions of
+35:28
+paxos called multipaxos and they have been for 10 years now there is an alternative
+35:35
+called raft which was developed at stanford by john osterhert auster haute and
+35:41
+he basically thought paxos was really complicated and he wanted a version of a decision-making algorithm
+35:47
+that he could describe to people easily and that came up with was raft and so
+35:52
+that's an alternative which you could look up but none of this uh
+36:00
+helps us with the following which is what if a node is malicious so we can deal with a node
+36:06
+failing but if a node is actively attempting to compromise the decision making we need
+36:12
+to do something and basically we have a couple of options here byzantine agreement and blockchains
+36:18
+i say i'm going to talk about them next time i'm actually going to talk about them in just a moment but so there are many
+36:24
+alternatives to distributed decision making which you can take as a key indicator that
+36:29
+uh distributed decision making is important okay so let's actually talk about the
+36:35
+byzantine generals problem so there are end players
+36:40
+okay there's one general and there's n minus one lieutenants and um the idea is that one of these
+36:47
+lieutenants may be malicious okay and what does a malicious lieutenant do well a malicious
+36:53
+lieutenant is um going to basically do either illogical operations or much
+37:00
+worse they're going to do operations that are intentionally designed to violate the protocol and prevent
+37:07
+something from happening properly okay and and the um commanding general is gonna send uh
+37:14
+attack or retreat commands and as you can imagine again this is like yes or no
+37:19
+or commit or abort all of these sort of two-part commands and uh basically
+37:27
+the constraints that are apply are going to be as follows all the loyal non-malicious lieutenants will all do
+37:34
+the same thing so if you notice we've got these two lieutenants are loyal and they've all decided to attack
+37:42
+they're both attacking now this malicious one may do who knows what but all the loyal lieutenants will do
+37:48
+the same thing and if the commanding general is loyal as well which means he's not sending conflicting
+37:54
+commands to people then he will also do what all the loyal lieutenants are doing
+37:59
+okay and so that's the byzantine generals problem and so the trick here is that we want the combination of a majority of the
+38:08
+players here in fact we're going to tell you in a moment it's going to be two f plus one of them are all going to
+38:15
+do the same thing and uh that will be just like our uh atomicity property from
+38:22
+the two-phase commit protocol where they either all decide to in this case attack or retreat
+38:29
+or they all decide to commit or abort and only the malicious ones may do something uh you know totally
+38:37
+arbitrary but they're also going to be participating in the protocol and will not be able to fool
+38:43
+the other participants into doing something that they're not supposed to
+38:48
+okay so that's what's tricky the question here is in the presence of a malicious player is there a way
+38:53
+to come to a coordinated decision amongst all the non-malicious players and uh the reason this is complicated is
+39:01
+because we don't know whether the general has been compromised or not either and so somehow even if the
+39:06
+general is going to send conflicting orders we still have to have the um
+39:12
+we have to have the preponderance of the uh non-malicious lieutenant still have to all do the same thing
+39:18
+it may not be what the general asked because the general's giving conflicting orders but they'll still all do the same
+39:23
+thing all right questions
+39:34
+now once again leslie lamport came up with the byzantine agreement problem uh in a in a very fun
+39:41
+paper which i believe i also have up on the readings um but you might ask yourself how this can
+39:46
+help uh us design systems so let's talk a little bit about some
+39:52
+impossibility results okay so i'm going to get rid of the clip art here and go to something a little simpler
+39:58
+so one of the key ideas is you can't solve the byzantine generals problem if there's only three players okay and
+40:05
+i'll show you why that is so here's an example of one general two lieutenants if uh if the general says it's not
+40:12
+insane and says attack to both lieutenants and then one of the lieutenants is
+40:18
+malicious that lieutenant may say well the general told me to retreat okay and so this lieutenant this poor
+40:25
+guy on the left has no idea whether to attack or retreat and then and uh if you look at the situation in which the general is
+40:31
+malicious sends attack and retreat to uh the different lieutenants so there's conflicting
+40:37
+information and this lieutenant says well the general told me to retreat if you notice the poor lieutenant on the
+40:42
+left can't distinguish between those two situations and really has no way to fulfill the
+40:49
+requirements okay and so again these requirements are these two consistency things i showed
+40:54
+you where all the loyal lieutenants obey the same order and if the commanding general is loyal then all the loyal lieutenants
+41:00
+do what he is what he requests and so in this scenario the general is asking to attack he's
+41:07
+loyal this lieutenant ought to do the attack but he doesn't have enough information
+41:12
+in this case the general's malicious but the two lieutenants should be doing the same thing there's no good way for this guy in the
+41:19
+left to figure it out either and so this impossibility result turns out is then generalized and it turns out
+41:24
+that if you have f malicious entities then you have to have a total number of players n that's greater than three f in order to
+41:31
+make this problem work okay and that's an impossibility uh result now a good question are the malicious
+41:37
+nodes colluding certainly if they like to they're allowed to do anything they want in fact they can even they can even talk
+41:43
+to aliens and uh and uh listen to elvis if they want uh before they make their
+41:50
+decision so there are absolutely no constraints on the malicious players here
+41:56
+okay so um and you know the whole notion of malicious
+42:02
+as you can imagine brings colluding in as an obvious possibility
+42:09
+so surprisingly at least it was the first time i heard about this um is various algorithms actually exist
+42:17
+to solve this problem okay now um
+42:23
+so the question is uh if can't you tell who's giving you the message so the answer is that um even if you can
+42:30
+tell who's giving you the message you don't know whether they're malicious or not because a malicious player by
+42:36
+definition can act in a way that you can't tell that they're acting maliciously so they could tell lots of different
+42:44
+things to different people and you don't know whether they've told the same thing to everybody or different things to everybody
+42:50
+that's why this problem is really interesting because we assume a maximally evilly malicious player who
+42:57
+the moment you try to see whether they're malicious they behave nicely and when you and when they're in
+43:03
+the middle of the protocol they behave evenly and you can't tell the difference all right now um so for instance various
+43:11
+algorithms exist to solve this problem the original algorithm the paper was exponential in
+43:16
+in the number of players n so that was clearly not practical it was an interesting proof of concept that it
+43:22
+existed though newer algorithms um have a message complexity of order
+43:28
+n squared that's supposed to be n squared sorry about that um there's one from mit um back in the early 2000s late 99
+43:38
+and um and even better yet there are newer versions using blockchain
+43:44
+algorithms that are much more linear in uh message complexity so um the use of the byzantine fault
+43:50
+tolerance algorithm uh basically allows multiple machines to make a coordinated decision even if some
+43:57
+subset of them less than n over three are malicious and so you could think of this byzantine
+44:03
+agreement algorithm i'm not going to go into great detail on it i'll be happy to i think i even put it up on
+44:09
+the resources page let me just quickly look here
+44:21
+if i didn't i'll be happy to to reference yeah i have the byzantine generals problem here
+44:26
+but anyway if you think of this algorithm running amongst a lot of different nodes what happens is
+44:32
+a request comes in and a distributed decision goes out even if there's some malicious nodes in there
+44:39
+which are these little red circles okay and so that's a pretty powerful idea
+44:44
+and the one downside that you might imagine can anybody think of a downside to this assume that we have
+44:52
+everything working properly what's a downside to this particular algorithm okay slow
+45:00
+is a good answer it turns out that it's
+45:05
+less slow than you might think but certainly speed is a question what else
+45:15
+n squared messaging great now it turns out like i said there are newer versions of byzantine generals
+45:21
+excuse me of byzantine uh agreement that are done with blockchains that are more linear in number of messages so that's
+45:27
+good as well better much better
+45:36
+there you go good i like that hard to get a lot of good notes so imagine that the reason these nodes are
+45:41
+red down at the bottom is somebody hacked into them okay now if all of these nodes are
+45:46
+running the same operating system you might imagine that a really clever hacker might figure out where all these
+45:52
+nodes are and start uh compromising them one after another and the moment you violate
+45:57
+the uh that you can only have f um faulty nodes then suddenly this
+46:03
+algorithm doesn't work anymore and so the only way to really make this work this is kind of what's considered the fundamental problem of this
+46:10
+is you have to keep reinstalling these nodes and repairing them over and
+46:15
+over again because you can't tell whether they've been breached but you need to keep reinstalling them
+46:20
+as if they had and you try to do that faster than people can be breaching the nodes because you've got to stay ahead of that f
+46:27
+number and so that's potentially an issue okay so let's
+46:35
+take a different question here which is is a blockchain a distributed decision-making algorithm or not
+46:41
+um and just to say a little bit about what a blockchain is so blockchains really uh came up in
+46:47
+prevalence in 2009 when um when bitcoin first showed up
+46:52
+and the idea of a blockchain is pretty simple if you've taken any cryptographic classes like 161 or
+46:58
+whatever security classes but i'll just tell you briefly the idea is that you have a series of records
+47:04
+and they have a hash in them a cryptographic hash over the previous record and it's stored
+47:10
+in the current record and so that's where the chain comes from and the reason that's useful is if i know this uh
+47:16
+spot then nobody can go back and fake out the previous spots because uh
+47:23
+they're all hashed together in a way that's uh you can't insert arbitrary records in
+47:29
+here and so these chains starting from a given head point pointing backwards we have
+47:35
+the older ones in the back are basically things that can't be uh altered even though this data is stored
+47:41
+in insecure locations all over the network now um so the hash pointers that's these
+47:47
+blue things can't be forged that's an assumption the chain has no branches except
+47:52
+right at the very head there might be some brief branches and the blocks are considered authentic
+47:57
+when they have authentic authenticity info in it now for those of you that know something about signatures
+48:03
+you might say well yeah say there's a signature here then that signature uh proves that the yellow block here is
+48:09
+authentic and therefore everything below it's authentic in bitcoin what happens is in fact the
+48:15
+authenticity information's a little different it's actually there's some consensus algorithm that's used to choose which
+48:22
+one of these is ahead and in things like bitcoin and at least the first versions of ethereum
+48:28
+the head is basically chosen by solving a very hard to solve problem this is called proof of work so you have
+48:34
+to burn a lot of energy which they do in um huge offshore uh
+48:40
+uh server farms these days but um you have to find a proof of work to solve a problem and then that will
+48:46
+make something authentic and then basically the longest chain wins okay and so um really what's happening is as
+48:54
+you're submitting new things to hap to be done they get added to various chains
+49:01
+and then all of the different miners out there i'll show you a picture in the world i'll show you a picture in a second all
+49:06
+of the miners are all busy trying to solve the problem first and the first one that solves it that becomes an authentic chain
+49:13
+and uh and the chains have a tendency to re-merge afterwards okay so um i don't want to worry you with the
+49:19
+big details of this i'll be happy to point you to some uh blockchain papers if you're curious
+49:24
+but here's a here's a way to think about whether this is a distributed decision-making algorithm or not
+49:30
+so spread throughout the world we have these miners with their server farms and what they're busy doing
+49:35
+is they get they're busy talking to each other about the parts of the blockchain that
+49:40
+aren't in question and only the heads where there's a little bit of divergence
+49:46
+or branching are the things that are in question and what happens is uh various entities submit proposals
+49:53
+of new transactions to the miners and the miners try to add them to the head of one of the branches
+49:59
+and then they try to solve a problem that takes a lot of power and if they solve it first
+50:04
+then the proposal becomes a permanent part of that branch and the other branches have a tendency
+50:09
+because they're shorter to die off okay and so what we're really talking about here for decision making is this
+50:15
+proposal could be something like i'd like to commit such and so data to a certain part of the file system
+50:21
+what will happen is the miner will pack it up in a transaction put it inside of one of these
+50:27
+transactions in the blockchain try to solve the problem and eventually it may become part of the permanent blockchain
+50:33
+and furthermore um so the so the decision means that it's in the blockchain and so if i say commit
+50:40
+do this right on the file system it gets committed the blockchain then it becomes replicated around the
+50:46
+world in fact we can have observers all over the place looking at it and now that decision
+50:52
+has been made durable in a way that it's extremely hard to destroy and so really uh you could use bitcoin
+50:59
+to do decision making of the sort of the sense that we're talking about here okay now the question here is proof of
+51:05
+work necessary because an individual node has no way to communicate with every other node so the reason proof of work is required
+51:13
+is um that we want to try to make sure that uh only people who have invested a
+51:21
+lot of time and energy are allowed to add transactions so it's really a um it's twofold it's it's an
+51:29
+attempt to prevent people from just extending the chain uh arbitrarily any way they want because
+51:35
+we want to be restricted to real proposals and they have to invest energy in it and
+51:41
+uh and then the assumption is that assuming that the number of players is large enough
+51:46
+then no one player has the uh an overwhelming advantage to add things to the blockchain and so that's how we get rid
+51:53
+of the byzantine nature uh of the fact that these people
+51:58
+are all untrusted but they're putting their energy in here and so that's the proof of work is basically making them put work into it
+52:04
+they have to put real dollars into adding things um and if they successfully
+52:10
+uh generate proof of work then um they also get a little bitcoin money back as well and so i would say the proof of
+52:18
+work is is the way to try to make everybody behave correctly and avoid byzantine uh decisions
+52:26
+so you can decide whether you buy it or not but that's
+52:32
+that's a much more deeply philosophical question
+52:37
+okay so i would say yes to is blockchain a type of distributed decision making by the way
+52:44
+out of the realm of file systems i suppose this is bitcoin um people proposals that get put into
+52:51
+the chain are things like i'm gonna transfer a dollar fifty worth of bitcoin
+52:57
+which is like point zero zero five or something to buy a cup of coffee and so the
+53:03
+proposals are actually transactions of money exchange as well
+53:09
+okay so let's uh let's switch gears a little bit
+53:16
+here um unless there were any other questions about distributed decision making
+53:24
+take a pause and breath
+53:36
+okay so let's talk a little about a bit about networking protocols now so we know we
+53:42
+want to make decisions but we need messages to make them happen and so networking protocols are many
+53:50
+levels and you can take a networking class to find out more but
+53:56
+the uh what are some good examples of distributed decision making well i think i just said adding
+54:05
+adding items to a to a uh file systems a good example of distributed decision making
+54:12
+um uh transaction monetary transactions are good distributed decision making um pretty
+54:18
+much anything where you want to fault tolerantly decide on something
+54:24
+that's a decision and if you want to do it in a way that's really hard to to screw up you
+54:30
+might want to do that geographically separate with a distributed decision-making algorithm and so there's a whole bunch of
+54:37
+distributed decision making going on all the time in the cloud and
+54:43
+spread across parts of the multiple continents so it's a pretty common operation
+54:50
+anytime you wanna can turn something into an abort or commit decision and you wanna make sure you do that in a way that's
+54:56
+hard to interrupt that's a distributed decision-making uh situation so um
+55:02
+so there are many different network protocols you can take a networking class to figure out more
+55:08
+about this but you know typical levels are the very
+55:16
+physical level which are mechanical electrical signals you know how are zero and one represented by voltage levels
+55:22
+the link level is typically what happens uh for packet formats and error control over a single hop in the network good
+55:30
+example of that would be like in wi-fi or whatever there's the you know the wireless protocols and how
+55:36
+how does an actual packet get from your laptop to the wi-fi access point
+55:42
+the network level gets us questions about how do i route packets across a whole bunch of link
+55:48
+level links to get from here to beijing that would be the network level and then
+55:53
+finally the transport level is uh something like reliable message delivery
+55:58
+how do i make sure that when i send something from here to beijing that it's uh done so in a reliable
+56:05
+way that doesn't have ordering problems okay and so many protocols on today's
+56:11
+internet and um so here the physical link layer uh is down at the bottom here and you
+56:17
+can think of things like ethernet and wi-fi and lte and 5g and all that sort of
+56:22
+stuff the network layer typically has ip in it okay that's our that's our big narrow uh
+56:30
+waste that we talked about last time that's kind of the universal communication protocol uh on a global scale these days the
+56:38
+transport layer like udp tcp these are the uh parts of the protocol that both do reliable
+56:44
+transmission in some instances as well as transmitting from one process to another process
+56:50
+and then above that's the application layer and those are all the things that use these underlying protocols
+56:55
+okay so the simplest type of network is a broadcast network like a shared
+57:00
+communication media um you can imagine a bus for instance where processor a bunch of io devices and
+57:07
+memory are all in the same physical bus that's a shared medium the biggest thing about such a medium is
+57:13
+you can broadcast so the processor could say something that's picked up by a bunch of i o devices
+57:18
+wi-fi is actually a type of broadcast media as well it is interesting that the original
+57:24
+ethernet was uh used as a broadcast network so um
+57:30
+the the lab that i did my research in as a graduate student we actually had these uh troughs in the ceiling where a whole
+57:38
+bunch of these cables went all around the whole floor and then they had these taps that would
+57:43
+come down to computers that they were attached to and literally we were all connected to the same
+57:49
+uh transmission line between the the router and and all the other
+57:55
+computers and so um you know when you went to communicate you would start talking on that line and
+58:02
+everybody else could in theory listen to it and that would lead to the need for collision protocols to deal with that as
+58:09
+well and lots of examples of these broadcast media
+58:14
+okay so i'm not going to go in great detail about this but um one exam let's talk through broadcast
+58:21
+networks for a second so for instance there's a media access address typically 48 bits these days
+58:28
+for the hardware interface itself and in principle every device in the world has a unique address
+58:34
+and when uh a sender goes to broadcast a packet how does it know
+58:40
+no it's who it's for well the packet goes to everyone but typically um it's addressed to a particular mac
+58:47
+address okay and so the message has a header that includes uh typically an ip address but it also
+58:55
+includes a mac address on it and a body and that gets broadcast to everybody
+59:01
+and uh the nodes all selectively ignore the packets that aren't for them and uh
+59:07
+only the packet only the node that's supposed to receive it actually receives it okay and this is pretty standard
+59:16
+uh certainly for wi-fi you could imagine it's standard for multiple things on the same ethernet
+59:22
+wire and a number of other types of broadcast communication
+59:30
+now there's is there a shortage of mac addresses well 48 bits is a lot more bits than 32.
+59:37
+um you know the in theory at least the mac addresses are supposed to be unique across the whole
+59:44
+world and i think that mostly is adhered to but a lot of systems allow you to
+59:52
+overwrite the mac addresses anyway and so um i don't know that's a good
+59:58
+question i've never i've never asked whether the mac addresses were running out but there's a lot more mac address space
+1:00:04
+than there is ipspace because 48 bits is a lot more than 32.
+1:00:11
+you know the check about whether to receive or not is typically done in hardware
+1:00:17
+so when you go to send something on a broadcast media and it's received the hardware card basically does the
+1:00:24
+selection and only forwards packets that are really destined up into the operating system so the operating system in
+1:00:30
+typical use doesn't have to look at every packet that goes by now there is a possibility
+1:00:35
+if you want to snoop on a network to put some put the network cards in something called promiscuous mode
+1:00:41
+and in that case you can actually snoop in on packets that are going by
+1:00:47
+so uh so 168 says that there is a shortage of mac addresses is that what
+1:00:53
+you're saying i i would believe that it's uh it's possible
+1:01:02
+um so the mac address uh so is there any security measure uh i'm
+1:01:08
+not sure i understand the question is there a security measure about uh whether people are allowed to receive
+1:01:14
+your messages or not is that the question that's being asked here so uh there's no
+1:01:21
+security on the message transmission layer so if you think you need security which
+1:01:29
+everybody should then you need to explicitly encrypt this is why you should never log into anything
+1:01:36
+unless you're using ssl properly because pretty much anybody can snoop uh and
+1:01:42
+you just gotta gotta realize that's the way it is so um so the mac address is a unique
+1:01:48
+physical address of the interface you can easily find mac addresses on your machine or device
+1:01:54
+uh for instance if you um i'm sure you guys have all done this with
+1:02:00
+ifconfig or ipconfig on windows or you pull up about on your phone you can see
+1:02:05
+what the wi-fi mac address is that's a 48-bit multiple
+1:02:10
+[Music] octet basically address and
+1:02:16
+if you look here for instance if you do config on a windows box you can kind of see
+1:02:22
+where the mac addresses are right here etc okay and so the mac address is your
+1:02:27
+physical address of a physical endpoint okay
+1:02:34
+now um so why have a shared bus at all why not
+1:02:41
+so you could ask yourself well why should we do this sort of broadcast thing well clearly when you're talking about
+1:02:47
+something like wi-fi you pretty much don't have a choice because it's everybody's bits are flying by
+1:02:53
+but if uh you have a physical network you know why bother and the answer is well you don't have to it just
+1:02:59
+it was just that in the original days of the network it was too expensive to do something other than broadcast media
+1:03:05
+okay and so why not simplify to have point-to-point links in routers and switches and the answer is uh that's the way it
+1:03:12
+does it now so point-to-point networks basically is a network in which every physical wire is connected to only two computers
+1:03:18
+and so here's an example of a switch where you have a bunch of computers attached to a switch and it's
+1:03:25
+a bridge that basically transforms the shared broadcast media configuration into point-to-point
+1:03:30
+configuration and so typically these are like ethernet ports a switch is something you might buy at
+1:03:36
+best buy or fry's or something and when you plug your machine in the switch figures out what mac address
+1:03:42
+you've got and so then any communication to your mac address will be switched
+1:03:48
+automatically to you without bothering anybody else and so the switch will actually
+1:03:53
+transform what would have been a broadcast media into a point-to-point media automatically
+1:03:58
+okay and it does that adaptively a router is a device that basically acts between
+1:04:04
+a as a junction between physical networks so the switch is is faking out what we would do if we put all these on the same
+1:04:10
+wire but it's making it much more efficient a router on the other hand is like connecting different wires
+1:04:16
+and when we talk in a second about ip the thing that distinguishes a router
+1:04:21
+from a switch is a router will take you to different subnets ultimately into the internet as a whole
+1:04:27
+okay so the internet protocol which is the
+1:04:33
+network level stack is uh basically provides a best effort packet delivery
+1:04:39
+and so when you take messages that are going from here to to beijing
+1:04:45
+for instance they'll have an ip address for your destination they'll have a lot of mac addresses
+1:04:51
+along the way but those mac addresses are only good on the local wire okay and so yeah there'll be match mac
+1:04:56
+addresses of your source computer and a mac address of your port into the ip network
+1:05:01
+but really this green thing which is the ip address is the part that gets it from source to destination not
+1:05:07
+the mac address okay and the other thing is these packets you put a bunch of packets into the network they may come out in
+1:05:13
+opposite order they may come out duplicated they may come out with one of them
+1:05:19
+showing up and other ones dropped okay and so this is what we call a datagram service
+1:05:24
+which basically takes packets from one side and mostly transmits them to the other but without guarantee so it's a
+1:05:30
+best effort service and so that is what the current internet is and we're going to have to figure out
+1:05:36
+how to turn that into something that we can actually utilize for real packets so that we can do our
+1:05:42
+decision making protocols on top of it so there are two spaces these days of ip
+1:05:49
+addresses there's ipv4 which is still by far more common than the ipv6 which i'll tell you about
+1:05:55
+ipv4 for a moment so these are 32-bit integer addresses and they're used as destinations for
+1:06:02
+packets they're often written as four dot separated integers like this 169.229.60.83
+1:06:11
+okay so together these are 32 bits so this is for instance this used to be
+1:06:16
+at least the cs file server i'm not sure if it still is you could also write this in hex as ox
+1:06:22
+a9 e5 3c53 bottom line is this is 32 bits
+1:06:28
+okay a host is basically computer computer connected directly to the
+1:06:33
+internet it typically has one or more i p addresses for routing
+1:06:38
+some of these may be private uh and some of them may not be public it's interesting to
+1:06:45
+note that not ever uh why don't we talk about ipv5 i don't know that that exists
+1:06:50
+um if it did it's uh buried in the annals of history somewhere
+1:06:56
+um the uh not every computer has a unique ip address groups of machines
+1:07:03
+might actually share the same ip address so um this is going to be very common these
+1:07:08
+days in everybody staying at home in the pandemic they have a i don't know their comcast
+1:07:15
+brings an ip address into the um into your house and then you have a router there and you
+1:07:20
+have a whole bunch of phones cell phones and uh laptops and computers
+1:07:26
+and all that sort of stuff are all behind that one public ip address and you have a bunch of private i p addresses
+1:07:32
+and so basically uh all of the computers in your house right now
+1:07:37
+are sharing the same public ip address with the rest of the world okay and the way that that works is
+1:07:43
+something called network address translation where um even though your each computer
+1:07:48
+has a unique local private address uh all of the traffic that goes out
+1:07:54
+of the router and into the comcast network all gets translated
+1:08:00
+into that single public address now the subnet is a
+1:08:07
+range of ip addresses okay and it's identified by a 32-bit value
+1:08:14
+with uh the bits that differ set to zero so for instance here's a 128.32.131.0
+1:08:22
+24. this basically says that um all the computers on that subnet share
+1:08:28
+this prefix 128.32.131 and so that allows up to 254
+1:08:36
+or 3 probably 253 machines that are uniquely on there okay um same subnet is also like this i
+1:08:43
+don't know if any of you have ever actually done any configuration of your home networks or whatever but
+1:08:50
+128.32.131.00 255.255.255.0 that's called a mask
+1:08:56
+what that also says is all of the addresses in this subnet share these top 24 bits but the lower
+1:09:03
+eight are assignable in any way you want okay and so the mask is basically this
+1:09:09
+uh set of prefix bits so why am i telling you about subnets
+1:09:14
+at all the answer is that when we're trying to route a message from point a to point b we're
+1:09:22
+typically targeting a subnet and the subnet has some we're targeting some prefix of the address we're going
+1:09:28
+to for the next hop okay so um routing within a subnet by mask
+1:09:36
+address by mac address and the rest is uh ip
+1:09:41
+so i i also just briefly wanted to say um a few ranges here um just so you know so like
+1:09:48
+a class a address is one that the top eight bits of uh map to class b
+1:09:53
+is the top 16 bits class c is the top 24. um it is interesting that organizations
+1:10:00
+used to own say all of the addresses like this so mit for instance i know is 18 dot
+1:10:07
+and then 24 bits are free so um the mit
+1:10:13
+address range is quite large berkeley has uh two 16-bit at berkeley the university
+1:10:19
+of california has two 16-bit class b addresses um so uh
+1:10:27
+let's see what else did i want to say here so our organizations often own these so why did i mention this well these
+1:10:33
+addresses are often handed out and so you can imagine that one of the reasons we're running out of addresses
+1:10:39
+in the 32-bit address space is really because big ranges of addresses are already
+1:10:44
+owned by organizations whether they're not in use so in addition to the fact that 32 bits
+1:10:49
+is really not a lot of addresses there's a bunch of them that are just uh already owned and
+1:10:55
+not necessarily available for anybody else okay
+1:11:02
+so uh just to get this moving forward a little bit our
+1:11:08
+packet format is like this a typical ip packet has data of course which we want to transmit
+1:11:14
+there's a bunch of things in the headers which we won't go into great detail but i did want to show you here is a 32-bit
+1:11:20
+source address and a 32-bit destination address so when you're sending some data or sending a packet off
+1:11:26
+you build this packet you put in your address which is the source address you put in where you want to go
+1:11:33
+and then you put in what protocol for instance if you're doing tcp or udp that would be in the protocol
+1:11:39
+type and you send it off and it's up to the rest of the network to route it from point a to point b
+1:11:46
+okay now this is a datagram so it's got data in it it's got a header and it gets sent off
+1:11:52
+into the network and it neither makes it or it doesn't and there's not a hundred percent guarantee from any of the hops that it will make
+1:11:58
+it so it's the function of the network is to deliver datagrams as well as possible so a wide area
+1:12:06
+network now is basically a network that covers a broad area uh often called uh a wide area network
+1:12:14
+could be like the whole world for instance or it could be um you know state of california what have
+1:12:20
+you the wan uh connects multiple physical
+1:12:25
+multiple physical networks okay so or local area networks so if you look here each one of these links could
+1:12:32
+potentially be um a subnet and uh the set of mac addresses in there
+1:12:39
+might uh be unique and use the route so pretty much everything connected to a
+1:12:44
+subnet in here would all have a unique set of addresses but what actually happens is host a
+1:12:49
+wraps up a um an ip packet and it kind of works its way
+1:12:55
+up to hop to hop till it gets to the destination okay and so these things in the middle
+1:13:00
+are routers which i mentioned earlier and they're basically taking you from one subnet to the next so each one of
+1:13:06
+these hops is typically another subnet all right so router forwards packets
+1:13:14
+from the incoming link to an outgoing link so for instance if we looked at any one of those router points
+1:13:19
+we see a bunch of incoming links we see a router which is typically a special piece of hardware that uh is tuned to transmit these
+1:13:27
+packets in and out as fast as possible you can think of this as a sorting network so you know it comes in on one side it gets
+1:13:33
+sorted to the next hop and goes out and if these are 40 gigabit links or 100 gigabit links or
+1:13:40
+whatever uh you're currently transporting here this needs to be extremely high powered
+1:13:46
+hardware to do this very rapidly okay and some combination of hardware and
+1:13:51
+software um so that's the forwarding idea so if you notice uh isn't that great so watch
+1:13:57
+we're starting here we've got our p address of b where we're going and it's just going to get forwarded through the routers to the destination
+1:14:05
+and the magical thing about this is if you think about all of the hosts in the world okay
+1:14:12
+billions and billions of hosts in the world um this works okay it actually routes
+1:14:18
+packets and it mostly works so that's actually pretty uh amazing to think about every now and then when you
+1:14:25
+think about scale how big things actually are how many addresses there really are out there and
+1:14:30
+the fact that this all mostly works is is uh i think it's astonishing i mean
+1:14:36
+you can easily fig you know you can easily understand all the mechanisms in there but when you look at it at scale
+1:14:41
+the fact that it actually works is pretty cool okay and so you know upon receiving a packet the
+1:14:47
+router reads the ip destination address picks the next port and sends it
+1:14:52
+out and that just happens over and over again oftentimes there's a default route
+1:14:57
+which is if a router doesn't know where to go next it'll send it on to a router that it thinks will know where to go next so i wanted
+1:15:05
+to say a little bit of a distinction between ip addresses and mac addresses so if you remember the mac addresses are
+1:15:11
+used locally the ip addresses are used for these long haul communications and the question might be why
+1:15:16
+well if you look here you can imagine a person this person is defined by their social
+1:15:23
+security number and that's a unique person and they're at some uh address in washington dc
+1:15:29
+and then they come over and they're they become um they're in california for a
+1:15:35
+conference or something okay maybe they've moved to euclid avenue in berkeley
+1:15:40
+so uh why don't we just use mac addresses for routing so you can imagine that we just route packets
+1:15:46
+to uh to the mac address if it's truly unique it'd be like
+1:15:51
+routing all mail to a social security number okay and so the question might be why not do that
+1:15:57
+the answer is it doesn't scale and so the analogy really of mac addresses to social security numbers and
+1:16:02
+i p addresses to home addresses hopefully is a good one for you right because when you're routing to this
+1:16:09
+person basically you're using their mailing address which is in berkeley california and so
+1:16:16
+the this is hierarchically routed just like ip would be first to california then to berkeley
+1:16:22
+then to euclid avenue and then to 1051 and and that's how you
+1:16:28
+get to the this address of that person when they happen to be there
+1:16:33
+okay and so the mac address is uniquely associated with the device for the lifetime of the device the ip address changes as the person
+1:16:40
+moves okay i don't know if that helps or not but this is why we use ip addresses typically to route
+1:16:48
+so why does packet forwarding use ip address uh why does it scale and the answer is
+1:16:54
+because if you look at what i talked about with subnets really there are prefixes and what you're really doing is as you're trying
+1:17:00
+to route from point a to point b you first route some early parts prefix of the ip address and then you
+1:17:07
+route more detailed prefixes until eventually you get to the subnet that has the actual final computer on it
+1:17:14
+and so it scales because we can route all of the addresses uh at mit for instance could get routed
+1:17:21
+by uh just matching 18 in the first eight bits and then you get to mit and then the let
+1:17:28
+mit worry about routing it the rest of the way and the the analogy here is give this letter to a person with social security
+1:17:34
+number blah versus give this letter to john smith 123 first straight street laus this latter one is much more
+1:17:42
+of a hierarchical routing and it's much more scalable so how do we set up these routing tables
+1:17:48
+well the internet has no centralized state so no machine knows the entire topology
+1:17:53
+so you need a dynamic algorithm that acquires the routing tables you'd ideally have one entry per subnet
+1:18:00
+or portion of address possible algorithms for acquiring routing tables you can take a networking
+1:18:06
+class to hear more about this but for instance there's something where that works kind of locally you can have
+1:18:12
+a routing table has a cost for each entry and what's the fastest path from point a to point b
+1:18:18
+neighbors keep telling each other over and over again who they know about and you have this dynamic algorithm that
+1:18:25
+converges in in reality that particular algorithm
+1:18:30
+doesn't scale beyond local subnets really there's many different levels
+1:18:36
+at many different scales there's a protocol called bgp that handles uh global routing
+1:18:43
+and it has a way of exchanging routing tables that adhere to certain uh policy reasons and so on and so that
+1:18:50
+that process of making the routing tables so the routers can do their jobs
+1:18:55
+is in itself a really interesting distributed algorithm which is occasionally unstable there have been some really interesting
+1:19:02
+outages in the internet over the years where bgp got stuck with some loops or there was some
+1:19:08
+key link in the network that went down and there was no way to route around it
+1:19:14
+and the routing tables became unstable and so this is this is in itself an interesting
+1:19:20
+problem that we're not going to study anymore but i wanted to mention it and so really if we just say that in
+1:19:26
+another slide back here really when we look at this slide we're trying to get from a to
+1:19:31
+b the question is at each hop how does the router know what the right next hop is based on
+1:19:38
+where you're trying to go those are the routing tables and those routing tables uh are the big dynamic algorithm uh that i
+1:19:45
+just mentioned okay so the last topic i want to see if you guys give me a few more minutes and
+1:19:51
+then we'll uh we'll talk uh we'll pick this up on monday is um
+1:19:56
+naming is a big issue okay so if you look people like to use names for things but
+1:20:04
+addresses are what the underlying system likes to use okay and so when i'm trying to send something to this guy
+1:20:10
+i want to find out i have to find out what his address is i got to look him up somehow and basically the way that works in the
+1:20:16
+internet as you're well aware is you're taking names like www.berkeley.edu transforming it into an
+1:20:23
+ip address 128.32.139.48
+1:20:28
+and things like google actually when you look up google.com you get a different
+1:20:34
+address possibly if you do this several days in a row you're going to get a different
+1:20:40
+address or you're going to certainly get a different address if you're different parts of the world or the country because that common name
+1:20:47
+gets mapped to a bunch of different servers but anyway this process of mapping a human readable name to something
+1:20:53
+that can can actually be routed is something that needs to be done and because i p addresses are
+1:21:00
+really hard to remember and they also change okay and so the mechanism is the domain name
+1:21:07
+service dns which i'm sure you've heard of it's a system that's been
+1:21:13
+around for a long time and it basically defines domains hierarchically so for instance
+1:21:21
+this machine ecs.berkeley.edu is a domain there's the wwe
+1:21:29
+which is a particular machine and that domain eecs.berkeley.edu
+1:21:34
+is referenced off of the berkeley.edu domain which is referenced off of the edu
+1:21:40
+domain which is referenced off the top level okay and so there's a hierarchical
+1:21:45
+lookup process for dns to work your way down turns out backwards right if i'm trying to find
+1:21:52
+www.ecs.berkeley.edu i start at the top i go to edu then i go to berkeley.edu and then i go to
+1:21:58
+eecs.berkeley.edu referencing the lookup right and so dns
+1:22:05
+is a hierarchical mechanism for naming each domain is owned by a different organization the top level is actually
+1:22:12
+handed out by an organization called the internet corporation for assigned numbers and names or icann and
+1:22:19
+you typically have to get assigned these domains at the top level and you have to pay for them
+1:22:26
+and the resolution of this is if i'm over here or i'm somewhere else in the world and
+1:22:31
+i'm trying to look up www.ecs.berkeley.edu i go through a hierarchical set of
+1:22:38
+queries to the dns system to get that number and then the network takes over
+1:22:44
+okay and because this is a long process dns is cached in lots of ways
+1:22:52
+and so if you look something up because you're browsing the web that result will be cached in your
+1:22:58
+machine for a while until until the cache expires
+1:23:04
+so remember everything in operating systems is a cache you guys can quote me on that because it's true so how important is it
+1:23:12
+to correctly resolve the mapping from named ip address well you can imagine the answer is very
+1:23:19
+right so if an attacker manages to give you an incorrect mapping and get somebody to route to a server
+1:23:25
+thinking they're routing to something else they might do the wrong thing okay and probably many of you have at one time or
+1:23:33
+another gotten a complaint that uh the certificate
+1:23:38
+is not valid when you were trying to go to a website and you probably all said oh just ignore it
+1:23:45
+but in fact there is a real attack problem here where uh somebody manages to convince your local dns server
+1:23:52
+to give you a wrong machine and they're redirecting your attempt to log into the bank to the wrong server
+1:23:58
+and they're trying to get your password and ultimately your money so this mapping between names and ip addresses
+1:24:04
+is a security hole now you might ask is dns secure
+1:24:10
+mostly it's it's a weak link and uh it turns out that there's been
+1:24:17
+various holes in it over the years there was in fact a really famous one in 2008.
+1:24:23
+you guys can look this up look up damn dan kaminsky he discovered an attack that basically
+1:24:28
+broke dns globally because what it was was it was a way of
+1:24:34
+responding from pretending to be a dns server that somebody was querying and doing it fast
+1:24:39
+enough that you could convince a whole chunk of an isp to give the wrong mapping
+1:24:46
+to uh to a lookup and then everybody that happened to be logged into the isp
+1:24:51
+at that time would get the wrong lookups and you could do this regardless of the security on the dns servers
+1:24:58
+and needless to say this was bad but what dan did was he actually
+1:25:03
+contacted all the major vendors uh of software and explained what was going on and got him to mostly patch it
+1:25:10
+before it was announced in a paper but if you if you google that look it up it's uh
+1:25:16
+you know it gives you an example of what could happen all right so i'm going to end for now
+1:25:23
+we've run out of time but we talked about two-phase commit as a good instance of decision distributed decision making first you
+1:25:30
+make sure that everybody guarantees that they will do the same thing they'll commit if they're asked
+1:25:36
+and next ever ask everybody to commit if that doesn't happen then everybody's going to abort okay that's the important
+1:25:42
+part we talked about the byzantine generals problem in some detail which is a distributed decision making with
+1:25:47
+malicious failures one general n minus one lieutenants some of the number of them may be
+1:25:52
+malicious we often call that f and we need to have a total number of uh
+1:25:58
+general plus lieutenants that's greater than three f plus one to make this solvable
+1:26:04
+we talked a little bit about blockchain protocols they basically are a cryptographically
+1:26:09
+driven ordering protocol and we talked about how blockchain is really a type of distributed decision making
+1:26:15
+um we started talking about the ip protocol we'll finish up the little bit that i'm going to talk about in this
+1:26:21
+class next time but it's a datagram packet delivery service using route messages across the globe
+1:26:28
+32-bit addresses 16-bit ports we'll get to that a little bit more when we go forward we talk more about
+1:26:34
+ports dns is a system for mapping from names ip addresses uh which needs to be secure
+1:26:41
+because humans uh aren't that good at remembering ip addresses in general all right and we'll talk about uh
+1:26:47
+ordering reliability in tcp next time so um i hope you all have a great weekend um
+1:26:53
+those of you that are in the berkeley area i don't know i think it's going to be cold and rainy but uh anyway stay safe and we will see you
+1:27:00
+next week
+1:27:05
+you

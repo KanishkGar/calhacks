@@ -1,0 +1,1748 @@
+0:04
+okay everybody welcome back to 162. um today we're going to dive into some
+0:10
+actual implementation details and start talking about uh how threads are implemented in the kernel and um
+0:17
+some things you need to worry about synchronization so uh welcome back um if you remember from
+0:23
+last time we were talking about high level apis
+0:29
+uh today we're going to be talking about synchronization in particular we're going to start by understanding how the operating system
+0:35
+gives you concurrency through threads and brief discussion of process thread
+0:41
+states and scheduling some high level discussion of how stacks contribute to concurrency um on monday we'll talk more about uh
+0:50
+what pintos does to give you threads and even dive deeper but today we're going to start diving into the kernel and then
+0:56
+we're going to talk about why we need synchronization and then we're going to explore locks and semaphores in a little more
+1:02
+detail so if you recall though from last time we talked about
+1:07
+inter-process communication or ipc and that was a mechanism to create communication channel between distinct
+1:13
+processes and the reason we wanted to do that was well we started with all of this work to make sure processes were isolated from
+1:20
+each other but then we need to figure out how to selectively punch holes uh into that protection so that those
+1:26
+processes can communicate when they want to and um we uh are going to need to start
+1:34
+thinking about protocols so maybe there's a serialization format especially if you go across the network
+1:40
+one good thing about having processes rather than combining everything into one process is
+1:46
+you can have failure isolation that can get interesting we'll talk more about that later in the term
+1:52
+and uh there's many uses and interaction patterns here once you have processes possibly spreading across the network
+1:59
+and then you combine them together you can do all sorts of interesting things and uh toward the end of the term we're going
+2:05
+to even talk about um peer-to-peer style communications and
+2:11
+cloud communications as well so the other thing we were talking about is we talked about
+2:17
+types of ipc so for instance we talked about unix pipes and the idea here is very simple a unix
+2:22
+pipe is a data structure cue inside the kernel one process can write to uh the the input end of the
+2:30
+pipe and the other process can read from it and notice that we're using the read and write system calls the low
+2:36
+level raw interfaces just like we would if that were a file except that this is a in-memory queue of
+2:42
+limited size and so as a result it's more efficient if we're not trying to make things persistent
+2:48
+so the memory buffer is finite which basically means that if the producer tries to write it uh and the buffer is
+2:53
+full then it blocks which means it goes to sleep and if the consumer tries to read when the buffer is empty it blocks
+2:59
+which means it goes to sleep today we're going to start understanding what it means to get put to sleep and how that
+3:04
+actually works okay we also talked briefly about this particular system called pipe
+3:10
+that takes a two entry array of file descriptors and it fills them with
+3:15
+uh the read and write into the pipe and we also talked about then how to go through with uh fork to
+3:22
+set up communication between two processes so you should take a look at uh the last part of the lecture um last
+3:28
+time uh the other thing is we talked about sockets and um key idea here was that um well
+3:36
+pipes are communication on the same machine but we could have communication across
+3:41
+the world that looks also like file i o and so we had this notion of a socket which is a bi-directional communication
+3:48
+channel now pipes of course were single direction um kind of like half duplex if
+3:53
+you will a socket is an endpoint for communication and bi-directional communication and so
+4:00
+uh you have a socket on either side there's a process for connecting which we talked about and
+4:05
+notice that cues the green things here that are inside the sockets are not pipes there was some discussion of that
+4:11
+on piazza cues are places to hold and temporarily hold information so
+4:18
+when you take two sockets and you connect them together now you actually have a communication channel two directions
+4:25
+that are independent of each other from process to process and that could be on the same machine it could be
+4:30
+in the local area network it could be uh spanning the globe
+4:35
+and so as part of that discussion we did a brief talk about how sockets get set up for
+4:42
+tcpip and if you see the two green sockets here are the final communication
+4:48
+but we we talked about how you set up a server socket that is bound on a certain port the
+4:54
+first socket of the client side requests a connection the server socket then produces a new
+5:00
+socket just for that connection and now this yellow channel between the two sockets is a
+5:06
+unique channel and it's defined uniquely by these five numbers that you see at the left the source ip address the destination ip
+5:13
+address the source port number destination port number and protocol where we're talking tcp in this particular
+5:20
+instance and the client side of this socket often has a random port and that's why
+5:26
+in fact you can have multiple tabs on a browser that all connect to the same website and act independently
+5:31
+uh on the server side you have well-known ports like 80 for the web or 443 for secure web 25 percent mail et
+5:39
+cetera and the well known ports are all from zero to 1024. okay and then last but not least we went
+5:46
+through several different versions of a web server like protocol this was
+5:52
+the very first one we looked at and we talked about how you you generate the sockets that's the first
+5:57
+little red thing in this code that generation has a has a family of uh addresses and so on protocols that it's
+6:04
+in then you bind the address to that socket okay and that's where what comes into play is
+6:11
+what support is it interested in uh serving and what's the local address and then you listen
+6:16
+and that listen is exactly what you see here when you see the ear right that's listening for incoming
+6:22
+connections and then in a loop you accept the next connection and what comes out of accept is a brand new
+6:28
+uh file descriptor which is the uh file descriptor opposite uh side for the server and so
+6:35
+that's um this green socket comes in from accept and then you can do anything you
+6:41
+want with it and uh just as you might remember this particular instance that we gave
+6:46
+was uh an instance that was had no parallelism and so this basically takes
+6:51
+connections one at a time if you want to see our discussion on uh several variants of that afterwards
+6:57
+take a look at uh the lecture from last time all right that was where i wanted to do
+7:02
+as a quick summary did we have any questions on that before i move on to some new material
+7:08
+is everybody good
+7:17
+yeah i see that our i see our numbers are a little lower today hopefully hopefully others are just a
+7:22
+little delayed you guys are all the the most gung-ho of
+7:28
+the students here okay yeah homework one is due that might
+7:34
+have something to do with it okay so um today let's talk now about
+7:41
+implementation okay so multiplexing processes uh we have a process control block which
+7:47
+we've been discussing kind of uh indirectly throughout the first couple of lectures
+7:53
+and it's really basically a chunk of memory in the kernel that describes the process and so it has things like what's
+7:58
+its state what's its process id uh what are its current registers and so on if it only has one thread in it
+8:04
+a list of open files we've been talking a lot about file descriptors and so on um okay and so these are these are all
+8:12
+of the descriptors inside the kernel describing a process the scheduler is uh
+8:19
+going to maintain a data structure uh containing all of these process control blocks
+8:24
+and it's going to decide for each process and each thread within each process who
+8:30
+gets the cpu and we're going to have a whole lecture and plus on different schedulers so the
+8:36
+question of who gets the next uh little slice of cpu is extremely interesting policy decision
+8:43
+but that's for another day okay um and the scheduler is going to be um
+8:50
+also giving out potentially non-uh cpu resources like memory
+8:56
+io etc so the program counter of course is pointing at where in the
+9:01
+code that particular thread is currently running okay so what does
+9:06
+it mean to switch from one process to another so uh what it really means is here
+9:12
+process zero is running and by the way now we're talking about a single threaded process so there's one
+9:17
+thread so um that processes main thread is running and at some point an interrupt happens
+9:24
+okay and that saves all of the state such as the registers and the program counter and the stack
+9:31
+pointer and all that sort of stuff into the process control block for xero
+9:37
+and then it loads everything from process control block for one and then it uh returns to user level so what's in the
+9:43
+middle here is kernel level what's on the outside is user level and what's in blue is
+9:48
+actual code execution okay and um so what's in the middle here
+9:54
+is all running at kernel level and at uh high high privilege
+10:00
+okay so this is privilege level zero for system privilege level three for user and uh
+10:06
+as you may be well aware that for x86 there's actually four privilege levels but you typically only use zero and
+10:12
+three the other thing i wanted to show you that's interesting here perhaps is if we do this switching too rapidly
+10:19
+then um what we're going to get is all of uh all overhead and no
+10:26
+execution and so this part of the blue where it's actually executing user instructions will become a vanishing fraction of the
+10:33
+total execution and uh that's a form of thrashing if you go back and forth too fast and you end
+10:39
+up with making no actual forward progress okay so the question about what the other two levels are they are
+10:45
+dif they're called rings and um they're in certain military specs you have
+10:50
+different uh things that are somewhere between uh system level and user level you can use those other
+10:57
+two um sometimes it's um sometimes it's utilized for the
+11:03
+hypervisor in some early versions of things where level zero is actually the hypervisor and one is the kernel level
+11:10
+and so on so for now however just imagine there's two because we've only been talking about kernel and user
+11:15
+now the question here about more time used uh to waiting than executing uh this is clearly not to
+11:22
+scale so this would be a very bad design if we ended up with a vanishingly small
+11:27
+fraction of the time was actually executing real stuff so what we want is we want to get to a
+11:33
+something under 10 or better of the time overhead so that we're you know using most of our cycles for
+11:39
+something useful uh even though we all know that the operating system's the most interesting part of this uh it's probably would be
+11:46
+good to actually execute some of your real programs so the other thing i will point out is there are a bunch of transitions so if
+11:52
+you notice we go from executing process zero we transition into the kernel that's that little yellow dot
+11:58
+we exit uh from kernel back to process and so on and so these transitions which are transitions in privilege level
+12:04
+represent uh potentially expensive saving and restoring of registers
+12:10
+okay and in this case this uh entry into the kernel is coming from an interrupt or
+12:16
+could be a yield system call we'll talk about both of those as we go on
+12:21
+now a process goes through a bunch of stages as does a thread okay
+12:26
+and so um for now i'm not even going to say which of which this represents because it represents
+12:32
+all of them and uh processes and threads uh both have their
+12:37
+thread component but um as far as the process let's just talk processes for a moment the process starts from a new uh state
+12:45
+and that's going to be right after we execute fork and set the process up and then we put
+12:52
+it on some scheduling uh queue which is the point at which we admit it to say the ready queue
+12:59
+okay and so that point it's now ready so what that means is not that this process the thread of this process is actually
+13:05
+running but rather that it's ready to run okay and as if you think about it if you
+13:10
+only have one cpu or one core then um there could only be one thing
+13:16
+actually running at a time everything else is ready okay and then at some point we uh the
+13:21
+scheduler pulls it off the ready queue and it now becomes running okay and now if there's only one core
+13:27
+there can only be one thing running at a time later an interrupt might happen which brings that original
+13:34
+thread back onto the ready queue some other thread will have been brought into the running state as a result but we're
+13:39
+only tracking sort of one processor thread at this time okay and then this will go on for a while a lot of d
+13:45
+isn't this animation great we're going back and forth at some point the thread
+13:52
+or process will try to do some io or do something that's going to require
+13:57
+a weight like for instance a disk access how many instructions does it take to do a typical disk access
+14:04
+what was that order of magnitude everybody's supposed to remember okay a million yep all right
+14:12
+and so a million at least cycles means that when we're in the
+14:18
+waiting state here where we're on a queue waiting to get serviced with our io there better be something else running
+14:24
+so part of what we're doing is we're attempting to um talk about how we can make
+14:32
+uh something that's executing put to sleep long enough that we can run other things in place and overlap
+14:38
+io and execute overlap the i o and the execution computation the question here about ssd
+14:45
+so ssds are smaller okay it's not a million but it's probably 10 000 or 100 000 it's still
+14:51
+going to be big enough that you're going to want to be put on a weight cube
+14:56
+if we have more than one core that's a good question uh there can be more than one thing running and so the
+15:03
+scheduler now has multiple run cues as well as multiple ready cues to worry about
+15:08
+okay you'll never have a single thread run on more than one processor at a time because
+15:16
+a fret only has one stack and so if you were trying to run it on multiple processors at a time you'd get chaos so
+15:22
+ultimately the i o completes we get back to the ready state and we continue our running okay and then finally we will execute
+15:30
+exit if you remember and that will put us in a terminated state okay which is a point at which the
+15:37
+process is no longer available to run under any circumstances it's terminated
+15:42
+okay and can anybody think why we might not just uh put free the process up why might we
+15:49
+keep it in a terminated state laying around can anybody guess
+15:54
+yeah great because the parent needs to get the result okay and so um this is
+16:01
+actually when it's in this state where it's terminated but not uh reallocated yet that's typically
+16:08
+called a zombie state so that's a zombie process okay
+16:14
+all right now uh if you if you look uh inside the kernel
+16:21
+cues we have the ready q and the cpu as the run queue but there are many other cues and so typically what happens
+16:27
+is the process control blocks work their way from the ready queue to the cpu okay and
+16:33
+potentially back again so if the time slice expires meaning that the amount of time it's supposed to run expires it gets put back on the
+16:40
+ready queue if it does an io request gets put on an ioq until the i o is done et cetera okay and
+16:46
+so scheduling is uh the the act of deciding sort of
+16:52
+which thing off the ready queue gets the cpu next okay there's also a type of scheduling
+16:59
+in something like a disk uh drive device drive or whatever which we'll talk about
+17:04
+uh later in the term which will decide kind of which request gets to go next and that's usually there to try to
+17:10
+optimize things like um the uh the disc head not moving as much and so on so there's lots of different
+17:16
+types of scheduling for now the type of scheduling we're talking about is really when you have a bunch of things on the
+17:21
+ready queue which one gets the cpu next so the ready q and all the i o device
+17:29
+cues really are things that represent on
+17:34
+non-running processes okay so um and there's a good question here
+17:39
+so when you uh when you have a fork operation what happens well you only have one
+17:45
+cpu therefore the child process needs to be put on a queue somewhere which gets it back in the ready queue
+17:52
+okay because you can only have one thing running at a time this diagram is a little bit confusing but really what you want to think about
+17:58
+is when you go through fork um potentially the child gets the cpu and the parent goes on the ready queue
+18:04
+or vice versa depending on the policy okay and you're and you should never assume one or the other gets to run
+18:10
+first because they're uh they're completely independent once fork executes um and i i understand that diagram is a
+18:16
+little bit confusing on that front but just you know you can only have one thing running and so there's really going to be one of them on
+18:22
+is on the cpu and the others on the ready cube so um you can imagine a bunch of these
+18:29
+cues and they really all represent temporarily suspended threads okay and um
+18:36
+these temporarily suspended threads hold their cues of um
+18:43
+of pcbs okay and those cues you know are linked lists of things and i'm uh just
+18:48
+because i'm an electrical engineer i'm using a little ground symbol here for null but uh you guys can give me a little bit of uh of slack
+18:55
+there but you know we have lots of different cues in the system and they all have different
+19:00
+uh suspended processes in them and um the scheduler is potentially only
+19:07
+interacting with the ready queue the rest of the queues are actually being interacted with through the device
+19:12
+driver and we'll we'll get into that um not too long in a couple of lectures but the device driver for the disk for
+19:18
+instance when a when a request comes back potentially will remove a process control block from uh its weight
+19:26
+cue and put it back on the ready queue and so now it's runnable again okay and that scheduler is
+19:34
+is this simple loop that is just uh many options here okay we have at least
+19:40
+a lecture and a half on scheduling because surprisingly enough that simple question of
+19:46
+on the ready queue who gets to go next vastly impacts whether the thing is
+19:52
+responsive if you've got a person typing or it's efficient if you've got a long running task
+19:58
+or if it's fair if you've got multiple things running at the same time or it if it's a real-time scheduler
+20:05
+because you've got a car and it's uh between pushing the brake and the brake engaging
+20:10
+you know maybe there's a question of whether it's timely okay these are all scheduling policy questions which are going to be
+20:16
+quite interesting for us but that's for another day the loop i wanted to show you here which i've shown you before is it's this
+20:22
+mechanism where if there are any ready processes okay then it'll pick one and it'll pick one
+20:28
+according to a policy so again if there's a cue for each device has a queue
+20:33
+of processes that are waiting on it and so what happens when a request comes back from a disk then it finds that
+20:40
+process that's been waiting there and it reactivates it and actually in something like linux
+20:47
+where the threads are are kernel threads and you'll see a little bit of that distinction in a in a bit then in fact the queues
+20:54
+are actually holding thread control blocks not necessarily processes so they the granularity of threads being able to
+21:01
+be put to sleep on these queues is really what happens in systems where there's a one-to-one
+21:07
+mapping between user thread and the kernel stack or thread
+21:12
+okay all right many different scheduling policies
+21:18
+so let's dive in a little further so when we were talking about processes originally we mentioned the fact that there can be
+21:24
+many threads inside a process okay and each of these threads has a stack and some registers
+21:30
+so for now we're going to talk about threads and how they're implemented and
+21:36
+when it matters whether i'm talk whether i need to talk about process or not i will bring it back but
+21:41
+just to remind you guys what's a process the process is a protected environment such as the
+21:48
+memory uh space and file descriptors and all that stuff we've been talking about
+21:54
+plus one or more threads okay and though each of those threads has a thread control block with registers and a stack
+22:01
+in it okay and so when we need to talk about well we're switching the protection environment from process one to process
+22:07
+two i'll make sure you know that i'm talking about that but for now we're gonna dive into just the concurrency portion or the
+22:13
+threads okay so threads encapsulate concurrency or the active component the address
+22:18
+spaces etc are the passive part and that's inside the uh the shell of the process
+22:26
+uh why have multiple threads per address space for sharing okay now
+22:33
+if you remember this is the uh the shared state now we're within a process
+22:38
+all of the threads in the single process they share the heap they share global variables they share code um as we'll mention some
+22:45
+of the important global variables those threads probably are going to share are locks et cetera we'll get to that
+22:50
+as the second half of the lecture and then each thread has a thread control block that has
+22:56
+information about where its stack is what its registers are metadata of various sorts and a stack in
+23:03
+memory okay so that's per thread and so every one of the threads has that information
+23:08
+okay and if you have too many threads then you can run out of space in your
+23:15
+process well the reason we haven't talked about and there was a question here what about virtual address translation
+23:20
+so they uh i wanted you to get a general idea about that that's going to require us to
+23:26
+talk a few lectures to really get into it and so that's why i'm not trying i'm trying not to muddy the waters too much
+23:31
+so we're we're working on we're working on the concurrency part today don't worry we'll get there you guys are
+23:37
+going to be uh really deep operating system designers by the end of this class
+23:43
+so the core of concurrency as we've kind of mentioned is this this scheduler loop or i'm going to call
+23:49
+it the dispatch loop here and conceptually the operating itself operating system itself is this an
+23:56
+infinite loop where we run a thread we choose the next thread we stay we save the current threads
+24:04
+state we load the new thread state and we just keep looping forever okay this is an infinite loop and uh
+24:13
+i suppose under a certain point of view this is all the operating system does it just keeps
+24:18
+looping uh letting threads run until uh they're either they yield the
+24:23
+processor or they're interrupted and then we pick another one and we go okay
+24:29
+so um pretty simplistic uh and now we're done we'll have our
+24:34
+final uh next week and we'll be good right so there's the whole operating system um but perhaps we'll do a few more
+24:40
+details just because we can one question might be should we ever exit this loop
+24:47
+uh what are some good reasons to exit this loop anybody
+24:52
+okay well interrupts don't necessarily well interrupts might be kind of like a bubble but they don't interrupt the loop
+24:59
+because the interrupt happens and then it comes back yeah shutting down the machine pg e yes
+25:06
+power outages hopefully we're not going to get too many of those this season but i'm thinking we might
+25:11
+have power shutdowns but yes so basically when the machine exits or it panics
+25:18
+or any other sort of crashes uh you exit the loop but by and large we just keep it going
+25:23
+okay so what we're going to do is we're going to briefly talk administrivia and then we're gonna
+25:28
+look more at how this all works okay homework one's due today as many of
+25:35
+you are aware i appreciate very much that you guys are here for class thank you um it's great to actually have people to
+25:42
+ask questions um project one is in full swing and i saw an interesting query on piazza
+25:50
+that was kind of like well how can i do my design document if it wants code but i don't know how to do the project yet
+25:56
+okay it seems almost like that's some catch-22 that catch-22
+26:01
+and the answer is that what we're looking for in your design document is a notion that you have read through
+26:08
+enough of the code that you have an idea of roughly what you're going to need to do you're not going to have it all done
+26:14
+because that's what the code deadlines are for but um try to give us some intuitions it
+26:19
+could be pseudo code you could pick out a couple of function calls you know they're going to be important you could pop
+26:24
+up you could say well here's a data structure we're going to add these fields to it whatever
+26:30
+those are those are not the same as we wrote a bunch of code and it works okay and so what we're looking for
+26:36
+in your design document is a high level idea of what you're planning to do and why
+26:42
+and supplemented with some code uh pseudocode if you like that tells us
+26:49
+some details of where you're going and helps your ta understand what you're thinking okay so that's the paradox
+26:57
+you don't need fully working code to write a design document that would that would be pretty strange right
+27:04
+um the uh the if deaf user prog basically says
+27:10
+whether there are uh user programs uh are supported or not you can you can have a kernel-only
+27:16
+version so um we should you should be attending your uh permanent discussion session um
+27:23
+remember to turn your camera on and zoom uh and discussion sessions are mandatory so we're taking attendance
+27:29
+uh the question is will the design document be graded and the answer is yes and
+27:37
+you're trying to give us a understanding of your thinking in the
+27:42
+design document and we will be grading uh the ideas that are there and then with your ta in your design
+27:48
+review session uh you'll be talking to them and they may be giving you a few suggestions
+27:53
+of other things to think so there is some you know the design will evolve possibly over the course of the project that's
+27:59
+certainly accepted okay
+28:05
+the problem with uh example design docs of course is that they sort of have answers in them i'll see if
+28:10
+i can find one for you but just think about um you're trying to give a
+28:15
+high-level viewpoint to your uh manager who's your ta right and you're trying to give them an idea that
+28:21
+you've thought through enough about what you need to do that you're on a good path all right the other thing is of
+28:29
+course midterm one is coming up a week from tomorrow or two weeks from tomorrow not a week from now
+28:35
+um and uh it's gonna be video proctored i understand there's a little concern about how 61
+28:40
+c's video proctoring went um believe me we're uh well aware of everything that's been
+28:46
+going on in the department so uh we will try to avoid the mistakes of the past
+28:51
+at least learn from them uh let's see i think that's all the administrivia i'm not entirely sure what
+28:58
+happened i think that they were requiring people to record things locally and there were some issues with that under some
+29:03
+circumstances that's not our current plan so we'll get that out to you all right
+29:11
+good any questions on administrivia
+29:20
+all right so let's talk about running a thread so
+29:26
+what do we get when we run thread how do you run a thread well you loaded state into the actual cpu
+29:33
+registers program counter stack pointer okay if you're changing process
+29:40
+you need to load its environment so that means get the page table set up that's that mysterious virtual memory we
+29:45
+haven't talked a lot about yet uh get the you know get anything else loaded up and then you just jump to the
+29:52
+bc and start running so one thing that's going to be interesting here i
+29:58
+uh for you guys is that both this the uh os which is managing threads and
+30:05
+the thread themselves run on the same cpu so when the os is running the thread isn't and when the
+30:11
+thread's running the os isn't and we need to make sure that we can transition properly between those so
+30:17
+this idea that the os loads up a bunch of stuff and then jumps to the pc means essentially that the os gives up
+30:23
+control of the cpu all right and um you know we're going to have to deal
+30:30
+with that right if you give up control to a user program that then proceeds to go into an infinite
+30:36
+loop clearly we're going to need to get that back somehow okay and so that's a question how do you
+30:42
+get it back now i've been playing with computers long enough that i got to play with some
+30:49
+of the early versions of microsoft windows like 3-1 um some of the early macintosh's and and
+30:54
+other pc environments and in those pc environments what happened was
+31:00
+the the multiple things that were running were fully cooperative so let's suppose that
+31:07
+you had three applications running on your screen and they had three windows and one of the applications crashed
+31:14
+excuse me what would happen is the system would freeze okay nothing would move
+31:19
+you would have no control of the windows in the other applications either and the reason for that is that one
+31:25
+application which crashed and maybe went into an infinite loop kept control of the processor okay so
+31:31
+fortunately modern operating systems are not like that because we have memory protection which is an important
+31:38
+thing but we also have things like preemption possibilities through interrupts which is going to be
+31:43
+an important thing to talk about here but even back in the day
+31:49
+you could have the illusion that multiple things were working you could have many windows all drawn stuff simultaneously representing
+31:55
+different applications and the way that worked is each of those threads would run for a while and then it would
+32:01
+voluntarily give up the cpu by calling a yield function back into the kernel okay and assuming that all of the
+32:07
+applications cooperate it cooperated this worked fine it was when they didn't cooperate or
+32:13
+forget not cooperating when they had a bug uh that was a problem okay so the mac also was this way okay
+32:22
+this is back in the dark ages in the early times okay in the original macintosh's so
+32:29
+let's talk about um internal events first okay internal events
+32:34
+are times when where uh everybody's cooperating and they're voluntarily giving up the cpu
+32:41
+so a good example of this is blocking on io when you make a system call and you ask the operating system to do a read you're
+32:47
+giving up the cpu uh and therefore you know you're implicitly yielding it
+32:53
+and there's well the operating systems working on your task by say talking to a disk for a million
+32:58
+instructions it can schedule somebody else so surprisingly blocking on io
+33:04
+is uh a great example of yielding okay saying that you want to wait for a
+33:11
+different thread or a different process say with a signal operation that's another example
+33:16
+of voluntarily giving up the cpu because you're saying well i have to wait so go ahead you run that other thing for
+33:23
+a while because it doesn't do me any good to be in a loop waiting okay
+33:29
+the third thing which is sort of a
+33:36
+an example to follow for all of these things is what i'll call a yield operation and it's actually a system
+33:41
+call type uh thing which is basically let's suppose that i wanted to run
+33:46
+a an application that computed pi to the last digit okay well what i would do is i'd have a
+33:53
+a while loop okay that's never going to exit because this uh pi is uh very long right and i compute the next digit and
+34:00
+then i yield and then i go over and over and over again okay and i also see in the chat mining bitcoin potentially okay so these
+34:07
+are very long-running things where what i've done is i've decided to execute a yield system call
+34:14
+regularly enough that uh multiplexing works and and the the system acts properly like
+34:21
+it's got multiple threads running at the same time okay now of course this particular uh
+34:27
+application i'm showing on the screen is flawed for uh for a pretty um important reason here
+34:34
+does anybody know why this is is not a great example of of yielding regularly
+34:43
+well it yields too often maybe initially does anybody know
+34:49
+anything about computing pi
+34:55
+so the point here is that each digit you compute takes longer and longer and longer and longer
+35:00
+so while this particular thing seems to be yielding properly at the beginning the yield operations are going to come
+35:06
+at a longer and longer interval and eventually uh it'll be effectively like this thing is just
+35:12
+acting forever okay so this particular use of yield is probably not a great example but
+35:19
+assuming we yield regularly then we properly
+35:24
+multiplex things and we are actually getting multi-processing okay so there is actually if you
+35:30
+remember i gave you the posix api for threads in an earlier lecture p thread create b thread exit p3 join
+35:37
+there's actually a p thread yield although if you do a man on it you'll see that that's considered not supported on all operating systems
+35:43
+but there's also a schedule which is a similar thing and what this does is this actually says
+35:49
+i yield the cpu so that another thread can run okay so this is a real interface
+35:56
+all right and so what we're going to do is we're going to say we're going to take a look at what is yield by us here
+36:01
+okay and and uh once we've got yield figured out then uh we'll graduate to a few other
+36:07
+interesting ways to get the threads to give it up the processor okay so let's look at this compute pi uh
+36:15
+function that i showed you earlier so we compute a digit we enter compute pi and it computes a
+36:21
+digit comes back and it executes yield all right now this is the stack so remember how stacks kind of grow down
+36:28
+and come back up all right yep sleep would be a type of yield as well so if you um
+36:35
+the compute pi uh stack frame starts at the top we execute yield now if you let me just
+36:41
+show you back here if you take a look notice what's happening in this while true we enter the compute
+36:46
+pi function so that's the first stack frame and then we run compute next digit and
+36:52
+come back and then we run yield so yield is going to have a stack frame that's just below
+36:57
+pi the compute pi the way we've set this up okay so that's what we're showing here and in this
+37:03
+uh instance here blues is going to be the user code okay so we have compute pi
+37:09
+stack frame we have yield yield is going to execute a system call all right which means that we transition
+37:17
+into the current the kernel with a system call and at that point we actually change stacks so while we
+37:24
+have uh the user stack in the blue area we end up in a kernel stack in the red
+37:31
+area and there's a one-to-one correspondence between a user level stack and a kernel level
+37:36
+stack okay and so we execute yield which is then going to execute run new thread
+37:42
+which is going to execute a switch operation okay and so we're going to go through several levels here where yield
+37:48
+calls the run new thread operation saying i got to pick a new thread which is going to call switch and we're going
+37:53
+to find out what switch is about but let's start for a moment with understanding why do i have blue and red
+37:59
+here okay this is not a political statement why is there a difference between the
+38:05
+user level stack and the kernel stack
+38:10
+okay so one to one uh one to one means that for every user
+38:17
+level thread and stack there is a kernel level stack and i'll show you this next time when we
+38:23
+really dive into uh real code okay but for now there's a one-to-one
+38:28
+uh kernel stack specially allocated for this thread can anybody tell me why when i change
+38:34
+modes by going into the kernel i use the kernel's thread
+38:40
+excuse me i use the kernel stack rather than the user's stack
+38:51
+safeguard great because we don't trust the user ever if we're a kernel the most important thing that you need
+38:57
+to do when you're the kernel is when you when uh you get a system call comes in from the user you check what the user gave you to make
+39:05
+sure it's okay and then the second most important thing is you check what the user gave you
+39:10
+to make sure it's okay and can you imagine what the third thing is
+39:16
+you check what the user gave you to make sure it's okay and then you actually execute things so this is an important state here because
+39:24
+if the user code were to um you know put a null or something in its
+39:29
+stack pointer and then execute a system call the kernel is going to panic or do something because it's not going to have
+39:34
+a valid thread so part of this transition from uh from user mode to kernel mode has to
+39:41
+change the stack okay so here's what's going to happen now this is the running the new thread
+39:47
+so we hit kernel yield calls run new thread and notice what run new thread is it picks the next thread to run okay that's a
+39:54
+scheduling type operation and then it executes switch okay and
+39:59
+that switch operation is going to somehow switch to a different thread
+40:05
+okay and then we're going to do some housekeeping which might be cleaning things up seeing how much cpu time we're using et
+40:11
+cetera so how does the dispatcher switch to a new thread
+40:17
+well we've kind of gotten an idea about that a little bit earlier which is we're going to save anything
+40:22
+that the next thread may trash right we got to save the program counter and the registers and the stack pointer of this
+40:27
+blue thing because we need to restore it later so we can keep computing pi which is very important
+40:33
+right pi is the important number here in this class so um and then we want to make sure we
+40:39
+maintain isolation okay between threads now before you say well wait a minute i thought threads were sharing in
+40:44
+processes right now remember our threads and our processes were intentionally
+40:50
+uh not distinguishing for them so we want to make sure that when you switch to another thread
+40:55
+we have to make sure that we don't trash this current threads stack and if it turns out that we're
+41:01
+going to a different process we have to make sure that we change the memory protection as well okay so how does that switch
+41:09
+look okay well let's look at the stacks for a moment let's let's assume that what switch is going
+41:14
+to do i'll show you some actual assembly like code in a moment but what switch is going to do is it's going to
+41:20
+save out everything from thread a and load everything from thread b back in okay so how to
+41:27
+think about this i'm going to show you a really silly piece of code here but this is going to help us okay
+41:32
+so this code starts with uh function a which is going to call b and then once
+41:37
+we get in b it's just going to go into an infinite loop that does yield yield yield yield okay and if you can imagine what that
+41:44
+means it means that yield is going to give the cpu up to somebody and then
+41:51
+when we come back we execute long enough to go into the loop and then we're going to yield again okay
+41:56
+and suppose we've got two threads s and t both running exactly the same code so what happens well thread s
+42:05
+a is at the top of the stack it enters b which is executing the while loop which calls yield which calls run new thread
+42:12
+which calls switch and switch is going to switch to the other thread
+42:18
+okay and then that switch is going to return to run new thread which is going to return from system call to yield which
+42:24
+is going to return to the while which is going to call yield which is going to call
+42:30
+go into the kernel and call run new thread and call it switch which is going to switch back the other way and then we're going to come back
+42:37
+okay so this particular example where there's only two threads in the system and they're both running exactly the
+42:43
+same code what's going to happen is we're going to kind of go down the stack for s we're going to then switch over to
+42:48
+t and come back to stack and then we're going to go down the stack for t switch come back for s and
+42:54
+what's interesting about this is what is this switch routine okay the
+43:00
+switch routine is really simple okay and this is uh mips code but it's gonna be very similar
+43:05
+to what you got for risk five that you guys are all familiar with but we're gonna save all of the registers of the cpu
+43:11
+into the thread control block we're going to save the stack pointer we're going to save the return pc
+43:16
+all of that stuff so this green thread control block is the one that we were running and now we're done with it
+43:23
+and now we're going to load back the red one and then when we're done we're returning so this although this is written in
+43:30
+assembly language and i'm going to say sort of assembly language um pseudocode notice that switch is a
+43:37
+is a routine so we call the function switch and it returns down here back to wherever we came from
+43:43
+so that uh well so here's here's the thing that i
+43:50
+think should be interesting so if we get in switch let's suppose first of all let me answer
+43:56
+the question that's kind of on the group chat here which is when you switch to a new thread why are we reading the stack bottom up and not top down again
+44:02
+the answer is we're returning okay so forget this somehow getting from s to t
+44:08
+let's let's suspend that complexity in our mind if we were to just have one thread in the whole system
+44:14
+we would call a would call b would call yield which would go into the kernel run new thread which would call switch
+44:21
+and what does switch do switch when it's done returns see the return down here and so what does return do well return
+44:28
+pops something off the stack right and run new thread is a function which will pop something off the stack which will
+44:33
+return back to user code and and yield will thereby return and then we'll go back again to yield and
+44:40
+then we'll go back up and down if there were only one thread in the system where we the stack grows
+44:45
+as we call forward and as we do returns the stack shrinks yeah okay now however this good i'm glad
+44:53
+you guys got that now the question though is how does this work going back and forth
+44:58
+okay why does that happen and the answer is when we get into switch on the left let me go back this way
+45:06
+we save out all of thread s's registers and then we load in all of thread t's
+45:12
+registers including its stack pointer which means really after we gotten to the bottom of the
+45:19
+switch routine before we hit return we're actually over here because we're on a different stack
+45:25
+so when we return after we execute switch it takes us back up here and then when
+45:31
+we come down and we switch we return back up over here okay so take a second to pau to
+45:39
+understand that see this back and forth okay and it's all in here
+45:46
+because when we it'll never hit a again that's correct because there's an infinite loop
+45:51
+but if you so you see there's an infinite loop here so a is never going to come back because b just stays in the loop forever
+45:57
+but if you notice what's going on here is when we change the stack pointer
+46:04
+to the thread t's stack let's say when we do this return even
+46:10
+though we started with thread s's stack by the time we get down here we're on thread t stack so when we do a return and we have
+46:17
+thread t's return pc we're actually returning back into thread t
+46:22
+not into thread s and vice versa okay and that's why we go back and forth okay
+46:30
+now i'm going to let that marinate for you guys a little bit and we're going to explore this a little bit
+46:35
+okay but oh good other questions the other question is after you switch
+46:40
+does the kernel stacks thread not match the user stacks thread the answer is they still match because
+46:47
+the the way that the user stack and the kernel stack are associated with each other is the state in
+46:53
+the this thread the red thread for t remembers which thread uh which stack it came from
+47:01
+so when when we're in thread t's kernel stack it has associated with thread t's user stack okay
+47:08
+so the matching up happens all the way from the kernel back up through thread t as well
+47:15
+okay so in some sense you could say that if i were to take this s when it's suspended because i'm
+47:22
+running in t and i were to disconnect this stack and thread control block and put it on some weight queue so that
+47:30
+there isn't uh so the s is not on the ready queue and so that the scheduler never gets it
+47:36
+then t will never go to s again it'll just go to other things maybe it goes to u v w whatever are running but s is happily
+47:43
+suspended in some weight q and the moment i put s back on the ready q then this
+47:48
+behavior will start happening again and we can run s again okay so the thread is a
+47:54
+complete self-contained snapshot of a running state which is a thread control block
+48:00
+and two stacks and you can put it away and you can come back later and make it runnable okay so this
+48:07
+is kind of the key idea that we've got so far okay so some details about that switch
+48:14
+routine by the way uh so now what we've said essentially is um the pc is saved by the way uh
+48:22
+in in all of this it's what it's one of the um it's one of the the registers that are
+48:28
+saved okay i'm not actually showing you here but it's it's one of the pc is certainly saved
+48:33
+okay now um so what we just said is the tcb plus the stacks contain a complete
+48:38
+restartable state of the thread uh you can put it anywhere for revival so here's a question for you what if you
+48:44
+screw up switch okay this is like at the core of the core of the core of the core of the scheduler inside the kernel okay well let's say
+48:52
+you forgot to restore register 32 or something so what's really bad about
+48:58
+this is um you get intermediate intermittent failures
+49:03
+depending on whether the user code was actually using uh register 32 or not okay
+49:10
+and the system will get the wrong results without warning okay let's hold off
+49:17
+starting for a moment i know people are wondering how that got started let's just say for now the system has s
+49:23
+t running and this is just happening okay we haven't started anything yet we've popped into a running state okay so hold
+49:29
+your suspend your question on that for just a second so
+49:35
+uh switch is extremely important and the question might be is there an exhaustive test that you could run of
+49:41
+the switch code the answer is no okay you're gonna you're gonna have to look at that code and then get other people to look at that code and then
+49:47
+look at that code again over and over again and you know it's not very long so there's you know it's not
+49:54
+gonna change much and it's not gonna be too complicated but you to be careful because if that's wrong
+49:59
+the whole operating system is going to be behaving weirdly and you're not going to understand why okay
+50:06
+there's a cautionary tale here i like to tell sometimes which is for speed there's a kernel from
+50:11
+digital equipment corporations one of their research labs called topaz and this was back in the days where
+50:16
+memory was uh very scarce and so some very clever programmer decided to save an instruction and
+50:23
+switch that worked fine as long as the kernel wasn't bigger than a megabyte now i realize those numbers seem ridiculous to
+50:29
+you today but let's assume for a moment that a megabyte was a lot a lot of memory at one point okay and as
+50:34
+long as the kernel size was less than a megabyte or 20 bits uh an address then um
+50:41
+this would be fine and it was carefully documented and it saved an instruction so it was faster
+50:47
+what is their motivation well the core of switch is used by every switch and so it's part of overhead so it made sense let's make it
+50:53
+smaller the problem is and they documented it it was great except time passed and people forgot
+51:00
+and you know the clever person maybe retired and later what happened is people
+51:06
+started adding features to the kernel because they were getting excited about putting stuff in the kernel and it got
+51:11
+bigger than a megabyte okay and once it got bigger than a megabyte suddenly very weird behavior
+51:16
+started okay and yeah i suppose one more of the story could be don't document i don't i
+51:21
+don't want to say that that came out of this lecture but the moral of the story is be sure that you design for simplicity
+51:27
+and if you're going to um if you're going to make some micro optimization you better make sure it's
+51:34
+really worth it okay all right hashtag read the docs okay the instruction would save kind of
+51:40
+the higher part of the bits of an address of the kernel
+51:45
+okay so aren't we switching context here um with the with the threads we've been
+51:52
+talking about well assuming we're not changing the um yeah you're asking about build
+51:57
+scripts things weren't quite so sophisticated back then so um
+52:03
+if we're switching just threads okay this is very sophistic this is very fast so what i've
+52:08
+shown you is the thread switching portion now if we need to switch between processes we're going to have to start switching address spaces
+52:14
+and i wanted to give you just a little bit of an idea here so the frequency of the context switch
+52:20
+in typical operating system like linux is somewhere in the 10 to 100 millisecond time
+52:25
+okay the overheads about three or four microseconds so you can kind of see where this goes all right this is um
+52:33
+you know in the in in the small range here okay um now switching between threads was
+52:40
+much faster in 100 nanosecond range okay so there's a you know there's a
+52:45
+thousand microseconds in a millisecond okay and a thousand nanoseconds in a microsecond so you can kind of see where
+52:50
+these numbers come into play and so the key here is keeping the overheads low and so switching between
+52:55
+threads within a process is fast we're switching between uh processes takes longer and this extra time is
+53:02
+really um all you know this is 30 or 40 times uh cost is really about things like saving the process state and
+53:09
+so on okay now even cheaper
+53:15
+rather than switching threads by going into the kernel and coming back would be to run threads in user space now i know there
+53:21
+were some questions about this at one point but let's be a little clear here for a moment what we've been talking about and
+53:27
+what the default thing in linux is these days is a one-to-one threading model where
+53:32
+every user thread has what's called a kernel thread okay and i'm going to use this terminology
+53:38
+and you're going to take a little time to get used to it but a kernel thread is really um a kernel stack that's
+53:45
+one-to-one uh matched up with a user thread such that the user's
+53:51
+stack gets switched out and the kernel stack is used when we're in the kernel and then when we return to the user we use the user's stack but
+53:59
+the kernel stack is always there suspended so if i have four threads i have four kernel stacks inside the
+54:06
+kernel matched up with user threads okay this is exactly what we've been talking about and this is what pintos does for you
+54:13
+and this is what the basic linux model is but we can be faster so for instance we could do this where
+54:19
+each kernel thread where there's a kernel stack has user threads
+54:24
+associated with it more than one and what we do when a user thread executes yield is it's a user level yield
+54:31
+where the user code library looks knows how to do that same stack
+54:36
+switching i just showed you but it saves and restores uh registers between threads without ever going into
+54:43
+the kernel so we can make the um we can do this user multiplexing very fast okay and if you were to google
+54:50
+green threads for instance this was done a lot in the early days when uh going into the kernel was more
+54:55
+expensive okay but you can do this with a thread library at threading library a lot of early versions of java
+55:02
+were like this where the threads actually all operated up here but not in the kernel okay now
+55:09
+the good thing about the left model all right is if a user thread
+55:17
+does a a particular user thread does io which puts it to sleep this kernel thread gets put off on the
+55:23
+sleep queue for that i o device but the rest of them are still running so they're still getting cpu time
+55:29
+that's good here in this model the many to one model we have multiple threads and if any one of them goes to into the
+55:36
+kernel and goes to sleep on io all of the threads are suspended because nothing can run okay so while the user thread model is
+55:43
+very fast it doesn't interact with sleeping in the kernel well and so that's why there's also a many-to-many model where you have
+55:50
+a small number of kernel threads and many more user threads okay and that's got special library support and don't worry about it you as
+55:56
+a user a programmer would just see a bunch of threads and you wouldn't your lot the library would hide this from you
+56:03
+okay but today we're talking about the thing on the left for the lecture okay all right now
+56:12
+um so just to show you a little bit now our model has a cpu potentially one cpu
+56:17
+each process may have multiple threads there might be multiple processes and so basically the switch overhead
+56:23
+between the same process is low because it's easy to switch threads between different processes is higher we
+56:28
+saw that factor of 30 or 40. okay the protection between threads in a process is low that's by design they can
+56:34
+share memory with each other between different processes it's high that's also by design
+56:40
+to protect processes from one another the overhead of sharing is low inside a process because threads can
+56:45
+just share memory and between processes you got to do ipc to figure that out and there's no
+56:51
+parallelism only concurrency so in this instance there really is only one thing actually running at a time now of course
+56:58
+we all know about multiple cores so we can actually introduce parallelism in here and what happens is the top part of this
+57:04
+model doesn't look much different but now we have three four however many uh cores that are
+57:10
+executing there can be 28 in some instances 54 whatever and in that instance now we start having
+57:17
+some questions can we um you know the switching overhead might be similar but now if uh
+57:24
+we have different processes but the same cores are running at the same time then that's medium overhead to
+57:32
+communicate uh as opposed to if you're trying to communicate with a process that's completely asleep because it's not
+57:37
+running on any core that's higher and yes there's parallelism here okay so this is an instance where
+57:43
+concurrency which is really the thing we worry about gets translated into parallelism
+57:49
+okay and i did want to say one quick thing about simultaneous multi-threading or what's
+57:54
+called hyper threading by intel because they never want to take somebody else's
+58:00
+name for something but we can imagine if we had a lot of transistors on a chip that we could put
+58:06
+them together and allow multiple operations to run simultaneously so think about time goes
+58:13
+down in these figures and each line here represents a cycle and so what you see here
+58:19
+is there are three functional units in the case of the super scalar the ones that are solid yellow are
+58:24
+actually doing something and so we're getting um some parallelism here like for instance this is getting three things
+58:30
+happening at once kind of in the middle where there's three yellows in a row we could get a multi-core
+58:36
+by putting several of these together okay so in fact in this middle thing we now have two multi-cores
+58:43
+that are the same as this one core on the left and then hyper threading
+58:48
+is a little different in that you can have two threads that get interleaved on the same core
+58:53
+and so now rather than these empty spots like these uh gray parts we actually fill in green and
+58:59
+yellow and so we use much closer to 100 of the pipeline okay
+59:04
+that's called multi-threading uh simultaneous multi-threading or hyper threading okay and this thing on the on the right
+59:11
+is a much more efficient use of hardware and a lot of intel processes and amd processors so on have hyper threading
+59:18
+and you get definite speed up because you're using more slots here
+59:24
+okay and this original technique was called simultaneous multi-threading you guys can take a look but in this instance now you'd actually
+59:31
+have multiple threads running simultaneously on the single core okay whereas in the
+59:39
+middle one you could have multiple threads on two cores do gpus have hyper threading so gpus
+59:45
+don't really quite have hyper threading in the way you're thinking gpus are usually designed as a single
+59:52
+a single task takes over the whole gpu okay hyper threading shouldn't affect locking
+59:58
+because if you've got a good good code that's will work under all circumstances
+1:00:05
+of concurrency and parallelism it shouldn't matter now so what happens when the thread blocks on i o
+1:00:12
+okay um hyper threading is parallel because there's two actual threads and they are running simultaneously oops
+1:00:20
+i just lost my place here hold on a sec my bad
+1:00:33
+sorry about that guys hold on a second we put the screen back
+1:00:38
+so now um the question is let's
+1:00:46
+let's uh let's uh move forward i want to try to catch a couple of things before we
+1:00:52
+we want to get into some synchronization here but so what happens if we block an io so here's a different
+1:00:58
+process that's actually copying uh from one file descriptor to another so you open one
+1:01:04
+for reading and the other one for writing we actually showed you that code a couple of lectures ago and so now it executes a read system
+1:01:10
+call what happens well we take uh a system call into the kernel okay um you know that's a read system
+1:01:18
+call and the read operation is initiated and at that point we go in to the kernel we switch to the
+1:01:24
+kernel stack all right and uh we will initiate maybe the device driver on the disk to go off
+1:01:30
+and read and what happens then well we run new thread and switch so notice that uh
+1:01:37
+we can set this up so that little bouncing back and forth between s and t works perfectly well if the
+1:01:43
+thing instead of the executing yield does a read operation okay works perfectly well okay
+1:01:51
+thread communication so waiting for signals or joins or networking over sockets all of that stuff has a similar
+1:01:56
+behavior so that's why this this uh particular paradigm of the two stacks um which you can put
+1:02:04
+on any sort of suspend cue plus you can put it back in the ready queue works very well for scheduling okay
+1:02:11
+but what happens if the thread never does i o so now we want to we want to somehow progress beyond the
+1:02:17
+early days of windows 3 1 and macintosh and so you know the compute pi program could grab all the resources
+1:02:24
+okay and if it never printed the console and ever did i o never ran yield
+1:02:29
+we would crash the system okay and so there's got to be some way to come back
+1:02:34
+and the answer here is external events so the particular one uh there are a couple of them one is
+1:02:41
+interrupts okay signals from hardware software that stop the running code and the timer like an alarm clock that
+1:02:46
+goes off uh every off so often okay both of these are interrupts from the hardware that
+1:02:52
+that caused the user code to enter into the kernel even if it wasn't going to do that
+1:02:58
+okay and if we make sure the external events occur frequently enough then we get fair sharing of the cpu as
+1:03:03
+well so if you take a look here i just wanted to say a little bit about interrupts so
+1:03:09
+a typical cpu has a bunch of devices that are all connected via interrupt lines to an
+1:03:14
+interrupt controller and that interrupt controller uh goes through an interrupt mask which lets us
+1:03:20
+disable interrupts and then that goes through an encoder and tells the cpu to stop what it's
+1:03:25
+doing to handle an interrupt so for instance if something comes off the network
+1:03:31
+that'll generate an interrupt which will interrupt the cpu and the cpu will go off and do network interrupt
+1:03:37
+okay so interrupts are invoked with interrupt lines from devices the controller chooses which interrupt
+1:03:43
+requests to honor okay and the operating system can mask out ones that it's currently dealing
+1:03:48
+with um there's a priority encoder that lets us pick the highest priority ones and uh
+1:03:55
+that whole interrupt core of the operating system we'll get into a little more detail when we get
+1:04:00
+into devices but i'll point out a couple of things so the cpu can disable all uh interrupts typically with a single
+1:04:08
+bit when it's processing one interrupt okay and it can change this interrupt mask to
+1:04:14
+change the uh which devices it's willing to listen to okay and there's also a non-maskable
+1:04:19
+interrupt typically which is something which might get triggered when uh say power was about to go out
+1:04:26
+and there's no way for the cpu to disable that okay that's kind of the oh my gosh hurry up and do something quickly
+1:04:33
+um each cpu has its own interrupt controller that's correct okay and uh
+1:04:41
+the question about what do we do to prevent threads from getting interrupted by uh other cpus is an interesting one
+1:04:49
+we'll get into we'll get into disabling of interrupts in the next uh in the next lecture um
+1:04:56
+the kernel stack is in kernel memory that's correct and uh it's not and when you're at user
+1:05:01
+level you can't access that kernel stack otherwise that would defeat the whole por purpose i'll show you that next time too
+1:05:08
+so an example of a network interrupt we're running some code here you know in assembly whatever the
+1:05:13
+interrupt happens typically the pipeline gets flushed the program counter is saved the interrupts are saved we go into kernel
+1:05:19
+mode which does some manipulations of masks and saves interrupts and so on and will re-enable
+1:05:26
+interrupts we'll talk more about that for all things except what i'm handling typically we go ahead and actually
+1:05:32
+handle the interrupt itself like grabbing the network packet and then we restore and return
+1:05:37
+back from interrupt and at that point we can pick up so this thing on the left that we've flushed we've interrupted and restarted
+1:05:44
+his user code and the interrupt is able to stop the user code long enough to service the request and come back
+1:05:51
+okay and i realize there's a lot of pieces to this we'll talk more about them later
+1:05:56
+but an interrupt is a hardware invoked contact switch so when we had our worry about the fact that uh perhaps user code
+1:06:03
+could hold on to the processor well if we have an interrupt that occurs regularly enough we can switch
+1:06:09
+and we'll do the trick and that trick is uh typical uh pcs have a timer
+1:06:17
+okay many timers in some instances which are sources of interrupts and we just programmed the timer to go
+1:06:23
+off every 100 or 10 10 to 100 milliseconds and that will make sure that we're able to context switch
+1:06:29
+okay and so that instance looks just like this we're busy running code and the interrupt takes us
+1:06:36
+into the kernel all right this is not a yield arc this is not a system call arc
+1:06:41
+what took us into the kernel was the interrupt itself but that interrupt stack can be made to look identical and then we just run new
+1:06:48
+thread and we switch okay all right and um
+1:06:53
+is there protection against a malicious device constantly making interrupts uh depends on the circumstances okay if
+1:07:00
+you have a malicious device that's and it's attached to the hardware then under uh bad circumstances that can
+1:07:06
+be very bad so hopefully that doesn't happen okay so how do we
+1:07:11
+initialize the tcp in stack while we initialize the register fields of the thread control block stack pointer is
+1:07:16
+made to point at the stack all right and uh we
+1:07:23
+set things up with what we'll call a threadroot stub which we don't even have to initialize the stack
+1:07:29
+but we're going to set it up to look like it's been running okay and what we're going to do is we're
+1:07:35
+going to put that on the ready queue so that if we switch to it what it does is it returns
+1:07:42
+from switch by uh loading the return address and a couple of
+1:07:49
+registers and as a result it's going to start executing just like if it had been running for a long time and executed
+1:07:54
+switch so that's this idea this new threadroot stub has been set up as an environment with a
+1:08:01
+new stacks and we've just set up the right registers so that we can fake it out to
+1:08:06
+look exactly like we're running something else that called switch so this has got a state that looks like
+1:08:11
+switch all right and the mo and so what does that setting up new thread do well it
+1:08:17
+sets up the stack pointers it sets up a pointer to some code that needs to run and some function pointers
+1:08:23
+and then we switch to it and it runs okay now this is going to depend heavily
+1:08:29
+on what calling convention we are so i'm showing you something that looks like a mips or a risk five if you've got an x86 you have to do
+1:08:36
+a little bit more with the stack to set it up but the bottom line here is we're setting this up
+1:08:41
+to look like we've switched to it so that if we switch to it it'll just start
+1:08:46
+running okay and what does it look like well the thread root does some housekeeping
+1:08:53
+it switches into user mode and it calls a function pointer okay and if you look here threadroot
+1:09:01
+calls the thread code and it starts growing and all of a sudden we've got a thread that's running and this is exactly the way that
+1:09:06
+s and t were started in that previous slide okay now the question here about what
+1:09:14
+happens if the user thread goes into an infinite loop the answer is well because we have a timer going off what's going to happen
+1:09:20
+is it's going to waste its own cpu time but others will get to run in particular there could be somebody
+1:09:26
+who comes in and kills it off and they have enough cpu to actually run say the shell or whatever
+1:09:32
+okay all right now let's talk now about correctness okay and and
+1:09:39
+hopefully you guys can bear with me a little bit um but now that we've got concurrent threads
+1:09:44
+and we have a beginnings of an inkling about how to make sure they all run all the time and we have an idea that if
+1:09:51
+we were to disable interrupts we might actually prevent things from switching that's going to be very important next lecture
+1:09:56
+we can start talking about how do we make multi-threaded or multiple process code work and the problem is this
+1:10:03
+non-determinism factor schedule can run threads in any order switch at any time
+1:10:09
+and if the threads are independent that's okay but if they're cooperating on shared data we've got a mess
+1:10:14
+and multiple threads inside of a single processes are likely to be collaborating together
+1:10:20
+and then we may have a mess okay and the goal here is how do we correctly design
+1:10:26
+things so they work by design regardless of what the scheduler does to
+1:10:31
+us and i like to think of this like the scheduler is a malicious uh murphy's law device whose sole job
+1:10:39
+is to run your code in the order that exposes the worst concurrent bug
+1:10:45
+and it's going to do it at the worst time okay so that's the murphy's law scheduler all schedulers are murphy's law schedulers
+1:10:52
+and so our only defense is to design our code correctly so that it's not subject to the murphy's
+1:10:59
+law scheduler okay now when a user thread switches
+1:11:05
+there's a question in the chat here it's the kernel stack preserve now the one objection i would have to that question
+1:11:11
+is there isn't one kernel stack i hope you see that there's many kernel stacks one for each thread
+1:11:16
+okay and where they're preserved is they're on cues well empty space they're they're in
+1:11:23
+places that are well associated with the current running thread okay so they're in registers associated with the
+1:11:29
+operating system at that time all right so this is many possible executions of the murphy's law scheduler
+1:11:38
+so here's an example of the bank server which i think i've mentioned before but i want to go into
+1:11:43
+so we have an a we have many atms and a central bank and the question is suppose we want to
+1:11:50
+implement a server process to handle requests for that well we might do something like
+1:11:55
+this where the bank server grabs the next request processes it
+1:12:00
+grabs the next request processes and it does this serially one at a time and what does process request do it
+1:12:06
+figures out what you want to do and if you want to deposit potentially it gets your account information maybe
+1:12:12
+using some disk io it adds to the balance uh let's say if you're depositing and then it stores the
+1:12:18
+result possibly also using disk io and continues okay so more than one request being processed
+1:12:25
+at once would seem like a good idea here but our
+1:12:30
+naive way to do that why would we want to do that well at minimum we'd like to get our disk i o overlapped with computation
+1:12:38
+okay so one option which i'm not going to go into right now because we're a little low on time but we could build an event i'll give
+1:12:44
+you a very brief idea we could build an event-driven version of this where we take that original task and we
+1:12:51
+split it into a lot of pieces that are guaranteed to run to completion without ever stopping
+1:12:56
+so that would be for instance uh the the first piece would be all the way
+1:13:02
+up to getting the account id and starting the disk io and then another piece would be after the disk io is done we would add
+1:13:08
+to the balance and the next thing would be after we've done that we and we start our disk io when that returns that's another piece
+1:13:14
+and so on so you pick these pieces between the disc i os that we know are going to run quickly
+1:13:20
+and you build a dispatch loop like this where the next event which is like the end of
+1:13:25
+a disk i o you figure out which thing you were working on and you do the next thing okay and that quickly ends and you put
+1:13:32
+that back on the event queue and you keep doing this in a loop all right this event driven way of doing
+1:13:37
+things is really crazy unless you've ever done programming for windowing systems and then this will look very familiar to you
+1:13:44
+but i will tell you that while you can program this way it's very hard to get it right like you could forget an i o step
+1:13:51
+like one of these start requests or continue requests might actually uh do an i o and you weren't ready for
+1:13:58
+it which is why we like to have many threads okay so threads can make this easier so
+1:14:05
+let's have one thread for every user in the system doing a request
+1:14:11
+and so what's great about this is we could have many folks all running deposits and so you
+1:14:18
+know their disk ios you know might stall one of those
+1:14:23
+threads but another one would get to run because remember every thread has a kernel half and can be put to sleep so what's
+1:14:29
+great is now we've got parallelism performance okay but
+1:14:35
+this is not good so let's suppose you're depositing ten dollars and your parents are depositing a hundred dollars
+1:14:41
+into your account at the same time okay i don't know how often that happens to you but let's suppose it happens uh
+1:14:47
+frequently and here's you you're thread one and here's your parents thread two
+1:14:52
+and you you load your balance your parents thread gets to run it loads the balance
+1:14:58
+it adds 100 bucks and stores the balance back and then you get to run and you add 10 bucks and you store the
+1:15:04
+balance back and if you look carefully at this what you see is how much did your account go up a
+1:15:10
+hundred and ten dollars ten dollars okay i i can tell you you're not going to be happy about that your
+1:15:16
+parents aren't either uh so we have a problem and this problem
+1:15:21
+starts showing up the moment we have threads working on the same data okay concurrency so this problem is one
+1:15:29
+of the lowest level problems so like if we have thread a and thread b a is throw storing to x
+1:15:35
+and b is throwing to y normally that isn't problem have a problem okay but see this isn't even a
+1:15:42
+i see somebody claiming that might be a robin hood thing the problem is the money just went poof nobody got it so that's just bad
+1:15:48
+okay so this um here is an instance which is a little crazier right where
+1:15:55
+um thread a is operating on some data including y and thread b's operating on y and
+1:16:01
+suddenly we have a race condition and the question might be what are the possible values of x
+1:16:07
+and they could vary quite widely okay um you could have x equal to one you know you could have x equal to three
+1:16:13
+et cetera et cetera okay many options in here depending on how the threads are interleaved
+1:16:19
+so that's not good or what about this thread a stores uh x equal one and b stores x equal two if
+1:16:26
+we assume that loads and stores are atomic then x could be either one or two non-deterministically
+1:16:33
+i suppose if you had some sort of weird serial processor you might even get three out of this where you know a's writing zero zero zero one
+1:16:39
+and b is writing zero zero one zero and they get interleaved and you get three um that's one you don't have to worry
+1:16:45
+about okay but we need atomic operations okay
+1:16:50
+and so they understand a concurrent program you need to know the underlying individual operations and
+1:16:55
+what they are so an atomic operation is an operation that always runs to completion or not at
+1:17:01
+all and it's indivisible can't be stopped in the middle and the state can't be modified by
+1:17:06
+somebody else in the middle and it's a fundamental building block okay if there are no atomic operations there's no way
+1:17:11
+for threads to work together okay so
+1:17:17
+notice that what we really wanted to happen back here in the bank case is we wanted this uh git account add to account store
+1:17:25
+to account we wanted that to be atomic so that it couldn't be interleaved okay and so that's our atomic operation that
+1:17:31
+we really want okay and on most machines memory loads and stores are atomic
+1:17:38
+um the weird example that i gave you they gave three that's not that i have never seen that okay that's an
+1:17:45
+amusing thing to think about okay but um things like double precision
+1:17:50
+loads in stores aren't always atomic okay so if you have a floating point double and you're loading and storing it you
+1:17:56
+could actually get half of the top half of one in the bottom half of another under some circumstances okay so you got
+1:18:04
+to know what your atomic operations are and next time we're going to talk a lot about what the native atomic
+1:18:09
+operations are over and above loads and stores uh which is going to be important because we're also going to show you
+1:18:14
+that load and store atomic operations are not enough okay just not enough but
+1:18:22
+let's hold that discussion off so if you remember what a lock is a lock prevents somebody from doing something so you lock before entering a
+1:18:29
+critical section you unlock uh when you're done and you wait if the thing's already locked uh you
+1:18:36
+wait for it to be unlocked and so the key idea here is that all synchronization
+1:18:42
+in order to make something correct it always involves waiting so rather than running right away you
+1:18:48
+wait so that the atomic sections don't get interleaved okay so waiting
+1:18:53
+is actually a good thing here as long as you don't do it excessively okay and so typically as we mentioned
+1:19:00
+several extras ago locks need to be allocated so it might be something like uh you know structure lock
+1:19:06
+mylock and then you knit it or maybe p thread mutex mylock and you initialize it
+1:19:12
+all the different systems have different ways of initializing the lock and then you typically have a choir
+1:19:17
+which grabs a lock and release and they often take a pointer to the particular lock okay
+1:19:24
+so how do we fix the banking problem well we put locks around our atomic section so we acquire the lock
+1:19:29
+and we release the lock all right so this thing in the middle is what we call a critical section the critical section
+1:19:36
+is the atomic operation that we've chosen that we only want one thread in
+1:19:42
+at a time and the gatekeepers are going to be the acquire and release
+1:19:47
+okay and so here's an example just to show you so if we have a bunch of threads or some
+1:19:52
+animation right thread a b and c they all reach the acquire if we let them into that critical section
+1:19:59
+more than one at a time we get chaos but the lock will actually pick one to let through
+1:20:05
+and so now a gets to run and then when it exits and calls release then the next one gets to run so now b
+1:20:11
+gets to go and then c gets to go etc okay
+1:20:17
+so you in order to make this all work properly in a banking operation we must use the same lock with
+1:20:24
+all the methods withdraw etc that are operating on the same data so
+1:20:29
+part of this is now we have to analyze our problems properly okay so if you remember some definitions
+1:20:36
+synchronization are using atomic operations to give us cooperation between threads so for now loads and stores are the only
+1:20:43
+ones mutual exclusion is this idea of producing or preventing more than one
+1:20:50
+thread from an area we're going to mutually exclude things so that only one thread gets to run and the thing
+1:20:56
+we're excluding from is this critical section and so this at the simplest level this idea of
+1:21:02
+uh figuring out how to fix a synchronization issue is doing an analysis of where do i
+1:21:09
+need my critical sections what's my shared data and where are my locks okay now we're gonna get a lot more sophisticated in a bit
+1:21:15
+okay um but another concurrent programming example might be two threads a and b are competing with each other
+1:21:22
+a gets the run b gets to run okay so um what do we see here well assume that
+1:21:28
+memory loads and stores are atomic but incrementing and decrementing is not so by the way i
+1:21:34
+equal i plus one and i plus plus they're the same as far as it's concur concerned because they compile to the
+1:21:39
+same thing and what happens here who wins
+1:21:44
+well it could be either okay and this is um is it guaranteed that somebody wins
+1:21:50
+well maybe not because they're going to keep overriding each other okay because i is a shared variable and
+1:21:57
+if both threads have their own cpu running at the same speed do we know uh that maybe it goes on
+1:22:05
+forever and nobody finishes because they never managed to get i less than 10 or greater than -1
+1:22:11
+okay so um the inner loop looks like this you know
+1:22:17
+we load we load we add we add we store we store and notice what just happened
+1:22:24
+we overwrote so thread b overwrote the results of thread a and so the hand simulation here is like oh and
+1:22:31
+we're off a gets off to an early start b says ah gotta go fast tries really hard a
+1:22:36
+goes gets ahead and writes a one b gets a then goes and writes a minus one a says what
+1:22:41
+okay this is not and in answer to the question on the chat we're not talking about two processes we're talking about two
+1:22:48
+threads inside the same process okay and so they're actually uh sharing
+1:22:54
+i okay and for the person worrying about coherency and sequential consistency let's uh
+1:22:59
+let's assume we're sequentially consistent and not worry about that question so for now so i uh
+1:23:07
+each thread has its own stack yes but there's a global variable i so this issue we're seeing here is
+1:23:13
+because the global variable i is shared okay
+1:23:18
+now they may not run simultaneously under all circumstances but if there's a if we have multiple cores or we have
+1:23:24
+multi-threading of some sort like simultaneous multi-threading they might run at the same time or the scheduler might
+1:23:31
+switch at exactly the wrong time and so the answer is you got to think about this
+1:23:36
+as if the scheduler is going to pick the worst possible interleaving because it will happen once in a thousand times or once in a
+1:23:44
+million times and it'll happen at three in the morning when an airplane will crash because of
+1:23:50
+the bug right all right the murphy's law of schedulers is the best thing to think about okay so
+1:23:57
+this particular example is the worst example that you can come up with this is an uncontrolled
+1:24:03
+race condition whereas two threads are attempting to access the same data simultaneously with one of them
+1:24:09
+performing a light right okay and here simultaneous is defined even though
+1:24:14
+you know one cpu maybe there's only one cpu we're thinking about this from a concurrency standpoint
+1:24:19
+such that murphy's scheduler could under weird circumstances flop back and forth so does this fix it
+1:24:27
+well we just put locks acquire and release around the i and the i minus i plus 1 and i
+1:24:34
+equals i minus 1. did this fix it okay well
+1:24:40
+it's better because we don't we always atomic atomically increment or
+1:24:46
+decrement it's you know so it's the atomic operations are good and technically
+1:24:52
+there's no race here now because a race is a situation where there's a read where
+1:24:58
+two threads are accessing the same data and one of them is a right okay if you ever have that circumstance
+1:25:03
+you've got a race and that's really bad so this is no longer a race because the acquire
+1:25:09
+and release will actually prevent uh two threads from being in the middle where they're updating i at the same
+1:25:15
+time so that's not a race but it's probably not still it's probably still broken because
+1:25:20
+you've got this uncontrolled incrementing and decrementing going on and it's not likely to be what you
+1:25:26
+wanted okay when might something like this make sense well if you each thread is
+1:25:31
+supposed to get one unique value hold on for me just a sec here we're getting close to being done
+1:25:37
+each thread needs one unique value uh of i then you might do something like
+1:25:43
+this but you're not going to do this while loop where one's going up and one's going down okay and in fact you've already seen
+1:25:49
+this example with a red block tree red black tree excuse me what you might do here is there's a single lock at the
+1:25:54
+root okay and thread a when it doesn't insert what it does is it grabs the
+1:26:01
+the lock of the root it does insert and it releases it b might insert uh by grabbing the lock
+1:26:07
+doing an insert releasing and then doing a get by grabbing the lock inserting and releasing
+1:26:13
+here both threads are modifying and reading the tree but the reason we have locking in here
+1:26:19
+is to make sure the the tree itself is always correct okay so here the locks associated with
+1:26:25
+the root of the tree there's no races at the operational level okay
+1:26:30
+inside the tree so threads are exchanging information through a consistent data structure this is
+1:26:35
+probably okay okay can you make it faster
+1:26:40
+you're going to be tempted when we get you doing on the working on the file system one temptation might be well the problem
+1:26:47
+is when thread a acquires the lock it locks the whole tree and we don't really need to do that
+1:26:53
+there are ways that certain tree operations where you can go down and have a lock per node and
+1:26:59
+deal with locking only subtrees that you're actually going to change but you got to be really careful about that
+1:27:07
+so concurrency is very hard and unfortunately i was hoping to get to to semaphores today but uh even for
+1:27:14
+practicing engineers it's hard okay this analysis of what you need to lock and so on is is
+1:27:20
+something that people don't always get right and i just wanted to give you a couple examples so the
+1:27:26
+therap 25 radiation machine there's a there's a
+1:27:31
+reading that's up on the resources page for us is a great example of what happens when there's a
+1:27:37
+concurrency bug so what happened was this was a radiation machine that could either do
+1:27:45
+electron um could either have electrons or photons of very high uh x-ray-style
+1:27:52
+photons and the way it did that was it either had a target or not if it had a target it would
+1:27:57
+set a bunch of electrons at that target and what would come out as x-rays otherwise it could use the
+1:28:02
+the electrons directly and the problem was there was a bug such
+1:28:08
+that when the operator was typing too fast it actually screwed up the positioning that would pick the target and the dosage and they
+1:28:15
+they fried a bunch of people literally they they died from radiation poisoning it was awful
+1:28:21
+okay um there's a there's a interesting priority inversion that um
+1:28:27
+is up on today's reading as well we'll talk about that when we get into priority inversions
+1:28:32
+there's also a talk about this toyota uncontrolled acceleration problem which was also a synchronization problem okay
+1:28:40
+so what i want you guys to do is take your synchronization very seriously all right now um i think unfortunately
+1:28:48
+i'm not going to be able to get to the uh semaphore discussion today um if you take a look um there's some
+1:28:55
+pretty good slides on on semaphores and maybe i'll see if i can put up a little more
+1:29:03
+audio on that for later but i want to let you guys go today we we really talked about
+1:29:09
+concurrency okay um we we showed how to multiplex cpus by unloading the current thread
+1:29:16
+loading the next thread and uh getting context switching either voluntarily or
+1:29:21
+through interrupts uh we talked about how the thread control block for this plus the stacks give the complete state
+1:29:27
+of the thread and allow you to put it aside when it needs to go to sleep and then we started this discussion
+1:29:32
+about atomic operation synchronization mutual exclusion and critical sections those four things
+1:29:38
+together are part of the discussion and the design that's involved in understanding how to
+1:29:44
+make a correct by design multi-threaded application and we we did
+1:29:49
+some a lot of discussion of locks which is a synchronization mechanism for enforcing mutual exclusion
+1:29:55
+on critical sections i gave you some good examples semaphores are a different type of more powerful
+1:30:02
+than lock synchronization take a look on the slides i know they talked about this in section last week as well so you guys
+1:30:09
+have a great weekend we will see you on monday and um
+1:30:15
+have a good night and the get outside a little bit if you're in the local area here because we can actually breathe for a change that's good all
+1:30:22
+right ciao

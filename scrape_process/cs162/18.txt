@@ -1,0 +1,1692 @@
+0:03
+hey everybody welcome back to uh 162. we are going to continue with our
+0:08
+discussion of i o and uh to that end
+0:14
+one of the things we were talking a lot about was this idea of how a cpu which is of course running the operating
+0:19
+systems and programs talks to a device and we said well uh there are various buses in the system
+0:27
+and we talked particularly about the notion of a device controller and the device controller is a piece of
+0:34
+hardware that connects directly to the device and also interfaces with the various buses
+0:39
+these controllers can be on pci buses pci express buses they can be usb etc
+0:46
+and notice that um in addition to receiving commands over the bus it also
+0:52
+has the ability to basically talk to the cpu and give events through interrupt interrupts and
+0:59
+that's where the interrupt controller connection is and so basically all of
+1:04
+the communication with the device is pretty much between the cpu and the device controller and we um
+1:12
+specifically as we were getting toward the end of the lecture last time we're talking about a couple of different ways the cpu
+1:19
+can communicate with a device and one was via special instructions um those special instructions being things
+1:25
+like nb and outb or in w and out w for byte or word
+1:30
+and those special port io instructions go to a special port
+1:36
+address space which is different from the regular address space and mostly with the intel processors
+1:43
+this is a backward compatibility thing from the original ibm pcs but what i show here as an example are
+1:49
+some ports where port 20 21 22 23 hex
+1:54
+those all represent registers inside the device controller that can control the device
+2:00
+the other thing we talked about was memory mapped io in which certain addresses within the device are
+2:07
+actually mapped into physical address space and as a result by doing reads and writes
+2:14
+the cpu is able to affect changes on the device and this was an example that i gave here
+2:19
+where maybe we're controlling a screen and this would be local physical addresses
+2:24
+uh and those physical addresses like ox8002000
+2:32
+ox8001000 etc represent points at which if the processor were to to write
+2:37
+to those addresses obviously they have to be mapped in a page table and then uh then the rights can go through will
+2:44
+actually cause things to happen okay and uh for instance writing to display memory here
+2:50
+might actually cause dots to appear on the screen or writing to the graphics descriptor queue might allow us to assemble
+2:57
+various items in that descriptor queue that are effectively triangles for
+3:02
+some interesting three-dimensional game or whatever and then if we write to command or uh register we
+3:08
+can say okay render that in three dimensions or maybe we can read from uh ox zero zero
+3:14
+zero seven f zero zero zero to get the status of the device right and because these are in the physical
+3:21
+address space we can protect this with address translation and under most circumstances perhaps you
+3:26
+only give the kernel access to these addresses but you could potentially give it to a process
+3:32
+whose job it was was to control that device just by an address mapping all right um and one of the things we
+3:38
+did talk about a bit last time as i recall was the fact that with modern buses such as pci
+3:44
+and usb and so on there's an automatic negotiation that happens for the actual absolute
+3:51
+values of these addresses just to make sure that the physical addresses of the devices don't overlap all right
+3:58
+are there any questions on that before i move forward so we call that memory mapped io
+4:09
+okay good so um so transferring data to and from
+4:16
+the controller as i mentioned there's a couple we can either use ports or memory mapping but there's another uh
+4:24
+axis that we can consider one is programmed i o and programmed i o is where every byte gets transferred by the processor so the
+4:31
+processor goes in a tight loop and it you know it reads a byte and then reads the next one reads the next one reads the next one
+4:37
+reads them one byte at a time or one word at a time and stores it in memory and as you can imagine that's expensive
+4:43
+because the processor or core is doing that so the pros of this is it's very simple
+4:49
+very easy to program and there are some low bandwidth devices that actually
+4:55
+interact that way we showed you the speaker last time getting uh programming the speaker to get some
+5:01
+interesting tones out of it but if you really want to do a lot of transferring of data the other option is something called
+5:07
+direct memory access which is a situation where you tell the controller go ahead and transfer data to or from
+5:14
+dram and tell me when you're done and then the controller can go ahead and do all of those transfers on its own
+5:21
+so in particular here's an example where the cpu is going to try to do some
+5:27
+i o from one of these disks so the first step the cpu is going to talk to the device
+5:33
+driver in the kernel and say oh transfer this for me into some buffer in memory and what will happen is uh
+5:41
+the device driver will go ahead and program under some circumstances a dma controller and that dma controller will
+5:48
+then reach out to the controllers for the disk and that disk will individually
+5:56
+transfer bytes back to the controller to the dma controller and then the dma controller will write these through to memory and
+6:04
+then when all is said and done the dma controller will finally cause an interrupt of some sort and that that's the point at which the cpu comes over
+6:10
+so you could kind of think of a dma controller as a part of the system that basically acts
+6:18
+like a cpu for the tab for the action of actually transferring data now these dma controllers can either be
+6:25
+a separate item on the bus that acts like a processor and does the transfer or it could actually be integrated and a
+6:31
+lot of controllers have this these days where the dma controller aspect is integrated
+6:36
+for instance in pci and um things that are on the pci bus are able or pci express are actually
+6:42
+able to go ahead and transfer over the bus directly to memory okay
+6:48
+and one other thing i'll point out is of course if you're writing directly to memory it's quite possible that you're going to be writing memory
+6:56
+that is cash in the cpu and so that's an issue where we have to be very careful because we don't want
+7:01
+the cpus version of the cache to get outdated relative to memory
+7:06
+and there are at least two options there i didn't put these on the slide i probably should have one is where the device driver basically
+7:13
+flushes uh the block entirely out of the cache before it does the dma
+7:18
+the second is there is dma hardware in a lot of devices that can simultaneously write to dram
+7:25
+while invalidating the cache and that's another way to make sure this stays coherent
+7:30
+okay questions so direct memory access is an important
+7:36
+way to get really high bandwidth communication between devices and memory and it leaves the processor
+7:43
+out of the picture okay so how do we
+7:50
+find out that we're done or that for instance the device is needs some service of some sort so
+7:56
+you know examples where the operating system needs to know is when the device is completed a dma operation
+8:02
+or if we ask the disk to do a write we need to know when that's done the other is when maybe there was an
+8:09
+error encountered okay um and so the simple thing to do is for the device to actually generate an
+8:15
+interrupt and um we talked about a lot about interrupt controllers kind of in the first several lectures of the class so uh
+8:22
+mostly we were talking about timer interrupts but the device interrupt is similar it goes through the uh interrupt controller
+8:28
+and uh causes a dispatch to an interrupt handler that would handle that particular interrupt
+8:34
+and uh if it's a disk for instance maybe the disk generates an interrupt when it's done transferring and at that point
+8:42
+the operating system wakes up in an interrupt handler and perhaps it
+8:47
+finds a process that's busy waiting for the interrupt to happen or for the device transfer to happen and it wakes
+8:53
+that process up and puts it back on the ready cube so the pros of interrupts are it can handle
+8:58
+really unpred it can handle unpredictable events really well because uh you know you don't have any overhead
+9:06
+until it's time for the interrupt so that's great the downside is that an interrupt of course is a transfer into the kernel
+9:12
+and you have to save you change the stack you have to save a bunch of stuff on the stack
+9:18
+there's a bunch of other overhead there and so interrupts can be rather relatively high overhead and if you have
+9:24
+something that's generating lots of interrupts on a regular basis uh that could be expensive and perhaps an interrupt isn't
+9:30
+the right thing at that point the alternative something called polling and the idea behind polling is
+9:36
+periodically the operating system just looks at a register in the device maybe by using uh i o instructions like
+9:43
+we talked about or by reading from memory mapped i o from some register in the device
+9:49
+controller and uh periodically checks this and when there's a bit set in some register it knows that the
+9:55
+uh transfer is done and it can continue continue so the idea behind interrupts versus
+10:00
+polling these are duals of each other there are different ways of getting information out of a
+10:06
+device you can imagine the downside of polling of course is that if the device isn't ready you've just
+10:12
+wasted time looking at the device and so um so the pros of this is it's
+10:17
+really low overhead because you don't actually have to save and restore a bunch of registers you're just checking a register out on the device the con is
+10:24
+you can waste cycles if a device is infrequently ready
+10:29
+and so actual devices actually combine both polling and interrupts a great example of this is a really high
+10:36
+bandwidth network that let's say a 10 gigabit or 40 gigabit or even 100 gigabit per second
+10:41
+networks these days if you had an interrupt on every packet you'd be in trouble
+10:46
+however as soon as an interrupt occurs you enter the the network uh driver portion and what
+10:53
+it does is it pulls all of the packets out including the one that originally called the
+10:58
+interrupt but all the remaining ones as well so that's a form of polling and then it re-enables interrupts when it's done so it
+11:04
+it uh takes the first interrupt it pulls to pull all the packets out and then it continues
+11:10
+and this is how you can basically allow something as high bandwidth as say 100 gigabit per second network to actually
+11:17
+not overload a processor okay great so now um let's take a look a
+11:24
+little bit more we've seen this picture earlier in the term but if you if you look at the typical
+11:30
+kernel like linux or whatever pintas you'll see that there's the system call interface which is the
+11:36
+uh dividing line between user code above and the kernel below so the kernel is all in blue
+11:42
+and there's a bunch of different uh facilities inside the kernel we talked a lot about process management and memory
+11:48
+management uh in previous parts of the term and we're actually going to be
+11:55
+talking further about file systems that's our next topic starting next week and then we have uh
+12:02
+other devices networking we talked a bit about but we'll we'll also talk more about that in the coming weeks there's a question
+12:08
+here does the device or the os decide whether to do polling or interrupts it turns out that's a good question it turns out that
+12:15
+um the device typically provides both as an option and whether you're polling or interrupts
+12:22
+is really doing interrupts is really a question of whether interrupts are enabled or not and so the operating system can make
+12:27
+that decision they can decide to always disable interrupts and only poll or leave the interrupt enabled until the
+12:34
+first one occurs and of course the first thing that happens on an interrupt is it disables everything and the colonel could choose to keep it
+12:41
+disabled for a while while it's polling et cetera so that's a that's purely the
+12:46
+um act of the os to make a decision about whether to do interrupts or polling
+12:52
+so if you look at this uh picture that we've got here there's kind of the um yes you can selectively disable
+12:58
+interrupts as well that's a good question the uh if you take a look at the interrupt controller there's typically a
+13:04
+mask that lets you decide which interrupts are enabled and which are disabled if you look at this figure you see that
+13:11
+the top half of this figure is got a standard interface which is that open close read write
+13:17
+interface where sort of everything looks like a file in linux but then there's a bunch of interesting
+13:23
+things below the covers and we need to talk more about that as we go on
+13:28
+um and how we that allows us to basically get uh the standardized interface above okay
+13:35
+so um our next topic is going to talk about some i o devices and specifically we're going to talk about ones
+13:41
+that can serve as uh storage devices okay now
+13:48
+if you remember the idea behind a device driver which is going to be something in the lower portion of the kernel here is that the
+13:54
+device driver basically has that device specific code in the kernel that interacts directly with the device
+14:00
+hardware through the device controller which we've talked about now and it supports that standard internal
+14:06
+interface up to uh the higher levels of the kernel and and that's important because it
+14:13
+makes the higher levels of the kernel much simpler and if you remember we had this discussion uh early in the term
+14:20
+the device driver typically divided into a top and a bottom half and the top half is accessed in the call path from system
+14:27
+calls down to uh making a decision about
+14:32
+whether the device itself needs to be acted upon and so the top half
+14:37
+implements things like open close read write the i octal system call
+14:42
+something called strategy which is a a routine that starts communication with
+14:48
+the device itself and um really what what makes it into the top half is
+14:54
+typically a process that's trying to do some sort of i o will work its way into the top half
+14:59
+to do the i o and potentially things get to sleep there if the device has to be invoked the
+15:06
+bottom half runs as an interrupt routine and it gets its interrupts uh from the
+15:11
+device and makes a decision what to do next okay and i showed you this figure this should look familiar now so above
+15:18
+the system call interface which is the user program portion we might make a decision to do a request
+15:23
+how would we do that we might do a read or a write system call okay and that
+15:29
+goes across the boundary and at that point we might say well can we already satisfy the request
+15:34
+so what might be a situation where we could already satisfy the request without ever talking to the device
+15:41
+does anybody have any ideas there
+15:49
+okay cash good so that it's a specific type of cash it's caching
+15:54
+the uh the device contents okay and that's what's called the block cache we haven't actually talked about that one
+16:00
+yet but we'll get to it and so yes now if you remember this interface for reads and writes is a
+16:06
+byte-oriented interface right so you can read five bytes from a file but the blocks as
+16:11
+we're going to talk about in a moment underneath from the say the disk are all four k bytes at a time and so
+16:17
+we need to place to put the blocks that we've only partially read and that'll be the block cache and so it could be that we
+16:24
+can already handle stuff from the cache otherwise we're going to send uh the request to the device driver
+16:30
+and the device driver is going to figure out what needs to be invoked and it's potentially going to put the process to
+16:37
+sleep on a weight cue associated with say the disc and then it's going to invoke the
+16:43
+scheduler to wake up something that's already on the ready queue and of course at that point it will
+16:49
+have something else running while we're doing the i o okay and so that's the top half of the device
+16:54
+driver and it's gonna send uh commands and invoke the strategy routine uh to send stuff to the device hardware
+17:01
+at which point um the hardware is just going to do its thing okay so the controller of a disk drive for instance
+17:08
+will start uh the heads moving and at some point the the operation will complete and uh
+17:14
+it will then uh generate a completion interrupt
+17:20
+the bottom half will receive the interrupt it'll figure out who needed that data and it will wake it
+17:26
+up transfer it into the user's buffers and recomplete and at that point we've gone the full gamut from the
+17:32
+original request to the response okay so hopefully that's familiar to anybody
+17:37
+do we have any questions
+17:48
+okay and by the way that decision between polling versus interrupts can happen partially in this top half of
+17:53
+the device driver so this top half of the device driver could decide to disable interrupts and start
+17:59
+polling the device and asking it for data in which case we wouldn't go to the bottom half we would
+18:05
+be kind of working between the top half and the and the device itself the other thing is when that if the
+18:13
+device is giving an unsolicited interrupt because say it's a network card and there's a network packet coming
+18:18
+in then we would come into the bottom half and at that point there might be a decision made
+18:24
+to um to start polling okay and if you notice in the network
+18:29
+case what's interesting there is you don't have a process that's requested anything instead you have a
+18:34
+an unsolicited packet coming in and so the bottom half of the network device has to do a demultiplexing where
+18:41
+it figures out kind of which socket a packet is headed for okay so that's a topic for
+18:46
+another another lecture
+18:52
+so is the device driver part of the device or the operating system so the device driver is definitely part of the operating system
+18:58
+um devices however have specific requirements and so a device driver
+19:04
+comes with it with a device and but it's uh unique based on the operating system so the
+19:09
+device driver for windows is going to look a little bit different than the one from you know linux or apple ios
+19:17
+and mostly that's because of its interface with the upper levels of the kernel much of the lower level logic is going
+19:22
+to be the same but it's definitely part of the operating system okay and the bottom half is not
+19:29
+the same as the device controller okay so this is all software i'm showing you on this screen so
+19:36
+i know this is a this is a software class but in this instance you need to keep track of the hardware itself is actually the device controller
+19:43
+plus say the disk and the bottom top and bottom half is actually uh the the software in the operating system
+19:50
+that interacts with the hardware all right great
+19:56
+so the goals of the i o subsystem are to provide a uni uniform interfaces
+20:01
+despite wide ranging different devices so as we already talked about the fact that we can f open
+20:07
+slash dev something you guys should all look at slash dev sometimes uh that things that are in the the dev
+20:15
+uh sub directory actually are devices and you can go ahead and do this for
+20:21
+loop reading something directly out of say the keyboard by going to the right slash dev
+20:28
+file and that interface would work the same if you were talking to a keyboard
+20:33
+if you were talking to a network or if you were talking other things and so that's the that's the standardized interface that we're looking for okay
+20:41
+and it's that device driver the fact that the device driver provides standardized interfaces facing up really
+20:47
+allows us to do that and we're going to try to get a flavor for what's involved in actually controlling devices
+20:54
+as we go through but we can only scratch the surface here
+20:59
+so first of all the there are several different types of devices and they're loosely divided up into
+21:06
+three categories here so the first category of block devices like disk drives tape drives dvds
+21:12
+and these are devices which present blocks of data to the uh operating system okay and
+21:19
+that's because the underlying device itself is block based so if you look inside a disk drive what
+21:24
+you'll see is a bunch of platters we'll talk about that in a moment and each platter has a set of sectors which are combined together into blocks
+21:32
+and you can't read a byte off of the disk you have to read a chunk off the disk okay and so that's a block device
+21:40
+and character devices on the other hand are fundamentally bite oriented and so you can get a byte out of a
+21:46
+keyboard or a mouse or serial ports et cetera some of the usb devices and so the block devices yes you've got
+21:52
+open read write seek but when you're fundamentally pulling from the raw device
+21:58
+interfaces you're going to get a whole block at a time character devices uh there are things like get and put
+22:04
+which lets you get single characters okay now raw interfaces are not the ones
+22:09
+we're used to we're really used to for instance on the block devices you're typically going
+22:14
+through a file system the file system goes the the additional mile of making sure that
+22:20
+even though the devices have blocks uh that you could read three bytes from a file
+22:26
+and that's going to be something above the block device interface and in fact if i go back here for a second let's
+22:31
+just do that to my little green figure if you notice on this in file systems we got the block
+22:37
+devices down here the file system which we're going to talk about is one of our next topics
+22:43
+takes these blocks which are scattered all over the disk potentially and reassembles them into what i'll call
+22:50
+bags of bytes that you can then read and write which is what we think of as files and what we think of as living in a
+22:56
+namespace uh for files okay and so that's going to be the file system these other devices
+23:04
+which are fundamentally serial those things have a pretty direct interface up because they're already
+23:10
+byte oriented like the interface that is provided above the system call interface all right
+23:18
+now so the last type is the network device now you might
+23:23
+think that networks ought to be either block or character devices but it turns out they're treated
+23:28
+as a as a separate type of device mostly because of the way they work okay and the way they work is they have
+23:34
+sockets which receive things off of networks and then those sockets uh
+23:40
+there's a like we mentioned earlier there is a unsolicited packets come in and get resorted into sockets and so on and so
+23:47
+those interfaces are a little different from both block and character devices and so these network devices like
+23:54
+ethernet and wireless and bluetooth and you name your favorite communication protocol
+23:59
+basically are considered network devices and they're pretty much interacted with as fifos or pipes or
+24:05
+streams of a bytes okay or if you think of them in terms of
+24:10
+of mailboxes or or packets those packets are not of fixed size
+24:16
+whereas with the block devices those packets are always you know say 4k or something like that okay all right
+24:25
+so how does the user deal with timing uh down uh from the from the kernel excuse
+24:31
+me from above the system call interface well up till now you've pretty much been dealing with the blocking interface
+24:37
+which means that if i go to do a read uh what happens is the read system call waits until the data is back
+24:44
+okay and it basically this process is put to sleep until the data is ready and in the case of a write this doesn't
+24:51
+happen as often but if there's not enough buffer space or whatever uh it'll put the process to sleep until
+24:57
+it can officially do a write okay so that is um
+25:03
+what you're used to the blocking interface and that's what i also talked about when we just talked about that
+25:08
+that diagram with a device driver there are two other options here which are actually available often by calling ioctyls with the with
+25:16
+the right parameters on a file you've already opened so one is a non-blocking interface and that's
+25:22
+the don't wait interface and what happens there is if you do a read or write and you say i
+25:27
+would like five bytes it will look and it'll immediately return regardless
+25:33
+of how many bytes are available and it potentially will give you back zero if there's nothing available or
+25:39
+maybe if you asked for five it might only give you three so this interface is intended to be used
+25:44
+in a polling fashion where what you're gonna do is you're gonna keep asking until you get what you want
+25:50
+but you don't wanna block you wanna be doing something else and then you come back and ask again if you didn't get everything you want so that's the don't
+25:56
+wait interface okay and oftentimes you can turn
+26:01
+a blocking interface into a non-blocking interface with the right eye octal calls okay finally there's the asynchronous
+26:08
+interface which is a little different than non-blocking asynchronous says tell me later and so what you do there is you give it
+26:15
+a buffer and you say i would like 10 bytes and it will return immediately
+26:20
+regardless of whether the data is there but then later via something like a signal it'll say hey your data is ready and at
+26:27
+that point you can look in the buffer so notice how the top two here are very similar to what you're used to
+26:32
+okay the bottom is very different and that you've given it a buffer and then later you go back and look in the buffer
+26:39
+okay so these three things are the interface from the user to the kernel okay the interface between
+26:45
+the kernel and the device is is what's handled in the device driver and that's very very asynchronous
+26:52
+because it's all event driven and um the notion of blocking and non-blocking putting things to sleep
+26:58
+is really a notion of the process level above at the user level all right did that answer that question
+27:07
+so um now uh let's talk about storage devices
+27:14
+because uh they're they're our topic now and we're gonna move into file systems afterwards
+27:19
+um there's there's at least two qual types of storage device that you're gonna run into
+27:24
+on a daily basis magnetic disks and flash memory um if we were 20 years ago i might say
+27:30
+tape okay i have a randomly scattered tape in there to see if anybody would notice
+27:36
+but tapes are much less used than they used to be but the notion of a a magnetic disk is really storage
+27:42
+that very rarely becomes corrupted it's very large capacity it provides block level random access
+27:49
+and i'll tell you about a shingle magnetic recording in a moment that is a little different than that um
+27:54
+the performance is very slow if you try to randomly access it but it's still possible and it's much better performances for
+28:02
+sequential accesses okay um and smrs have very good storage
+28:07
+density yes indeed so flash memory uh is it's slightly different
+28:13
+okay so in flash memory this is uh becoming increasingly high density
+28:19
+excuse me it's still about five times just cost but those they're converging
+28:25
+block level random access is very fast uh good performance for reads a little worse for writes in typical flash
+28:32
+um and uh it's got some weirdnesses that you probably haven't thought about in terms of how to overwrite blocks okay and the
+28:39
+most important thing for me i would say from flash memory standpoint is a wear problem so if you write flash too often
+28:46
+you can actually wear it out right and it'll stop losing bits
+28:52
+okay so let's look at hard disk drives so hard disk drive is kind of fun to open up if you were to
+28:57
+open one up uh you you'll make sure you copy all your data first because you will um not only void your
+29:02
+warranty but you will avoid your data but if you look on the inside there's a set of platters
+29:08
+and a set of heads okay and i show a picture of a rewrite head over here on the far right and those heads are pretty
+29:14
+sophisticated okay and they move as a whole in and out to reach different parts of
+29:21
+the platter and they move together so you'll have a head on each side of the platter and then
+29:27
+a head on each side of every platter and then they move together to get into different tracks which i'll
+29:33
+show you in a moment okay and what's kind of fun is the ibm personal computer way back when had
+29:39
+about a 30 megabyte hard disk for 500 bucks um we'll show you some modern
+29:44
+equivalence uh like an 18 terabyte drive which has a much much more data on it right i always
+29:53
+like to show this because this is fun when i was first starting as a faculty member these were new drives that had just come
+30:00
+out and this is a form factor for flash for cameras
+30:05
+okay it's the larger form factor than you get today but inside of this little chip is
+30:11
+actually a single spinning uh platter with with double-sided heads
+30:17
+and um it actually you could plug this into a camera and the camera wouldn't know the difference between this and a regular flash drive
+30:24
+and it's actually a disk drive and at the time you could get four gigabytes out of this and you won't get anything
+30:29
+close to that out of flash so this was a huge increase in uh density for uh that
+30:36
+form factor um pretty cool now um they stopped being made probably in
+30:42
+2004 or whatever because they maybe six it got to the point where
+30:47
+flash was far more uh dense and so this this kind of lost its uh its market okay
+30:56
+now so what let's look a little bit more about disks okay so a series of platters they're all in a spindle
+31:02
+spindle rotates as a whole and it rotates at a constant speed
+31:07
+except for starting and stopping and the reason for that is there's a lot of
+31:13
+momentum angular momentum in this and so it takes a lot of work to spin it up and spin it
+31:18
+down and so you can't make it faster or slower while you're using it you usually only spin it up and leave it because spinning
+31:25
+up and down takes a lot of energy and then you have the heads and the heads
+31:30
+are at a particular part which is called a track and so if you if you take a full ring uh
+31:36
+which is what happens if you leave the head alone and you spin spin the disc that's the whole thing is called a track all right and
+31:43
+everything underneath um is a cylinder so all of the the whole
+31:49
+rings that are together uh that's called a cylinder any individual surface has a track
+31:54
+and then these little chunks called sectors are the minimum transfer piece for a disk and so these
+32:01
+sectors up until fairly recently were almost all 512 bytes and the operating system would combine a
+32:07
+bunch of them together into something we call a block which would be 4k today a lot of the really high density
+32:14
+discs now have a sector size that's closer to 4k okay
+32:19
+so disc tracks can be a micron wide which is close to the wavelength of
+32:25
+light the resolution of the human eye is 50 microns so you can't even see all the tracks here
+32:30
+um and so you can get 100k or more tracks on a typical disc which is pretty impressive um and uh
+32:38
+typically the tracks are separated by unused guard regions that make sure that while you're writing
+32:45
+one track you're not messing up the data on a an adjacent track right
+32:52
+so the track length interestingly enough varies across well that's just um you know
+32:58
+that's just because we're talking about a circle here right so on the outside the size of a track
+33:04
+is larger than on the inside so hopefully that's uh not too surprising to anybody what is
+33:10
+surprising is the following if we were to use time to define our sectors
+33:18
+so you basically you write for a little while uh and you write your 500 bytes for some
+33:23
+amount of time and that's your sector can anybody tell me about the difference in size of a sector between the inner
+33:28
+tracks and the outer tracks
+33:34
+yeah the outer sectors would be larger and if i have 512 bytes
+33:40
+on an intersector and i look at the outer sector are the bytes or bits let's say
+33:45
+on the outer sectors would they be as close together as they are on the
+33:50
+intersectors okay the answer would be
+33:57
+more space and it's actually not going to be more space between bits but rather the bits are going to be longer
+34:02
+so um that was the way the original discs work but that wastes a lot of density on the outside because what's
+34:08
+defined what defines the amount of storage you can put on a disc is how densely can i put the bits together
+34:14
+in this magnetic media and still get them back when i'm done because obviously we want to have our disks not
+34:20
+be right only right that would be kind of unfortunate and so using modern uh digital signal
+34:26
+processing what happens is we can actually on the outside we write the bits faster than on the inside to
+34:34
+keep the density constant okay and so the density of bits per uh
+34:39
+per square inch is basically the same across the whole disc head across the whole disk surface
+34:45
+and to do that we write faster and therefore there are actually more sectors on the outside than on the inside
+34:51
+and the bit rate is higher on the outside than the inside so if we were really interested in high performing
+34:57
+the highest performing disk drive aspect for a given disk drive we could write on the outside tracks instead of the
+35:03
+inside tracks all right now today the disks are so big you can
+35:10
+put so much on a disk that the time it takes to pull all the data off the disk is so
+35:16
+long that you you can't justify backing data up that way it just takes too long
+35:21
+and so a few years ago companies like google started doing the following they would
+35:27
+keep archival data on part of the disk and uh active data on a different part
+35:32
+and that was just so that they could back up the active data and they wouldn't even use the whole disk for active data
+35:38
+okay and that's just because it takes so long to pull all the data off they're so big now um
+35:44
+an interesting variant i will say is the way i've been describing this is every track is separate so it's a set of
+35:51
+cons concentric rings okay and um single magnetic recording is a little
+35:58
+different and what we do there is we actually write over every track writes over half of the previous track
+36:05
+okay and the reason to do this is a you get the tracks closer together and now you might say but wait a minute
+36:11
+now i'm intermingling the track track n and track n plus one and the reason this can work
+36:18
+is basically because a really good dsp can figure this out okay and figure out what the bits are
+36:24
+however the downside is with whereas with this i can rewrite
+36:29
+individual sectors anything i want i could write a few you know i could rewrite this sector and
+36:34
+then go over and rewrite that sector and rewrite a sector somewhere else and not have to disturb anything else on
+36:39
+the disk with smr i get a lot of density but i have to rewrite whole regions
+36:45
+because i if i want to change anything in say the top track i have to write it and then i have to
+36:50
+write the other tracks okay the larger rectangle at the bottom
+36:57
+here is just you're talking about on uh the conventional right at the top here nicholas
+37:02
+so this is showing you the difference between a regular uh system where our tracks are defined by
+37:09
+these uh gray um things here and whereas uh the the shingle overwrites each other
+37:16
+okay and the overlapping tracks are what we're talking about here are you talking about this very bottom
+37:21
+one very left of the diagram
+37:26
+i'm not sure which one so the the larger right rectangle down at the bottom here
+37:32
+is just showing you what's continuing this is not this is not saying that uh um we don't
+37:37
+overlap this one at some point we have groups of these shingled um rights and there is a bottom one and
+37:43
+then we put a bunch of space and so on because that defines sort of the maximum that we have to rewrite to write
+37:48
+something in the middle okay oh this guy um
+37:55
+this is showing you that when you write you need to have a large rectangle because the the writing head spans a larger
+38:03
+amount of space the read head can look at a very narrow space so that's kind of showing you how much of the disc gets modified if
+38:09
+you look the writer is this wide thing there all right okay the other thing i wanted
+38:15
+to say that's pretty interesting here is these discs are all hymetrically sealed okay which means you can't open
+38:22
+them up and uh part of the reason is that this is spinning very fast and these heads
+38:27
+are actually flying on a um on air just above the
+38:33
+the disc okay so they're they're actually floating a little bit above because of the speed of the disc is
+38:39
+causing uh causing a an effect that kind of like a bernoulli effect almost it lifts the head off just
+38:45
+enough uh so that it's very close so we can get very dense recording
+38:50
+now today uh the bits have gotten so dense and the so that the discs have to be close so close to the heads that they've
+38:57
+and they need to spin them up so fast that they've started actually using helium instead of
+39:03
+just regular air in there so they pump it out and they put in helium and that's basically
+39:09
+what's inside those disk drives now so if you open it up you're going to completely break it okay
+39:14
+so if we look at a disc here now we can define it
+39:20
+by a the cylinders so that's all the tracks up on top of each other and remember the heads are moving as a group
+39:26
+together and then we can talk about the seek time which is the time to move
+39:31
+the head in to the right cylinder um and so suppose we wanted to get some
+39:36
+sector on the top of the top platter what we would top side of the top
+39:41
+platter what we would do is we would first move the head into that track then the rotational latency would be we
+39:47
+would wait for uh the sector i want to rotate underneath the head and then last but not least we would
+39:54
+transfer the bits that are under the head and that would give us our data okay and so if we wanted to sort of
+40:01
+model the time here what we would say is well look we've got a queue we've got the controller and
+40:07
+we've got the disk and so the time to get the request out
+40:12
+would be the time that it sits in the queue and we'll i don't know if we'll get entirely to cues uh today i think we
+40:18
+might but um the time it sits in the queue the time it gets through the controller okay
+40:24
+that's queuing time controller time and then on the disk itself the time to seek the time to rotate and
+40:30
+the time to transfer okay and as you can imagine
+40:36
+the rotational length latency is going to be defined by the probability of where you are on uh you know
+40:44
+on the track when you get there so if i were trying to model rotational latency
+40:50
+in this equation what would i do i mean how would i do that does anybody have any thoughts
+41:08
+yeah very good we would start with uh taking the rotational time which is defined by how fast that's spinning so a
+41:15
+typical time is like 7200 rpm or 3600 rpm we'd use that
+41:20
+and that would let us figure out how long it takes to go all the way around and then on average we'd say it takes half that time and that's the number we
+41:26
+would plug in there to the rotation type good so here's some typical numbers just cc
+41:32
+so space or density so space might be 14 terabytes actually i'll show you an 18 terabyte one in a moment that just came
+41:38
+out uh literally this month this old one from a couple years ago had
+41:45
+eight platters in a three and a half inch form factor which is pretty crazy the density which
+41:51
+is the number of bits in a square inch is one more than one terabit per square
+41:56
+inch which is just nuts and that's with helium filled disks
+42:01
+and a uh vertical uh recording domains where the the actual bits
+42:08
+themselves kind of go into the platter rather than uh sideways the average seek time is
+42:13
+somewhere from about four to six milliseconds so if you look here that's how long it takes on average to move the head around
+42:18
+to get it to where you want okay um the average rotational latency so
+42:24
+most desktop drives are in the 3600 to 7200 rpm the faster you go the more energy you
+42:30
+use and that's one of the reasons that helium is used because it provides less
+42:35
+resistance and so you can go faster with less power server disks typically
+42:41
+get up to 15 000 rpm so you can imagine that the server discs are using a lot of energy
+42:47
+but are faster okay and uh in the
+42:52
+you know 3600 is about 16 millisecond rotation time okay
+42:57
+um controller time depends on the controller hardware um the transfer time can be somewhere between 50 and 250 megabytes per second
+43:05
+to transfer um data off the disk okay and the transfer size at minimums a
+43:11
+sector which is 512 to 1 kilobytes but usually the dis
+43:17
+the operating system pulls many uh together and so it will never transfer less than say four kilobytes in a row
+43:24
+at a time okay all right um the diameters range from an inch to
+43:30
+five and a quarter inches but really the three and a half and two and a half inch form factors are pretty uh pretty common these days
+43:38
+okay and the cost used to drop by a factor of two every uh one and a half years it's slowing down a
+43:43
+little bit all right now here's some performance
+43:48
+so let's uh we have to ignore queuing time because that's going to take a whole discussion and controller time is easy to imagine
+43:54
+but let's see if we can figure something out here suppose the average seek time is 5 milliseconds if we have a 7 200 rpm disk so the time
+44:02
+to rotation is 60 000 milliseconds per minute
+44:07
+okay over 7 200 revolutions per minute gives us about eight milliseconds to go
+44:13
+all the way around okay and notice how i've got my units set up this is something you should
+44:19
+remember from high school chemistry so i have milliseconds per minute and revolutions per minute the minutes are
+44:25
+going to cancel and i end up with milliseconds per revolution all right um if a transfer rate is 50 megabytes
+44:32
+and the block size is 4 kilobytes then i can put all this together and i can find out that it's about 0.082
+44:38
+milliseconds to get a sector out okay all right
+44:44
+now to read blocks from a random place on the disk notice how um this is going to be uh
+44:52
+seek time uh rotational delay and transfer time and if i put those all
+44:57
+together that seek time of five milliseconds is is expensive and so we're going to end up with about nine milliseconds and so
+45:04
+notice the transfer time actually is hardly even in the picture here the seek time and the rotational delay
+45:10
+which is half of eight milliseconds notice is the thing that's really costing us here and if we uh randomly go
+45:16
+on disk we can get about 451 kilobytes per second out of that on the other hand if we read from a
+45:23
+random place in the same cylinder notice that we don't have to seek because we're in the same cylinder we
+45:29
+get the rotational delay four milliseconds transfer time 0.08 milliseconds now
+45:34
+we're up to about a megabyte per second notice the difference we almost doubled
+45:40
+our uh bandwidth coming off the disk just by getting it from the same cylinder so you
+45:46
+can see it's extremely important to avoid seat type and as i mentioned earlier seek times
+45:51
+can be up um in eight millisecond range as well reading the next block
+45:56
+on the same track which is basically no receipt time no rotational delay we can
+46:02
+get that 50 megabytes per second back so notice that this is going to tell us something if we build a file system out
+46:08
+of disks it's going to be extremely important to do as much sequential reading as we
+46:13
+possibly can and then if we can't do that staying on the same track and then if worse comes to worse
+46:19
+seeking and so we're going to want to build our file systems to really do a good job of keeping locality on the disk
+46:26
+otherwise our performance is going to go way down and when we start getting into file systems you're going to see why that's
+46:31
+important okay now i just said that so lots of intelligence
+46:38
+in the controller so sectors have all sorts of sophisticated error corrections so there's far more
+46:43
+bits on the sector itself including an error correction code than um than you actually are writing on
+46:50
+the disk and they help to to find the bits when they get errors in them we can do something called sector
+46:56
+sparing which is uh take bad sectors and transparently use something somewhere
+47:01
+else on the disk without telling you okay we can do slip sparring which is uh remapping a whole bunch of
+47:07
+sectors to a completely different track if there's a problem we can skew our tracks so that the
+47:13
+sector number is offset from one track to another all of this stuff is done by the controller so although we're going to
+47:19
+talk about ways of building file systems to optimize for the physical location
+47:25
+of the heads on the disk there is a lot of intelligence already in a modern controller that's going to be competing
+47:30
+with you and so that's something we're going to talk about when we get to that point okay
+47:37
+now hard drive prices over time have done really well um up until about
+47:43
+the 2012s or so and then it starts started um flattening out a little bit and part of
+47:50
+this was that they were getting to be so large that um that there was a much smaller
+47:56
+market for those really huge discs another problem that was really rearing its head throughout the
+48:01
+early 2000s was uh that the bits were getting so close together that um
+48:08
+the uh just the random energetics of heat uh would scramble your bits and you
+48:16
+would lose them if you tried to make the bits any smaller one of the things that made a really big really big
+48:22
+advance on that was vertically recording the domains it really helped a lot to make things more dense
+48:30
+now i want to show you a current hard disk drive if you wanted to know what the state of the art is so the seagate for instance an exos x-18
+48:37
+this is a couldn't be a server drive but it's a three and a half inch platter
+48:43
+and 18 terabytes it's got nine platters and 18 heads it's helium filled to
+48:48
+reduce friction it's got a four millisecond average seek time uh the
+48:54
+the sector itself is four kilobytes um it's 7 200 rpms it's got very fast um
+49:02
+interfaces so for instance if you get the sas interface you can get dual 12 gigabit per second
+49:08
+off of it um and you can sustain 270 megabytes per second coming off the disk
+49:14
+okay so um the other thing is there's actually dram cache on the disk itself to help
+49:20
+make things faster 256 megabytes so if in case you were under the
+49:25
+impression somehow that um a disc was just a simple thing with a bunch of platters and a
+49:30
+head on it in fact it's much more than that these controllers are extremely sophisticated there are many miniature os's in
+49:37
+themselves and there's even caching on on the controller
+49:42
+and notice that the price for this guy i just looked it up on amazon 562 bucks that's about 0.03 uh dollars or three
+49:49
+cents a gigabyte if you look at the original ibm personal computer it was a 30 megabyte
+49:56
+hard disk um the seek time was 30 to 40 milliseconds notice that's a
+50:01
+factor of 10 difference um you could get maybe 0.7 or 1 megabyte per second off of that so compare that
+50:08
+with 270 and then the price was 500 so it wasn't all that different but because it was so
+50:14
+small we were talking telling about uh 17 000 per gigabyte so that was a
+50:20
+a lot more uh cost per per byte so you guys have it easy these
+50:26
+days now uh let's talk about a different type
+50:31
+of disk so are there any other questions about spinning storage
+50:43
+this would be a good time to ask if there was something you were wondering about what's the cash for well the cash among
+50:49
+other things helps make the access to the disk a lot faster so remember when i said
+50:56
+that uh if you were to randomly read it's really slow so what happens typically is these
+51:02
+caches are actually used for what are called track buffers and so when you go to do a read it actually reads the whole track
+51:08
+into the cache and then when you go and read random parts off the tr the track you get much faster access so
+51:15
+this is different the question is is this the same as a hybrid disk and the answer is no a typical hybrid disk actually has flash
+51:22
+memory on here as well and the good thing about the flash memory is it means that writes are really fast and don't have to be
+51:27
+committed to the spinning storage immediately so you get much faster access out of it
+51:34
+all right good now solid state disks uh have been around
+51:40
+for forever so in 1995 they started coming out as a way of
+51:45
+replacing basically rotating media with non-volatile memory originally that was
+51:51
+dram okay and it was dram with a battery so if you look on a card like this there's
+51:56
+there was typically a battery back there that basically kept the drams contents when nothing was
+52:02
+uh on okay but around 2009 we started getting nand flash memory
+52:10
+which had a couple of levels to it and started making the the uh the flash dense enough to be
+52:16
+interesting as a storage media in and of itself and the idea behind nan behind flash in
+52:22
+general is that trapped electrons distinguish between one and zero and so when you program flash you're
+52:28
+actually trapping some electrons if you want a one or not trapping them if you want a zero
+52:34
+and that's how you distinguish okay and what that really tells you hopefully is that before you can write you
+52:41
+actually have to erase everything which is get rid of all the electrons and then you selectively write them and we'll say more about that
+52:46
+in a moment the positive thing about this is there are no moving parts so the failure modes are
+52:55
+at least in theory a lot better than a system with motors that are running it
+53:02
+turned out originally the flash disks in say i'm going to say
+53:08
+not originally but let's say in the 2000 maybe 12 time frame where people were
+53:13
+really starting to put them on laptops and so on because they were such low power and they in theory were more reliable
+53:20
+it actually turned out that there were some companies that had some weird failure modes that would just all of a sudden take a
+53:25
+um i'm going to say a you know a 100 gigabyte flash disk would suddenly
+53:32
+look like it was only eight kilobytes and all your data be gone that happened to me on one of my laptops where i was an
+53:38
+early adopter on flash memory fortunately the ssds are much better now
+53:43
+okay rapid advances in capacity and cost ever since
+53:49
+the downside of ssds they're good on power they're a little slower to write than read but they also wear out so the more
+53:55
+you write them the more you lose your data okay and so that's a that's a slight downside to
+54:01
+ssds now let me just show you a little bit about how this works so typically you have a
+54:08
+host which is the cpu talking over a over a data bus like sata and you have
+54:15
+some uh on the controller you actually uh you have in the controller you have a buffer
+54:22
+manager which makes it look like a disk drive so that the host can ignore that it's something separate if
+54:28
+it wants to and then you have the flash memory controller also on that that controls all the flash
+54:33
+and what the flash memory controller does is it reads or writes four kilobyte pages maybe say 25 microseconds or so and
+54:41
+what's interesting about that is that means that even though in principle you got all the bits are stored individually you still have
+54:47
+four kilobyte pages that are coming off so it looks a lot like a disc from that standpoint except we
+54:53
+don't ever have any seek or rotational latency because we're we're not moving ahead in and we're not having to wait for things to spin
+55:00
+okay so you can imagine that random access is much faster here in general okay and our model
+55:07
+for latency here is cueing time plus controller time plus transfer time um and this has the highest bandwidth
+55:14
+regardless of whether you're sequential or random so that actually has some impact on how you build a file system
+55:20
+because you don't have to do that optimization for locality you did otherwise and i'm going to make sure to have a
+55:26
+couple of slides that i'll put in when we talk about file systems about how this changes file systems because there are
+55:32
+some new ones that are related to this all right now uh writing is a very
+55:39
+complex operation okay because in order to write first of all we have to have empty pages
+55:46
+okay because we can't write uh over something that's already been written because the only thing we can do is add
+55:52
+electrons so the right the erasing process is high energy uh removal of the electrons and then you
+55:58
+can add the extra ones to do the rights and furthermore you can only erase in
+56:03
+big chunks okay so the big blocks that you erase might be for instance a 256 kilobyte
+56:10
+block and then you can write in four kilobyte pages okay and so you can imagine that one
+56:18
+tricky part about a file system for this is we need to make sure we have enough erased blocks that when we're ready to
+56:25
+to write some new blocks we can find enough pages to to deal with it and then we have to make
+56:32
+sure that when we're done with all of the pages in a block or we have to track enough to
+56:37
+know when we're done then we can go ahead and do the erasing so that they're ready for the next time we need them so the free list management on um
+56:45
+the ssd can get tricky okay because it's not just blocks it's also there's not just pages
+56:51
+it's also blocks okay the other thing is that the rule of thumb on
+56:56
+flash is that uh erasure is about 10 times uh the speed of rights and rights are
+57:02
+about excuse me erasure is about 10 times as slow as writes and writes are about 10 times as slow as
+57:08
+reads so it's really slow to write it's fast to read and so this actually
+57:13
+has that variation where rights uh are slower races are
+57:18
+a lot slower and so you have to be keep that in mind if you can
+57:24
+to try to avoid writing until you really need to the other thing is rights take power
+57:29
+okay and so the more you write flash you're using a lot more energy than reading okay so rights do not include erasure no
+57:36
+all right so you have to do erasure separately now um so the architecture ssds give you
+57:44
+the same interface as hard disk drives uh to the operating system so you're reading and writing chunks of four
+57:50
+kilobytes oh by the way some of that erasure interface is hidden in the controller and so the reading and
+57:58
+writing just to some extent the os can ignore
+58:05
+this distinction but if an os really wants to do the right thing it wants to know about this
+58:10
+uh this distinction okay but the part of the the ssd controller helps helps you a
+58:16
+little bit with this so you can only overwrite data 256 kilobytes at a time
+58:22
+you can never overwrite a page that you've written before it's got to be erased first um so you might ask well why not just
+58:28
+have 256k blocks and uh just erase everything at a time
+58:34
+and then rewrite the whole block and the answer is that erasure is very slow and if you're not modifying bits
+58:40
+you absolutely do not want to write them because you're going to wear it out okay and so really this distinction
+58:46
+between the size of the eraser and the size of the read and write is something that you want to keep in mind
+58:52
+when you're dealing with this okay now
+58:57
+there's a couple of things that ssds provide for you so one of the things is on the
+59:03
+flash controller there's actually a layer of indirection it's kind of very analogous to what we just came
+59:09
+through with virtual memory so there's something like a page table that maps the operating system's view of block
+59:16
+numbers to the underlying ssds view of which
+59:21
+flash blocks are being used okay and so that layer of indirection
+59:27
+is there and helps hide the weirdness of the flash from the operating system
+59:33
+okay the other thing is it gives you the ability to do copy on write under the covers so really when you go
+59:39
+to write a page what happens is the os you actually end up writing a different
+59:47
+page and then you remap it and so that the old data is now basically garbage collected and the new
+59:53
+data is mapped into the same block as before and so this flash translation layer helps hide the
+1:00:00
+underlying properties of the flash all right so
+1:00:06
+uh flash translation layer i guess i already said this no need to erase and rewrite the entire 256k block
+1:00:11
+there's a lot of that's handling this okay and uh yes as as uh said on the chat here everything
+1:00:17
+in in cs is a layer of indirection um what do you do with the old versions
+1:00:22
+of the pages they get garbage collected in the background um in old blocks that have
+1:00:28
+uh no active pages in them get erased and put on free lists and so on okay now i wanted to show you some
+1:00:36
+quote-unquote current ssds so here is uh the seagate exos ssd
+1:00:43
+this is from a couple of years ago but um they haven't actually updated this family uh right now but this is 15 terabytes
+1:00:50
+um it also has the dual 12 gigabyte interface like that exos drive i showed you earlier
+1:00:56
+notice that the sequential reads and writes are up in the much faster okay writes are fast because
+1:01:01
+they're basically going to blocks that are already free but notice this is like 860 megabytes
+1:01:08
+per second as opposed to 270 so this is like a factor of three faster um and uh amazon's price for this
+1:01:16
+particular disk is 54.95 which gives us about .36 gigabytes or dollars per gigabyte as opposed to
+1:01:22
+three cents per gigabyte um like we said earlier so 36 versus three
+1:01:28
+this is my favorite uh hard to believe drive so here is a disk drive and i say
+1:01:34
+that in quotes that's the same form factor as all the other ones you're used to but it's 100 terabytes
+1:01:40
+okay that's a hundred terabytes and it can do 500 megabytes per second
+1:01:47
+and it's about 40 000 which is about 4.4 gigabytes per second so about
+1:01:52
+excuse me 0.4 dollars per gigabyte or 40 cents per gigabyte okay and what's
+1:02:00
+really interesting about this is despite the fact that these guys wear out if you write them
+1:02:05
+too much this company actually guarantees that you can have an unlimited number of
+1:02:11
+rights to this drive for five years can anybody guess why even though flash wears out
+1:02:18
+that they could tell you you can have unlimited rights for five years why would they even give that as a
+1:02:24
+warranty if flash wears out
+1:02:36
+yeah so the problem here is to fill out to fill up this drive uh is going to
+1:02:43
+take way too long to do and so basically uh you could be writing at maximum speed for five years and you
+1:02:50
+wouldn't overwrite things enough to wear them out okay and so they're they're comfortable saying you can write as al all you want
+1:02:57
+for five years and you'd be fine all right and uh notice part of that is the flash translation layer
+1:03:04
+every time you write the same block and i say that in quotes you're really writing different blocks and so it's doing what's called where leveling
+1:03:10
+where it's making sure that as you overwrite things it's making sure that every one of those pages on
+1:03:16
+in all of those hundred terabytes are all used equally uh well and so if you were to try to write uh at your absolute maximum rate
+1:03:24
+for five years you'd never get anywhere close to wearing any of the bits out and so they can actually make that guarantee but um
+1:03:31
+anyway that's my uh my favorite ridiculously large drive
+1:03:36
+okay so um let's see so basically hard disk uh cost and
+1:03:44
+uh and uh ssd costs hard disk ssds have been basically going
+1:03:49
+toward um merging for a long time and they're pretty much they're pretty close these
+1:03:54
+days here i'm not going to go through that any much much more i wanted to tell you this which is kind of fun
+1:04:00
+so uh if you're aware of the kindle so i'm sure all of you have seen them
+1:04:05
+before they're a really cool reading device i love them myself the thing that's cool about them
+1:04:10
+versus pretty much any other lcd device is that you can read them in full sunlight and so if you're
+1:04:15
+a fan of books you get yourself a real kindle you can kick your feet up in the sun and just read
+1:04:21
+and there's an amusing calculation you might ask which is suppose that i take an empty kindle right after
+1:04:27
+i bought it from amazon and i fill it with books is it heavier okay so that seems like a
+1:04:34
+ridiculous question but let's answer that and the answer is actually yes but not much
+1:04:40
+okay and so let's go through this so flash as i mentioned works by trapping electrons
+1:04:45
+so the erase state is actually lower energy than when you write a one on there where you put some electrons in
+1:04:52
+there and trap them so you got higher energy for one of the bits okay it doesn't
+1:04:58
+really matter whether those are ones or zeros and assuming for instance the original kindles came out with four gigabytes of
+1:05:04
+flash um if you imagine that a full kindle half of the bits are uh ones and half are zeros then half of
+1:05:10
+them are of high energy state and you can compute for a typical flask transistor what the high energy state is
+1:05:17
+it's about 10 to the minus 15 joules so a full king kindle is about uh one at
+1:05:24
+a gram heavier than an empty one and you're you can use actually uh e equals m c squared here
+1:05:29
+uh with the energy to come up with how much uh weight it is so it's actually heavier except except
+1:05:35
+that of course 10 to the minus 18 grams or an atogram is um unmeasurable because the the best
+1:05:42
+measure best scales out there can't measure something finer than 10 to the minus 9 grams so uh the other
+1:05:49
+thing is there's a whole bunch of other caveats so you have to take the kindle set it to a constant temperature
+1:05:56
+uh fill it with books uh cool it back to that temperature
+1:06:02
+recharge it and then there'll be a 10 to the minus 18 gram so this weight diff difference ends up
+1:06:08
+being overwhelmed by battery discharge and all that sort of stuff but it's amusing nonetheless and my sources by the way
+1:06:14
+are this guy john kubatowicz there was a new york times uh column in 2011 which was pretty funny
+1:06:21
+so the new york times called me up and said we have this question from a somebody reading our column and they'd
+1:06:27
+like to know if kindles are heavier when you put books in and so i wrote about why this was all right
+1:06:34
+so you can this is a great party thing right so one of the things i love to do in 162 is i like to help you
+1:06:40
+all out with parties now of course unfortunately our parties are all virtual these days or they should be
+1:06:46
+but um you know you can imagine that you're you're on your zoom with with the other 50 people in your party
+1:06:52
+and all of the parties have too much milk yes that's true and uh and then you can
+1:06:58
+say did you realize that when you fill a kindle with books it's heavier all right and you'll be you'll be the
+1:07:04
+most popular person at your at that party okay
+1:07:10
+so what about ssds to summarize so the pros versus hard disk drives so they're low latency high throughput
+1:07:16
+um we can completely eliminate the seek and rotational delay there's no moving parts so they're much
+1:07:23
+very lightweight the power is low they're silent it turns out they're extremely shocked
+1:07:28
+uh insensitive so you can drop things without jarring the bits um by the way you can't quote me on
+1:07:36
+uh dropping a laptop and being okay i'm just talking about the ssd you can read them at memory speeds
+1:07:42
+essentially although the writes are are a little slower the cons are that the storage is small
+1:07:48
+relative to disks but as you can see ssds if you're willing to pay exorbitant amounts of
+1:07:54
+money you can get um very big discs okay so in fact that small storage thing isn't
+1:08:00
+really true anymore um and the hybrid alternative that was asked about earlier is to combine small ssd with a
+1:08:07
+large hard disk okay and that really what that does
+1:08:13
+is it gives you the ability to do really fast writes to the disk without having to seek and really fast reads it serves as a
+1:08:20
+cache okay and so some of the other cons though is there's an asymmetric block write
+1:08:25
+performance so you have to uh read page erase write page
+1:08:30
+to really change any data on on a disk or on a block and the the drive lifetimes a
+1:08:37
+little bit limited so you're limited to about 10 000 writes per page for modern nands and so the average fail
+1:08:44
+rate is about six years life expectancy maybe nine to 11 years
+1:08:50
+but if you write a lot and you don't have an extremely huge drive like the one i showed you earlier
+1:08:55
+there really is a danger of losing some bits okay
+1:09:02
+things are changing pretty rapidly though now one thing i did want to show you is another option which is kind of
+1:09:07
+fun which is nanotube memory so this is uh something so nanotubes unfortunately perhaps my uh
+1:09:16
+my camera image is covering this up but nanotubes are made out of carbon molecules and they're they're uh tubes of carbon
+1:09:23
+okay and you can put a bunch of them in a pattern pattern and you can actually
+1:09:30
+arrange so that they're either randomly uh together or they have
+1:09:35
+uh they're attracted one way or another and so you can actually have two different uh resistances
+1:09:42
+that you can detect and that gives you ones and zeros and there's a way to uh clear by erasing which basically means put it
+1:09:48
+back into the uh you know one of the states and the interesting thing about this is this
+1:09:53
+doesn't wear out okay because you're just moving the nanotubes around and so um it doesn't wear out like flash it's
+1:10:01
+uh persistent so you don't have to worry about losing the contents and it's as small as dram cells
+1:10:08
+okay and so there's for instance a company called nantero which uh has been very close and been
+1:10:14
+working with dram manufacturers to produce um these
+1:10:20
+cells and this could potentially replace dram because it's as fast and dense as dram holds its contents and uh doesn't have a
+1:10:27
+wear out problem so that's pretty exciting possibility to come up soon i think this is going to
+1:10:33
+fundamentally change the way people think about memory once this becomes mass-produced
+1:10:39
+and they had already figured out how to pretty well produce these and they were working with several uh dram manufacturers a couple
+1:10:46
+of years ago so of course who knows exactly what's happening uh because of the pandemic has sort of
+1:10:52
+screwed everybody up but this will be fun all right
+1:10:57
+so let's shift well unless anybody had any questions on
+1:11:03
+devices i want to shift gears to some performance to talk about that are there
+1:11:08
+any other questions about devices
+1:11:16
+so this uh uh nanotube memory is actually uh three-dimensional
+1:11:22
+patterning as well as possible so this will be really dense okay so the difference between pcie and
+1:11:29
+sata3 is those are two different buses uh pcie uh is used for uh is a pretty common
+1:11:37
+interface to plug cards and stuff in whereas sata 3 is something that was set up to
+1:11:42
+um specifically for disk drives and so they're for slightly different uses dna storage has been
+1:11:49
+interesting for a long time but i haven't yet seen a good uh proposal for how to make it as dense as
+1:11:56
+regular dram yet but of course we all know that dna is very uh
+1:12:01
+dense but that would be fun at some point do any of these use less uh heavy rare
+1:12:08
+toxic metals that's a really interesting question um i'm not sure the answer to that the nice
+1:12:15
+thing about nantero's nanotubes is the biggest thing here is carbon which it'd be great to extract that from the
+1:12:22
+atmosphere and use it but in terms of things like cobalt and some of these other things
+1:12:28
+unfortunately patterning of chips is is not necessarily as environmentally friendly as one might like but
+1:12:34
+i don't have any reason to suspect that this nanotube is is worse than other ones and it might actually be better so that's a good
+1:12:40
+question though so let's talk about performance for a
+1:12:46
+moment so when we're talking about these discs or we're talking about schedulers or whatever there are several
+1:12:52
+things we might talk about and i thought i would just put these on the table for a moment so for instance latency
+1:12:57
+time to complete a task it's often measured in units of time seconds milliseconds microseconds maybe
+1:13:03
+hours maybe years right response time is kind of the time to
+1:13:10
+initiate an operation and get the response back so latency is time whereas response time
+1:13:16
+often is a round trip right it's from the time there was the quest went out to come back
+1:13:21
+okay and sometimes the ability to issue uh the uh the next response
+1:13:28
+or the next request might depend on when you got the response because not all systems can handle pipelining of
+1:13:34
+requests okay a different thing is throughput okay so
+1:13:39
+throughput or bandwidth is typically the rate at which we can send tasks or bytes those are two
+1:13:46
+possibilities uh into something okay and it's often measured in units of things per unit
+1:13:53
+time so like operations per second or giga giga
+1:13:59
+operations per second or bytes per second megabytes per second so often in
+1:14:04
+networking you might see megabytes per second right make it bits per second um and then another thing which
+1:14:10
+uh ties into all of these is the startup or overhead which is often the time to initiate an
+1:14:16
+operation now overhead fits into latency of course but if you can pipeline and send several
+1:14:22
+things at once sometimes you can only pay the overhead at the first one and then the rest of them are run at
+1:14:28
+full rate now most i o operations are roughly linear
+1:14:34
+um where if you have b bytes the latency is the overhead plus b divided by
+1:14:40
+transfer capacity and so that overhead actually directly impacts your latency and i'll show you
+1:14:46
+that in a moment when somebody talks about performance the first question you ought to ask is
+1:14:52
+uh what am i measuring you know and is it relative to something so for
+1:14:58
+instance performance might be operation time it might be rate it might
+1:15:03
+be any number of things so you could talk about uh low latency is a high performing thing or you could talk about high
+1:15:09
+throughput being a high performing thing okay um let's say you're talking about what
+1:15:16
+this is this is globe glops i think that's just a typo sorry about that so for instance in a
+1:15:25
+network suppose we have a one gigabit per second link everybody's got those you probably got them on your laptops
+1:15:32
+the bandwidth might be 125 megabytes per second right
+1:15:38
+so this is gigabits per second per link megabytes per second okay that's just dividing one gigabyte
+1:15:44
+gigabit by eight all right suppose the startup cost is a millisecond we could take a look at
+1:15:50
+a graph like this so notice this is a double headed graph it's got packet size on the bottom it's
+1:15:56
+got latency in blue on the left and bandwidth in red on the right and if you notice
+1:16:02
+the latency because this is linear the latency is really uh the startup cost plus
+1:16:09
+the size of my packet b over the bandwidth so here's my size of my packet
+1:16:14
+what i showed you there for latency is a nice linear graph and notice that at the zero inter intercept uh there's a minimum of
+1:16:22
+a a thousand microseconds or a millisecond because that's my overhead and so if i were to look at the
+1:16:28
+bandwidth of this the effective bandwidth yeah this thing is a gigabit per second or 125 megabytes
+1:16:34
+per second but if i were to look at the effective bandwidth taking overhead into account i get this this red curve all right and i just take
+1:16:42
+the packet size divided by the latency okay to send that packet and that gives
+1:16:48
+me effectively bytes or bits per per second or whatever i'm measuring
+1:16:54
+and it has this shape to it okay and this shape um starts out
+1:17:02
+low right because my bandwidth starts out at zero for small packets and that's because the overhead's so high
+1:17:08
+once i make the packet big enough then my bandwidth starts getting higher and in fact at some point it levels out
+1:17:14
+because no matter how big my packet is i can't go faster than uh the the raw
+1:17:19
+125 megabytes per second okay and so one place that can be interesting
+1:17:24
+here is what's called the half power bandwidth which is the point at which my effective
+1:17:29
+bandwidth is equal to half of my total bandwidth all right and that's uh for instance here if my packet is 125 kilobytes
+1:17:38
+then my effective bandwidth is at half of my full bandwidth okay um so
+1:17:46
+just because you have a gigabyte excuse me gigabit per second length doesn't mean you get a gigabit per second in
+1:17:52
+fact you often don't unless you have really big packets uh what's also interesting here is if
+1:17:57
+our startup cost is 10 milliseconds notice how i had the overhead of one millisecond here if i change it to something more like a
+1:18:03
+disk say 10 milliseconds and i do the same computation what you find here is that the half power point
+1:18:10
+is not until 1.25 gigabytes in size so i have to have really really really
+1:18:16
+large packets before i come anywhere close to getting half of my native bandwidth
+1:18:22
+so um that's a problem okay um oh yeah sorry this is 1.2 megabytes
+1:18:30
+my apologies i added three extra zeros in my brain there
+1:18:35
+okay so overhead really matters and see this huge this huge
+1:18:40
+zero packet size latency gets into play and so when we want to do a good job of optimizing things when we start building
+1:18:47
+file systems and networks and stuff on top of devices we're going to have to be very sensitive to the overhead so what
+1:18:54
+determines the peak bandwidth for io so that was for instance at you know one gigabit per second well
+1:19:00
+it's uh the hardware and so you can look at a bunch of buses we've talked about things like the original pci buses
+1:19:07
+um was 133 megahertz at 64 bits per lane um thunderbolt which is a usb
+1:19:15
+c style connection 40 gigabits per second so the the bus speeds have been
+1:19:20
+continually getting bigger the device transfer bandwidth is going
+1:19:25
+to give me my peak bandwidth off of a disk okay and so that has something to do with the rotational speed of the disk
+1:19:32
+or the right read rate of the nand flash that gives me my peak bandwidth which is what i start
+1:19:37
+with in a calculation like this so my peak bandwidth is just one gigabit per second and then the overhead takes over okay
+1:19:43
+and so that peak bandwidth comes in many forms and whatever the bottleneck is in the path is the thing
+1:19:49
+that's going to limit my peak bandwidth okay and we're going to talk a lot more about this next
+1:19:54
+time so the overall performance for an i o path which is where we're going to want
+1:20:00
+to get might look like this you have a user thread they make system calls and their request gets queued and then
+1:20:06
+eventually goes to the controller and the i o device i already showed you this um earlier when i was talking about the
+1:20:12
+disk drives the interesting thing that's uh the elephant in the room we haven't talked about
+1:20:18
+is this q the mere existence of the q with uh random inputs times
+1:20:25
+causes this curve okay and so hopefully by the time we get through our discussion on cueing theory you'll have
+1:20:32
+a much better idea why this curve goes up as we get closer to 100 percent so that 100 percent we're first going to try to
+1:20:38
+understand what 100 throughput means or utilization and that's really finding our peak bandwidth that's
+1:20:45
+possible to get through the device and getting as we get close to that in our requests
+1:20:50
+you'll find that it isn't that we linearly increase uh but instead we get this behavior
+1:20:56
+where the curve actually climbs toward infinity if we're doing this in modeling as we get close to 100
+1:21:02
+percent and we're hopefully going to try to explain that but for the for the time being what's important is the fact that this curve is
+1:21:08
+very non-linear it's not linear like i was implying with these previous slides and so if
+1:21:13
+it's non-linear you're going to want to be careful you're never going to want to be operating over here because your latency
+1:21:18
+is going to be ridiculously high just to get a little bit more performance out of the system a little
+1:21:23
+bit more utilization and so instead we're going to want something more like a half power point or the point at which
+1:21:30
+we stop kind of doing a linear gain with utilization and start getting into
+1:21:36
+the rapid growth okay all right and we're going to explain that more
+1:21:42
+so just to start the discussion for next time sequential server performance is kind of
+1:21:49
+what you think about when you say well it takes i have a request this blue one it takes
+1:21:55
+l to complete and i have a series of them and as long as the server
+1:22:01
+being a disk or whatever can handle uh l of the you know i can handle this
+1:22:08
+at the rate it comes in i'm good to go okay so a single sequential server that takes time l to do a task
+1:22:16
+operates at a rate that's uh less than or equal to one over l on average in steady state so notice
+1:22:22
+that i'm getting maximum behavior out of this server because i'm putting these uh l items together and um and i'm putting
+1:22:30
+i'm squishing them together as tightly as possible and so for instance if it takes 10 milliseconds for me to process something
+1:22:36
+then the maximum rate i can get out of that server is going to be 1 over l or about 100 ops per second
+1:22:43
+if l is for instance 2 years it's possible i'll only get 0.5 operations per year okay and so this
+1:22:50
+latency l to do a to do an operation in the server is going to be something we need to
+1:22:55
+compute and that's possibly related to things like you know uh seek plus rotation plus transfer on a
+1:23:02
+disk or transfer time off of flash and so on okay but as you can imagine this is looking
+1:23:09
+really nice and linear but that crowd graph i showed you earlier wasn't nice and linear
+1:23:14
+another version by the way of something simple here is a pipelined idea where you've got three operations
+1:23:21
+you've got to do three things each of which takes time l and i can do them in different
+1:23:28
+stages so i first do the blue then the gray then the green and i can pipeline those in the
+1:23:33
+following way okay this probably rings a bell from 61c but in that instance depending on how many
+1:23:39
+pipeline stages i've got or k pipeline stages my effective rate is higher okay because if l is 10 milliseconds but
+1:23:47
+i can do four stages at a time i get 400 ops per second rather than what i had as a 100 ops earlier
+1:23:53
+so we're going to want to start analyzing our systems as can we get any pipeline out of them as well okay and i think
+1:24:01
+examples of pipelines are all over the place so for instance you know here's the user process causes
+1:24:06
+assist call which queues in the file system which then goes into the upper device driver which queues there
+1:24:11
+which goes in the lower device driver and so on or in a network we've got communication there's a whole bunch of
+1:24:16
+cues throughout the network so anything with cues is going to start invoking queuing theory
+1:24:23
+um so we're going to have to analyze it there and you're going to find out that unlike what i just showed you it's not
+1:24:28
+linear it's going to have that unfortunate curve to it
+1:24:34
+all right and we're going to hope to identify that as we get forward and unfortunately real systems have
+1:24:40
+these cues and have that non-linear behavior so it's not synchronous or deterministic like it was in 61c
+1:24:46
+all right i'm going to let you go but in conclusion we we talked about notification mechanisms
+1:24:51
+today we talked about interrupts and polling where polling is reporting the results
+1:24:56
+by actually asking the status register what's going on and we talked about how to we can we can combine interrupt and polling
+1:25:02
+to maybe get lower overhead we talked about device drivers which interface to the i o devices and give
+1:25:09
+you a clean read write open interface to the operating system above and they manipulate devices through
+1:25:15
+things like program dio that's where the processor reads uh each thing at a time or dma
+1:25:21
+and we talked about the three types of devices that device drivers have to deal
+1:25:26
+with we talked about block devices character devices and network devices we also talked about dma to permit
+1:25:33
+devices to directly access memory so typically the device driver running in the operating system asks the device
+1:25:38
+go ahead please transfer this data to that part of memory and tell me when you're done okay and one of the things we didn't
+1:25:45
+talk about today but you can imagine is oh actually we did talk about it is while that transferring is going on it's possible
+1:25:52
+that either the operating system had to have pre-invalidated the cache or the dma has
+1:25:57
+to invalidate the cache as it goes we talked about disks and disk performance we talked about queuing time
+1:26:02
+plus controller time plus seek time plus rotational plus transfer transfer time we talked about rotational latency being
+1:26:09
+a half of a rotation on average and the transfer time is depends on the rotation speed
+1:26:15
+the bit storage density and as we talked about it depends on whether you're reading from the outside track or the inner one
+1:26:22
+devices have very complex interactions and performance characteristics we've just started this
+1:26:27
+discussion so the queuing plus the overhead plus the transfer time
+1:26:32
+and that's our latency okay and we talked about how overhead can make a huge difference and you need large block
+1:26:38
+sizes to deal with that and then we talked about how different devices like a hard disk versus an sdd
+1:26:45
+basically have different uh performance measurements all right and systems as
+1:26:52
+i've already alluded are basically going to be designed to optimize performance and reliability um and that means we need to know
+1:27:00
+something about the underlying devices so even though we have these interfaces to shield us from knowledge we need to know something more
+1:27:06
+about the devices to really use them at their maximum performance all right
+1:27:12
+and what we're going to find out next time is that bursts and hydrolyzation introduce all sorts of queuing
+1:27:17
+delays and that's going to be the source of that growth without bound in our performance curve from earlier
+1:27:23
+all right i think we're good to go for today i'm going to let you go and um that's
+1:27:30
+ssd that's a typo good catch and so i'm going to wish everybody good
+1:27:35
+luck on tomorrow's exam i'm sure you all do well and we'll see you on monday

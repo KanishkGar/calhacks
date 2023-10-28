@@ -1,0 +1,1732 @@
+0:02
+okay welcome back everybody to uh the last i guess official lecture
+0:08
+before the end of the term we're going to have another one on wednesday which is going to be a special topics lecture but um i'd like to continue where we
+0:15
+left off we were talking about uh distributed storage and um
+0:21
+if you remember before we got into that topic we were talking about the remote procedure call idea
+0:27
+and the idea behind a remote procedure call is really that a client can link with a library
+0:34
+that includes a bunch of stubs that allow it to essentially make function calls which go all the way
+0:41
+across the network to a server machine with the return coming back and they can deal with them just as they
+0:47
+would a local function okay and so that's a remote procedure call we're making a procedure called
+0:52
+remotely and some of the key ideas we talked about were the fact that the arguments to these procedures have
+0:59
+to be packaged up uh by the client stub and they're packaged up in a network
+1:05
+independent way and uh serialized as a ser of bytes excuse me as a set of bytes and
+1:11
+then they're sent across the network where they're unpacked and the server stub will then call a server
+1:19
+function with the deserialized versions of those arguments and then the return
+1:24
+call will get serialized again sent across the network and uh received
+1:30
+and it'll be returned into the client as a return from a function call and so the client can therefore use this
+1:36
+regardless of the fact that it's remote and a couple of things that we talked about
+1:42
+were among other things how these stubs get generated uh there's a special idl language that
+1:47
+you um use to describe the procedure calls and a compiler that generates the stubs
+1:53
+for the client and server side and you can basically have the server be
+2:00
+remote of course or local and the client doesn't have to know the difference other than a
+2:07
+difference in performance okay now today we're going to actually show you
+2:12
+an example of uh use of rpc which is pretty common which is to make it an actual remote file system work
+2:21
+okay before i pass on from this are there any questions
+2:29
+all right so then the other thing we talked about is we talked about the cap theorem the
+2:36
+consistency availability partition tolerance theorem which uh really was more like a
+2:44
+conjecture by eric brewer back in the early 2000s but uh it has since been proved in
+2:50
+various ways and the basic idea is that you can have uh two out of these three you can't have all
+2:56
+three so you could have consistency availability uh partition tolerance you can pick two of any of those three
+3:02
+and um the thing that keep in mind here is basically consistency means that
+3:09
+when you change the file system on one side everybody sees those changes consistently
+3:14
+availability means that you always have the ability to access the file system and partition tolerance says that the
+3:19
+network can survive being cut in half okay
+3:28
+ah so before i guess we have a late uh question here about rpc which is
+3:33
+which is fine the question here is if the client sends pointers as arguments does the client stub have to load all of
+3:39
+that in so pointers basically don't mean anything cross machine so part of that serialization has to
+3:46
+actually be taking uh any data structures that are consisting of pointers and serializing
+3:51
+them uh into a complete set of bytes to send across there are sometimes a specialized ways
+3:58
+of packaging up opaque pointer references
+4:04
+and sending them off to a server but the server doesn't know what to do with them they would only be for returning back later to the client so
+4:10
+i think the short answer the question is yeah if you have any structures made out of pointers they have to be serialized
+4:15
+into bytes before they're sent across otherwise they don't mean anything okay so this cap theorem uh by the way just
+4:22
+to finish that thought here will have an impact on pretty much any remote
+4:29
+storage that we might have to deal with and it certainly comes into play when we start talking about
+4:34
+cache consistency of the the file system okay all right are there
+4:41
+any questions on the cap theorem
+4:51
+all right so um
+4:56
+so let's talk about distributed file systems then so as you can see the idea here uh behind this figure is
+5:03
+really the idea that the storage is going to be in the network somewhere or we today we call it the cloud i guess
+5:10
+and you can use that storage no matter where you are you could be here at berkeley on the left coast you could be in boston
+5:17
+on the right coast or in beijing whatever and you can still use the data and in some file systems you can even use the
+5:24
+data while you're driving uh from one coast to the other and that's all because it's in the middle but once you start having things remote
+5:30
+in the middle here then you start running into the cap theorem so what is a distributed file system
+5:36
+well it's pretty simple you've all used this uh many times but we have a laptop here
+5:42
+and a server that's actually got the data and so instead of the file systems like we've been talking about
+5:48
+the last uh several weeks which are local in this case you're actually sending
+5:53
+your request to read and the response is coming back over the network and the server is actually a
+5:59
+separate node somewhere else from the client that's using it okay
+6:05
+um so a question that we might have here uh which is in the chat is is a solution to make the network resistant to
+6:10
+partitions so it doesn't have to be partition tolerant so the problem with that is pretty much that we run up
+6:17
+against the end to end theorem which really is how much work do you want to put in the middle of the network
+6:22
+to make it so that it never partitions and in practice uh you can add a lot of redundancy to
+6:27
+the network you can have many alternate paths that can be taken but uh ultimately it
+6:34
+gets very hard to prevent there uh never being a partition in the network but you know you can add a lot of redundancy so if you don't
+6:40
+take the path straight from uh berkeley to boston going straight through maybe you go by way of alaska and down
+6:47
+if you have enough alternative paths you can sometimes make the probability of partitions very low so what we really want with a
+6:55
+distributed file system is this idea of transparent access to files on the remote disk so that the client doesn't have to know
+7:02
+that this is re remote from the standpoint of the way you interact with it the only know the only way you notice is that things
+7:08
+are slower okay and so one of the things that we have as a concept here is the notion of mounting
+7:16
+a remote file system onto the local file system and so here's an instance where
+7:21
+we actually have the local route that's a little slash up here and uh slash users and then slash users
+7:28
+jane we've actually mounted uh another file system on the the server called kuby um and uh the
+7:35
+partition jane is at this point in the mount and then um
+7:40
+inside that jade file system there's another directory called program prog and that
+7:46
+we've mounted a different partition from kuby to prog okay and so what happens there
+7:52
+is that the laptop user says slash users jane slash prog dot c in reality because
+7:59
+of the way we've mounted this it's really in the slash prog partition on the kuby file system
+8:07
+and uh it's the file fu.c and so by mounting we can essentially get transparency
+8:14
+against these the fact that these are actually remote so the local user doesn't have to know the difference so that's a form of transparency that we
+8:21
+get but with the mount system call okay now of course that raises all sorts
+8:26
+of questions which uh we don't have a a lot of time left in the term to answer uh but uh one naming choice which you
+8:35
+see pretty clearly here in this figure on the right is that every file in principle is a
+8:40
+tuple of a hostname and local name in the file system and uh we basically everywhere
+8:48
+below in the operating system we always talk about files as a tuple of hostname and local name
+8:54
+so this is the simplest thing to do and it's what we often do uh for instance in the department etc
+9:01
+it's fine except that it doesn't give you a lot of opportunity to move files around to load balance
+9:07
+or to try to deal with failures it does let you do dns remapping so if kubi the file server
+9:14
+went down i could change its ip address to point to a different server and then i'd still be up and
+9:21
+working another alternative though which is much more interesting uh in the grand scheme of things might
+9:27
+be a global namespace where every file name is somehow unique in the world and there have been several
+9:32
+instances of that over the over time today we'll talk a little bit about one which can be
+9:38
+based on hashes over the name okay so let's talk about
+9:44
+what's involved in making a remote file system work so we we've talked a lot over several lectures
+9:50
+about how to make local file systems work but what about remote ones okay so
+9:56
+somehow the device driver and i'm going to put that in air quotes here talking to the disk is got the network
+10:04
+involved so that's a little bit strange already right because we think of device drivers as going uh from the operating system down into a
+10:10
+controller and to the local disk but instead we're going from the files
+10:16
+we're going from the system call interface into the network and then over to a different server and
+10:22
+then going into the device driver and so we need some abstractions to let us do that
+10:28
+and so one of the abstractions is one called vfs okay so this is used it was originally the virtual file
+10:34
+system and uh then in linux it became the virtual file system switch i'll show you why switch kind of makes
+10:40
+more sense maybe but um if you take a look at what i've circled here in our kernel the file systems
+10:48
+actually go through a layer of handling files and directories which
+10:55
+is called the vfs right there and below vfs is potentially many file system types
+11:00
+some of which are over the network okay and so some of these file system types might actually then interact with the
+11:06
+network subsystem go out come back through a different network subsystem on the other side and then
+11:11
+back into the file system and down to the block devices okay so this vfs is going to be an
+11:17
+enabling abstraction that's going to allow us to mount file systems first of all of many types
+11:22
+and then second of all including things that are across the network okay so what exactly are we talking
+11:28
+about here so if you remember in our layers of io we talked about you do a read uh system call it takes you into the
+11:35
+kernel read which uh or into the lib c version of read which does a system call
+11:42
+takes us into the system call processing and then if you look down here this is by the way a slide from lecture
+11:48
+10 or whatever if you look inside we actually have something called vfs read which gets called
+11:55
+from the higher layers and ultimately from the user vfs being virtual file system okay and
+12:01
+so inside that call is going to be interacting with the vfs layer
+12:07
+and this vfs layer you can kind of think of this way so you got the the client process at top comes through
+12:13
+the vfs layer and depending on which part of the directory we happen to go to remember
+12:19
+the mounting we could be going into a ext2 or three file system um kind of like bsd or we could
+12:26
+go to ms-dos fat file system and either of those could be used in the same way by the
+12:33
+client okay so this idea of you know opening slash floppy slash test and then
+12:40
+writing to slash temp slash test what i'm actually doing in this loop here is i'm reading from an ms-dos file system
+12:47
+writing to a unix file system and this all works because of the abstraction of vfs
+12:52
+okay so that's pretty good right so how does that work so the vfs layer is is like a local file system without
+13:00
+any of the disks involved and it's really just a set of hooks that allow you to plug
+13:06
+in functionality that's needed for the client to act with a file system
+13:11
+okay and it's compil compatible with all sorts of local and remote file systems and it basically allows the same system
+13:18
+call interface above regardless of the file system now we
+13:24
+won't go in this in great detail but for instance you could you could look up vfs and linux and it would tell you that this is a
+13:29
+an interface with four primary objects there's a superblock object an inode
+13:35
+object a directory entry object and a file object that represent all of these things that
+13:41
+we talked about pretty much when we talked about unix file systems what's interesting about this though is
+13:47
+what depending on what file system you plug in it may not even have an inode object think about the fat file system
+13:54
+right there's no inode there so really um what happens is this vfs layer gives the
+14:00
+underlying connector the ability to fake something that looks like a
+14:05
+unix file systems you can make it look like directories are made out of files even if they're not
+14:11
+you can make it look like their inodes and superblocks and so on regardless of whether those things are
+14:16
+really in the underlying file system and so that layer sometimes we call that a shim layer basically allows you to plug in
+14:23
+things that then the vfs layer can make look like file systems okay so um
+14:30
+i'm going to talk to you about nfs which is in some sense the first user of vfs back when it was the
+14:39
+virtual file system and so but this has persisted you know to this
+14:45
+day so it's persisted for the last 20 years 25 years so
+14:52
+so let's talk about a simple distributed file system in a little more detail here so first of all we talked about rpc
+14:58
+so we're going to be making procedure calls so the client when they need to do a read what happens is the read goes into
+15:04
+the vfs layer the vfs layer then could just go ahead and make a
+15:10
+remote procedure call to the server that's out then talks to the disk and gives you the blocks back
+15:15
+and returns the data and so we could have a whole bunch of these uh round trips and because this is rpc
+15:22
+we could even not care about the the endian-ness of the client versus the server because
+15:27
+basically the client can call a procedure on the server and it just works okay and so um this is kind of the first
+15:36
+way that people build file systems um you know you're using the remote procedure calls to translate things
+15:42
+but there's no local caching in the client just in the server so the advantage of this is it's the
+15:48
+server is providing a consistent view of the file system like it does now if you were running processes on the server so that's good
+15:56
+the downside here is it's really not performant okay it's expensive to go
+16:02
+across the network even when you're in a local you know even when you're in the local network where it's going to cost you a
+16:08
+millisecond to go round trip and much worse if you happen to have to go uh
+16:13
+to the metropolitan area or globally where you're talking 10 milliseconds 100 milliseconds that adds up really quickly
+16:20
+for every block read okay and so this is fine from an abstraction
+16:26
+you know gee we could build this throw it together really quickly this is really not going to work well
+16:31
+okay and there are actually ways of mounting a remote server
+16:36
+with uh ssh for instance that kind of act like this okay where you just open a tunnel and
+16:43
+you essentially get a mounted file system it's really not going to perform very well okay but you can do it um so obviously
+16:51
+the thing to do is caching right so that's we've talked lots about caching remember everything in an operating system is a cache
+16:57
+you can quote kuby on that if there's nothing else you uh get out of this class you can you can quote me on that
+17:05
+so what we're going to do is we're going to put caches in the system at the client side in addition to the server side so the server side cache is kind of
+17:11
+easy because that's the buffer cache but we would like to for instance use the buffer cache on the client side
+17:17
+and you know how does that work okay so the advantage of this is if you
+17:22
+can somehow do the open read write close portion locally because maybe you cache
+17:27
+credentials and information about some remote file this gets really fast right so the very
+17:33
+first read to some file you reaches out you get an rpc across the network
+17:40
+pulls it off the result off the disk puts it into local cache returns it gets
+17:46
+in the uh excuse me puts it in the server cache returns gets into local cache and returns a result and so that read
+17:52
+was slow the first time but boy these subsequent ones point going are very fast right and they just return
+17:59
+the value that's in the cache so that sounds good uh but what are some
+18:04
+problems with this right so one of them is failure so consider this idea here we have a writer
+18:10
+on some different client they write some data in the cache and poof that machine crashes and notice
+18:16
+what just happened we just lost data and that's because the data was cached on the client
+18:21
+and never made it to the server and uh it's now you know gone to dev null so
+18:28
+clearly the moment we start putting caches into the system we've got some data reliability issues we have to worry
+18:35
+about and of course we could force ourselves to do an rpc
+18:40
+with an acknowledgement back first and then uh return from the client so the client
+18:46
+never gets back and okay until they know the data has been uh placed on the server so that seems
+18:53
+like a simple fix because now if we crash we haven't actually lost the data right
+18:59
+what are some other problems well something else that rears its ugly head which you probably can see here
+19:05
+you know this first cache has got uh the first value in it the second cache has got the second value
+19:10
+and so if client one reads they get v1 and if client 2 reads they get v2
+19:16
+and we have a serious cache consistency problem okay now um the question in in the chat is
+19:23
+uh frankly the obvious one which is how the heck do you deal with this right so this is
+19:28
+um so on this slide this seems like a a problem right so this is a problem
+19:35
+now uh we're going to talk about some solutions to this but you could you could start imagining
+19:40
+some of these like whenever you write you have to first invalidate uh
+19:45
+all the other caches and then you get right to write and so when they go to read again they get the next one back
+19:50
+right or you could say well a little bit of inconsistency is okay as long as i pull to get consistent data back all
+19:58
+right you could send yeah you could have changes there are many options here um the first uh you know the way they
+20:06
+say this is the uh the first step is to recognize you've got a problem okay and so um the other thing by the
+20:12
+way to keep uh that i'll point out is if for every right you're always broadcasting the results
+20:19
+uh potentially you're using network bandwidth and that may or may not be the right thing to do okay so what's good about uh the
+20:25
+questions you're all are asking here is you got the right point of view um this is clearly an
+20:31
+issue okay so let's talk we'll talk a little bit about what you can do okay but um before we get there
+20:39
+let's talk a little bit more about dealing with failures so we kind of talked about maybe if you acknowledge all the rights
+20:44
+you can uh you know save your data or whatever but what if in general the server crashes
+20:51
+okay so in that instance this is not a client crashing this is a server and you might say can the client just
+20:57
+wait until the server comes back and keep going um in many cases uh the client
+21:04
+can't wait that long because who knows how long the server is going to take to reboot um and maybe changes that are in the
+21:10
+server's cache uh but not on disk get lost okay so when we talked about for instance the
+21:17
+buffer cache holding uncommitted results there is that window of time where the server might crash and
+21:23
+the data isn't there so clearly we want to start with good journaling on the server side so that's
+21:28
+something we already know how to do um but we need to uh
+21:33
+yes so we'll probably assume that the server is doing its best uh to do some sort of journaling um
+21:40
+raid whatever you take it they're gonna do it okay but um something that's a little more subtle
+21:46
+here might be well what if there's shared state so think about this for a moment client
+21:51
+doesn't open okay you by now you're you're experts in using the open system call
+21:56
+and then it does a seek so it says well start me out at byte number 5003
+22:03
+and then it's going to do a read okay now the issue with that sequence is on the local ser on the
+22:09
+local file system that just works right because you seek to byte 5003 and your next read starts
+22:16
+there but in the case of a remote file system if you do that seek across the network
+22:22
+and then the server crashes and then comes back up or something and now you do your read probably the wrong thing's going to
+22:28
+happen okay so this idea of shared state where in this case we're sharing
+22:34
+the state of our current uh pointer in the file between the client and the server that
+22:42
+actually leads itself to some really weird failure modes okay a similar problem might be this
+22:49
+what if the client goes ahead and removes the file but the server crashes before acknowledging maybe the client doesn't know whether
+22:55
+the file was removed or not okay and if that removal was part of a cleanup process or
+23:01
+who knows maybe it was part of a temporary build there could be all sorts of weird things that might happen because that file is
+23:08
+actually still around even though the client thought it was deleted
+23:13
+so one thing we can do is to change our thinking a little bit and try to make
+23:20
+sure that all of our interactions with the server are stateless so a stateless protocol is basically one
+23:27
+where all the information that we might need to service a request is included with the request
+23:32
+okay and so you're all very familiar with this idea behind http because when you go to a website uh
+23:39
+typically the state of your access is kept in cookies on the client side and all of those
+23:45
+the important cookies get sent with every request and so as a result um
+23:50
+the server doesn't have to hold on to any information okay so maybe in the case of a file system
+23:58
+maybe what we do is instead of actually setting the setting the pointer to where we are
+24:05
+by seeking maybe what we do is we pass under the covers this idea of uh
+24:11
+well i'm at 503 please give me some bytes back okay and that would be a stateless protocol
+24:17
+okay now um the question here might be would an alternative be that we could make a bunch of requests and then wait
+24:23
+for a bunch of acts um and yes we could do that but once again we're starting to get into that
+24:29
+uh weird uh generals paradox kind of position and um if we can just do everything
+24:36
+statelessly it's much simpler uh we don't have to worry about what the server knows and what they don't
+24:41
+so an even better adjunct to stateless protocol is adept in operations which say that not
+24:48
+only is the protocol stateless but if i do the same operation multiple times it's okay because it'll just
+24:56
+ignore the next couple of times so that would be the difference between a write that file system that appends and then i
+25:04
+have to be sure i append only once or a write to a block
+25:10
+in the file or block on disk which i can do as many times as i want and it'll eventually you know the data
+25:16
+will get written and if i it's already been written and i write it again it won't change anything so that's an idempident operation
+25:22
+okay um timeouts that happen expire without a reply and with an
+25:28
+identity operation you can just retry okay so the the idea of stateless is
+25:33
+very appealing um for many reasons like this and again http is a good example of a stateless
+25:40
+protocol so the question might be can we make use of that and we will
+25:46
+all right i'll tell you about nfs which is a stateless protocol by design okay i want to do a couple of
+25:54
+administrivia things before we get there so our last midterm and again there's no
+26:01
+final in this class keep that in mind is this thursday five to seven pm all
+26:06
+material up to today is included there although we'll be focusing on the last third class we're assuming you
+26:13
+don't necessarily forget everything from the beginning of the class we're going to assume that cameras and zoom screen sharing are
+26:20
+in place and you know there's no excuse to not have this turned on
+26:25
+so um you can lose points for not having the camera and screen sharing turned on
+26:30
+um when the tas come talk to you about it uh we might remind you at the beginning but you it's really on your it's on you
+26:37
+to make sure that that's all working okay and we're going to once again distribute links like we did last time
+26:43
+because i think that worked pretty well there's going to be a review session tomorrow from 7 to 9.
+26:50
+i didn't look tonight but i know that there is already a zoom link for this that's been put together and so it should be
+26:56
+published on piazza just watch for that um lecture 26 which is
+27:03
+uh wednesday won't be on the exam but it's going to be a fun lecture of
+27:08
+topics of your choosing should you send them to me and so feel free to send me a couple of
+27:15
+queries and i'll do what i can to get that in the lecture
+27:21
+barring that i have some other things i'll talk about i'll talk a little bit about data capsules which i'm working on et
+27:27
+cetera okay you can let me know just by send me email okay
+27:32
+um that seems simplest right now okay uh oh the other thing is um as with
+27:40
+last term hkn is virtual uh i'm gonna i was gonna post a video on
+27:45
+how to make sure you get a chance to comment on the class we'll post that up on piazza but don't
+27:52
+forget to do your hkn evaluations that's always useful and i think that's all the
+27:57
+administrative i had unless anybody else had other questions
+28:04
+okay i'm sure you'll all do very well on the midterm i'm offering you good wishes for that
+28:13
+in advance and i'm gonna miss having our little
+28:18
+time here uh every night in uh pacific time i don't know whatever
+28:23
+time it is for you guys some of you are uh in very vastly different time zones i know
+28:30
+okay so let's talk about the the network file
+28:35
+system from sun micro systems um this was uh in the 80s
+28:41
+this particular file system came out and was in pretty pretty widespread use
+28:47
+still is in wide use there's three layers for this which you've already are now aware of the first two there's the unix file
+28:54
+system layer which is the uh the system call layer open read write close
+28:59
+file descriptors pointing at file descriptions you're all very aware of that the vfs layer is this layer i just
+29:06
+introduced you to which distinguishes local from remote files purely by plugging in a table
+29:13
+full of function functions that are called as a result of the system
+29:19
+calls and then there's an nfs service layer which is the bottom layer that's the part that handles the nfs
+29:26
+protocol does the rpc translates and serializes
+29:31
+into a network independent form format okay the nfs protocol
+29:37
+has xdr is the serialization protocol for for that rpc it was one of
+29:44
+the first ones out there in fact uh nfs may have been one of the
+29:50
+very first ones to have a network independent rpc layer it has
+29:57
+operations for reading and searching the directories manipulating links accessing file attributes etc are all
+30:05
+part of that protocol and that's across the network in the nfs service layer
+30:10
+the other thing that it has and certainly the first version of nfs
+30:16
+version 1.0 and 2.0 had this very visibly shown to the
+30:22
+reader or the reader the user is right through caching which is modified data is committed to the
+30:27
+server's disk before results are returned to the client that got relaxed a little bit over the
+30:33
+years where the client might return while this caching's still going through
+30:38
+from the buffer cache layer of client but by and large it's a it's a right through
+30:44
+approach where the transactions aren't done until it's committed to the server side and so this can slow things down quite a
+30:50
+bit under um various circumstances but you have that advantage of knowing that your data made
+30:55
+it um servers are stateless so the protocol
+31:00
+is a stateless protocol as we were discussing so reads include all the information for all the operations for instance so
+31:07
+you know when you say you do read at uh i number position not read file name okay and
+31:14
+that's so that we have all the information like for instance the current position i want to read at is included in the protocol
+31:21
+okay and there really is no need to uh do an open close on the file across the network
+31:27
+because uh the local client has enough information and every operation's satisfied on its
+31:34
+own okay all of the operations are identity as i mentioned so you can perform
+31:39
+requests multiple times and it gives you the same effect so examples are the server crashes between
+31:44
+a disk i o and message send the client just resends it and the server does it again so that's fine you read
+31:51
+write file blocks you just re-read or rewrite and there's no other side effects the
+31:56
+interesting one here is what about remove so if you ask to remove a file from a directory
+32:02
+and if s may do the operation twice if there wasn't an acknowledgement for some
+32:07
+reason the second time there's just an advisory error that's returned back from the server saying well that file wasn't
+32:13
+really there so this is the kind of adaptations the protocol to keep it stateless and
+32:19
+identity okay the failure model for nfs is an
+32:25
+interesting one as well it's also transparent to the client system uh in general so the idea originally was
+32:32
+that when a server fails the client just freezes until the server comes back up and it just works
+32:38
+okay and that was called a hard mount the problem with that is that servers would go down and then they would have
+32:43
+all these processes that were reading writing files uh from an nfs partition
+32:50
+and what would happen is they would all get stuck in the device driver and if you try to do a psa ux and see
+32:56
+what's going on the processes you'd see all these processes that were all blocked with a little d
+33:01
+and that was that they were hard blocked in the nfs driver waiting for the server to come back up
+33:07
+and what's worse is that was a an unkillable state so you couldn't even kill them off they were just really jammed up
+33:13
+so that's transparent but you might argue whether or not that's a good thing okay and there was actually a different
+33:19
+type of nfs mount which uh is what everybody pretty much uses today which is called a soft mount
+33:25
+and if you do if you do some man on the nfs clients and so on or do some
+33:32
+googling on that you'll see about soft mounts the idea in a soft mount is that when the server goes down you actually just
+33:37
+get an error that comes back and your read or write operation you're
+33:42
+trying to do just fails now of course that failure is kind of weird because the client
+33:48
+wasn't expecting it to fail by a server crashing because you're using the same interface you would with the local file
+33:53
+system but at least it's not locked in a way that can't be killed off
+33:59
+okay so here's a picture of the architecture as i mentioned so the
+34:04
+client side we have the system call interface which takes you through vfs and then vfs has a whole bunch of
+34:10
+different possible file systems that might be plugged in how do you know which one to go to well depending on what you mounted
+34:17
+we showed you mount earlier the part of the file system you happen to be in tells you which of these branches which
+34:24
+of these actual file systems you're going to use okay and if it happens to be a local one
+34:30
+you'll use the local file system if it happens to be a remote mounted nfs file system you'll come off of vfs
+34:37
+into the client the nfs client software which will take you down into the rpc
+34:42
+xdr layer which will go across the network come back up into the nfs server layer
+34:48
+which uh comes up into vfs which then um or or uses vfs to access the local
+34:55
+file system okay and then the results get reversed to the back the other direction
+35:00
+okay questions
+35:05
+so if you notice at the remote side with nfs at least you're actually just using
+35:11
+um a file system on the other side so um positive thing about this idea
+35:17
+here is that if the server is disconnected from clients you can go through and evaluate the
+35:24
+consistency of the file system and so on with all the normal tools because it just is a local file system
+35:30
+to the server and then once it's operating as an nfs uh server which you get by starting
+35:36
+up the nfs daemons then remote clients are able to access that file system on the server that way
+35:45
+okay so that's pretty cool right works pretty well but let's talk a
+35:51
+little bit about consistency of the caches so the nfs protocol is a weak consistent protocol by its nature so the
+35:58
+client actually pulls the server periodically to check for changes and if the data hasn't been checked in
+36:03
+the last 30 or 30 seconds three to 30 seconds it's settable to some extent
+36:09
+then it pulls and asks the server what's the state of this particular block and when a file's changed on one client
+36:16
+the server is notified but that isn't reflected back on other clients that happen to be caching it
+36:22
+it's up to them to to poll and pull the changes okay so in this scenario
+36:28
+that we had earlier where this second client writes um and you get an acknowledge
+36:34
+back we can actually acknowledgement we can actually be in a situation where these two clients or at least over the short term are um
+36:42
+inconsistent with each other but because of the way this polling works eventually
+36:47
+uh this first client will get the new data okay so that's why we call it a weekly
+36:52
+consistent weekly consistent protocol because the client kind of converges to the right
+36:58
+contents of the cache so for instance is f1 still okay
+37:04
+no here's a new value and at that point the client is good to go with the latest data
+37:10
+so nice so um there have been various changes over the years that have made it
+37:15
+less likely to notice this inconsistency clearly you don't want to be polling so frequently that
+37:21
+you're using up a bunch of network bandwidth and in fact the polling uh is a hard
+37:26
+limit to even regular simple polling not too frequently is a hard limit on the number of clients that can be connected to a
+37:32
+server because every poll that comes in from a client is using up bandwidth on the server
+37:38
+and so you know nfs clients can only be a limited number of them
+37:43
+connected to a given server but if multiple clients write there is the there are these windows
+37:50
+where things are a little bit out of uh consistent consistency inconsistent
+37:57
+um and uh it is interesting you know when i first started using nfs many years years ago i did notice
+38:05
+that uh you i would edit on one machine and i'd compile in another one and
+38:10
+occasionally i'd save out some changes to a file and i would be so quick at going to compile
+38:16
+um in a window to a different machine that i would occasionally get these
+38:22
+really weird phantom errors which were because sort of part of my dot c file i had just saved
+38:27
+out was intermixed with old versions of it because of the nfs consistency now this
+38:35
+thing about why google can't handle hundreds of users simultaneously is some
+38:43
+is not quite the same issue here because there there's polling that goes on and so at that point um you do have to
+38:50
+worry about so there's some polling there's actual pushing of data going on
+38:55
+in that case if you change too many things and there are too many clients then you're you're using a bandwidth going the other
+39:01
+direction the problem with nfs is that even if nobody's changing anything you're polling all the time and that's
+39:07
+using a bandwidth just while you're idle so at least in the google case you're you're using a bandwidth only when there are actual
+39:13
+changes going on okay now um let's but let's explore this weak consistency
+39:21
+for a little bit um because what sort of cache coherence might you expect from a system
+39:26
+uh if you didn't know it was weakly consistent so suppose we have three clients and
+39:34
+client we start with file contents has a in it let's just say and client
+39:40
+one is reading at the very beginning by the way time is uh left to right here so client one
+39:47
+starts reading and they're going to get a and client two starts reading well they're going to get a for part of the
+39:53
+time but then if client one writes b at some point client two might start
+39:58
+seeing b so there might be some intermixing of b or a and then client two might write c
+40:03
+and you can get this situation where um transiently at least you're seeing parts of each file okay
+40:11
+and so what would you actually want well one
+40:16
+thing you might want is what if i want to have the same behavior as i would on a local file system okay
+40:23
+and if you wanted that um so we have three processes instead of three clients
+40:28
+then you might want to say if a read finishes before a write starts you always get the old copy if a read starts after the write
+40:34
+finishes you always get the new copy and otherwise you get either copy and it turns out that this nfs polling
+40:41
+protocol doesn't quite give you that semantic it gives you this a little bit less clean intermixing
+40:48
+okay all right now i'm seeing some good uh
+40:53
+combinations uh in the chat here thinking of different options between polling and pushing
+40:59
+um i'm giving you that i'm gonna give you the pushing option in a section second here and we can
+41:05
+ask some questions after that so for nfs rather than this somewhat cleaner view
+41:11
+that we might expect from a local file system we really have this other idea where if a read starts
+41:17
+more than 30 seconds or pick your polling time interval after a write you get the new copy otherwise you
+41:22
+could get a partial update so that's more bandwidth efficient than
+41:29
+it might be if we tried to make sure that every update was propagated to every client all the time but
+41:35
+it does have that slightly weird semantic okay so the pros and cons of
+41:42
+nfs is it's simple relatively so it's highly portable so they were one of the first ones to have
+41:48
+the rpc with the serialization xdr protocol some cons though is it sometimes inconsistent
+41:54
+in ways you can see and it doesn't scale very well the large number of clients because even in the idle case everybody's polling
+42:01
+okay so let me tell you about another uh file system in this space so this one
+42:06
+came later than nfs but not too much later so um i remember working with the androphile system afs
+42:13
+in the late 80s and
+42:18
+it became actually the dfs system ibm bought the file system at one
+42:24
+point it was a commercial product the it had a callback mechanism instead
+42:29
+of the polling so the idea is that this is no longer stateless by the way so we're removing the ability to be
+42:36
+stateless but the server keeps track of every uh machine that has a copy of a
+42:41
+file and whenever there's a change the server tells everybody with an old copy to invalidate their copy and as a result
+42:49
+there's no polling bandwidth okay there's just invalidation bandwidth now notice the decision that was made
+42:56
+here is not to push the changes out to everybody who needs them
+43:01
+or who is using them but rather to invalidate and there's another interesting option
+43:06
+here which is uh not option interesting semantic which afs did
+43:12
+which is basically what i call right through on close so think about this a second andrew
+43:18
+file system afs was really designed to work in a much more global environment than
+43:24
+nfs in fact you could mount file systems uh
+43:29
+that were served in other parts of the country you could actually mount them and use them locally and the performance was pretty
+43:35
+good and the reason for that is this right through on close consistency
+43:41
+which meant that when i open a file and i start modifying it
+43:46
+none of my changes are propagated to anybody until i actually close the file even though i'm doing rights
+43:52
+it's not until i do close and at that point my consistent version is now available
+43:58
+for viewing by everybody else who's sharing the file okay and at that point also that's the
+44:03
+point in which the notification goes out that um there's a new version of the file
+44:09
+now in order to make this work uh there are two things to worry about one
+44:16
+is that if i am have a file open and somebody else
+44:22
+changes it i don't want it to be pulled out from under me so what happens there is when i open i
+44:29
+actually see the version of the file from the moment i open it no matter what else
+44:35
+anybody else is doing okay so i open the file they can be changing it like crazy but i will continue to see
+44:41
+a snapshot of the file from the point i opened it until i close it and reopen it again okay so the
+44:48
+upside of that is a very consistent view i always have a consistent snapshot of the file at the moment i opened it
+44:55
+and when i write everybody always sees a consistent view of the written product so
+45:01
+i know there's somebody worrying about race conditions in the chat we'll get to that in a second but if you think about that relative to
+45:07
+this nfs version af-s gives you a much better set of semantics because you never see an
+45:13
+inconsistent set of bytes in a file it's always a fully consistent set of bytes
+45:20
+okay so that's that's an extremely positive thing and um when we notify others that the file
+45:26
+has changed um they're either going to keep working with their consistent version
+45:32
+or if they have it closed right now they'll get notified to throw their copy out
+45:37
+and get the new copy and they'll see a completely new consistent version of what i've got
+45:42
+okay now um a couple of things here so if you have
+45:47
+lots of people writing they may not actually see each other's rights so um
+45:53
+out of band you need a locking scheme or a notification scheme to say hey i'm working on the file right now why don't
+45:59
+you wait for me okay so that's uh one thing you might worry about
+46:04
+okay the second thing that's interesting about the android file system is rather than caching in memory okay which is what nfs
+46:12
+does in the buffer cache and your file system actually caches on disk so the local disk becomes a
+46:19
+cache on the file system so i can store whole files whenever i open a file the whole file is
+46:26
+allowed to be brought from the server and put in my local disk and now i can access it as fast as i would
+46:33
+if it were local because it really is local okay so um
+46:39
+so the potential here is for much better caching because i'm using the local disk to cache
+46:45
+and so you can have many many many more clients talking to a given server because the server isn't supporting
+46:51
+every read and write what it's doing is it's helping with consistency management okay all right
+46:59
+now um now there's a couple there are many questions here i think
+47:05
+the the way to handle these questions is just to think through what we've got here right so when you open a file
+47:10
+you get a snapshot of the file at the time you opened it and you'll hold on to that snapshot until you close
+47:16
+okay and if you if you want to do the equivalent of seeing whether anything has changed you can close it and reopen it and
+47:22
+you'll find out okay and if things never change or they they
+47:27
+don't change for a long period of time because they're mostly read-only then as you use files they migrate to
+47:32
+your local file system and now you got really fast action because now you open close read read
+47:37
+read do a bunch of stuff close all of that is done purely locally because the
+47:43
+file server is responsible for making sure that your locally cached copies of the files go away
+47:50
+if they're no longer consistent okay and if you just want to read a small now
+47:57
+good question what if you only want to read a small part about it of this file and it's a 20 gigabyte file
+48:03
+okay i think that's the question that's being asked and that's a really good one so the original version of aafs actually
+48:09
+you had to cache the whole file uh in the local file system
+48:14
+later versions actually started caching in like 64k chunks or whatever and so there was a
+48:20
+there were modifications that allowed you to have part of a file if the only thing you wanted to do was read a little bit of it and that
+48:26
+took care of this performance problem that you're worried about here okay now um although i don't talk a lot
+48:32
+about this um okay i just said that you know i said this hold on i'll say my other point in a second so data is
+48:38
+cached on the local disk as well as in memories and
+48:43
+on the right followed by a close you send a copy to the server which tells all the clients with copies
+48:49
+to invalidate their local versions and that they'll need to fetch a new version from the server at that point
+48:56
+if the loser now if the if the server crashes unlike with nfs we can't even conceive
+49:03
+of a client transparent version of the protocol because the server is supposed to have all this
+49:10
+callback state to keep track of who's got copies of things so when the server crashes it comes back
+49:16
+up it actually has to request uh information from all of the clients that are connected
+49:22
+as to what copies of what files they've got and so that's a little that's more expensive for rebooting the server
+49:28
+okay so the pros uh relative to nfs much less server load disk is a cache so
+49:34
+then technically the cache is much larger the callbacks means the server doesn't have to be involved if the files read only
+49:41
+okay and so you can if you have mostly or totally read-only partitions you can have a small server basically
+49:47
+share a huge set of clients because really all it's doing is helping the clients get copies of the data onto
+49:53
+their local cache okay now for both af-s and nfs although afs is less problematic here
+50:00
+the central server becomes a bottleneck and so the performance of all the writes ultimately go through the server
+50:08
+and so there is a question about availability because the server becomes a single point of failure
+50:14
+and the servers has to be more powerful than the clients and so it's typically a higher cost than a simple workstation
+50:21
+okay now a good question is brought up here which is uh couldn't the server store um callback
+50:28
+state on the disk and the answer is yes uh it probably has in fact as i recall it has a cache
+50:34
+of what it used to know the server state was but who knows what happened uh when it crashed and came back up so
+50:40
+it has to at minimum validate what the current state of the um of the caches are
+50:49
+all right good so um one thing that's fun about the
+50:55
+android file system which i didn't write down is the android file system had the notion of global
+51:01
+names okay and so um if you were to look at a client machine you would see that
+51:07
+there was a slash afs slash partition and then you could mount pretty much
+51:13
+anything from anywhere in the world in a way that was independent uh
+51:19
+was an independent name and as a result in principle every file in afs was
+51:27
+globally available if you had the right permissions and so this is a little different than
+51:32
+nfs where things are named by that tuple that i mentioned earlier which is a particular machine and a local file
+51:38
+name here in principle at least there was global file names or at least it was starting to go that direction
+51:43
+and so you'd mount you know we would be at mit and we would mount files that were down
+51:48
+a cmu and ones that were over at berkeley and so on we could mount
+51:54
+files that were on servers across the country and it actually worked pretty well because most of the performance was
+52:00
+handled by the local disk and so this is an example of something where you really were starting to mount
+52:06
+things very distantly okay and now of course you're all used to that with the cloud
+52:11
+but um this was quite the innovation back when it first came out all right but let's move
+52:19
+even further away and sort of ask uh you know what's this obsession that we have with files uh what about sharing
+52:27
+data instead of files and one thing that's become very popular over the last decade and actually i
+52:33
+would say last 15 years is this notion of a key value store
+52:38
+where the world is like a big hash table that lets us look up keys and get values
+52:44
+back okay and really back in the early 2000s
+52:50
+when i started working on peer-to-peer storage systems
+52:55
+key value stores were kind of in their early days okay so really this idea has been around for
+53:00
+um you know more than 20 years it's just that it's become very prevalent over the last decade
+53:05
+and it's native um you know pretty much in any programming language you got associative arrays in perl and
+53:11
+dictionaries and python and maps and go and you pick your language there's a there's a hash table the key value store
+53:18
+that we're going to be talking about is kind of like a hash table that spans the globe or spans the network and so um
+53:25
+you know for everything you can imagine using a hash table for in these languages that you're aware of you can
+53:30
+use a key value store for more globally okay and
+53:38
+in terms of sharing information what about a collaborative key value store rather than message passing or
+53:44
+file sharing so rather than thinking about taking file system mounting the file system onto clients and then sharing
+53:51
+through files maybe we have a key value store and we just happen to know what the keys are
+53:56
+that we're using and we share that way that seems like another option here and maybe we can have
+54:02
+more uh more options on how to make things consistent and how to make them
+54:08
+durable so we might ask ourselves could we make it scalable
+54:14
+can we handle billions or trillions of keys can we make it reliable uh even though things are failing and
+54:20
+the network's partitioning and so on uh can we always get in our data
+54:26
+now i will tell you up front here we're not going to violate the cap theorem
+54:32
+but what we can do is we can perhaps we can get to where the cap theorem doesn't bother us quite as much
+54:39
+so we get an old value the key that's that's pretty close to recent maybe not
+54:44
+the most recent one and maybe that's okay okay so the basic
+54:50
+idea behind a key value store is a very simple interface okay there's put and get
+54:56
+okay put has a key and a value and what it does is it inserts uh that value at that key into
+55:03
+the key value store whatever that means you know it's it goes off into cyberspace somehow get
+55:11
+takes the key and returns the value from cyberspace somehow okay so the interface
+55:18
+is uh almost boringly simple the question is can we do something
+55:23
+interesting with this that uh is scalable
+55:29
+fault tolerant reliable durable put your all of your favorite nibbles in
+55:34
+there can we make that happen out of this simple interface and the answer is this becomes much the answer is yes this becomes much simpler
+55:41
+because the interface is so simple okay so why key value store okay i've
+55:46
+already said this but it's easy to scale huge volumes of data petabytes okay
+55:51
+exabytes you pick your number um big right uniform items you can
+55:58
+distribute easily and roughly across many machines so if i have 10 machines versus 100
+56:04
+machines versus 1 000 machines i can just scale up the number of key
+56:09
+value pairs i can handle and how many clients i can handle
+56:14
+just by adding more things to the system okay and so that's that's kind of appealing if you think about a big nfs
+56:21
+file server or a big afs file server or whatever your favorite thing is um
+56:28
+the way you typically scale something like that up is you go and you buy a huge
+56:33
+piece of hardware okay and that really big thing is fast because it's got a lot of really
+56:39
+fast processors in a single box and it's really expensive uh on the other hand the way you might scale up a
+56:45
+key value store is you just add more and more machines to it and just this incremental scalability gives
+56:51
+you more power and so that's going to be another appeal of this idea okay
+56:57
+so properties are pretty simple from a consistency standpoint because all we want
+57:03
+is well we can talk about what types of consistency we might want but one simple thing is perhaps we just want to know what the latest value is associated with
+57:09
+the key and there are many cases these days
+57:15
+where this is a simpler but more scalable version of a database um and you can think of it as a building
+57:21
+block uh for a more capable database if you want better semantics than just
+57:26
+you know what's the latest value on something but oftentimes a key associated with a value
+57:32
+is enough and you can call that a database okay good examples of this there are many so
+57:39
+amazon you know key might be customer id value might be profile
+57:45
+facebook twitter key might be the user id the value might be the user profile
+57:50
+icloud or itunes the key might be a movie or song name the value might be movies or songs
+57:56
+so there are many examples of keys and values that you use every day without actually thinking
+58:01
+about it and by the way all of the big cloud companies all have really good key value
+58:08
+stores that scale really well and people use all the time
+58:15
+so in this case the good question that's that's in the chat there is so our keys
+58:20
+kind of the same as global file names in afs yes roughly speaking okay so keys
+58:27
+are um these global names that you could get at anywhere in the system
+58:32
+and if you had us if you had a key value system that spanned the globe and everybody was using
+58:37
+then the keys would be a global naming scheme now the thing that's a little tricky about that is
+58:44
+keys if you if you just have a key that say your name uh the problem with
+58:51
+that type of key is it's very clustered right so there are many people that have the first name john
+58:57
+uh and so there would be a part of the key value space that's really overused and then there'd be lots of
+59:03
+places where it's underused and so really what we use with keys when we want to
+59:10
+really make this scalable is we start taking names that humans use and we hash them
+59:15
+into a uniform set of bits like 256 bits that is the global name that these
+59:21
+systems typically use and it's a hash over the human readable stuff so it's close okay it's a hash over
+59:27
+human readable stuff okay but if you want to take the simple uh version of that question about
+59:34
+our keys the same as uh global file names the simple answer is yes
+59:40
+now so in real life like like i said here amazon has dynamodb
+59:46
+which is the key value store that's used to power the shopping cart in amazon.com there's a simple storage
+59:53
+system or s3 which is uh key value storage that's used for some of the big cloud storage services that people use
+1:00:02
+google has bigtable hbase hyper table several of these distributed scalable
+1:00:07
+data storage systems which ultimately come out as key value stores cassandra is was developed by facebook
+1:00:14
+which but it's a key value store that's used a lot of cloud uh processing there's memcached
+1:00:22
+which is an in-memory key value store um that uh for instance redis is an example
+1:00:28
+of something like memcache d that then spans uh multiple sites e donkey emul there's
+1:00:35
+lots of peer-to-peer storage systems before any of these things we did research in peer-to-peer back in
+1:00:41
+the 2000s um and so cord which i'll tell you a little bit about toward the end of the lecture here
+1:00:47
+um tapestry uh was one that we worked on cord was an mit berkeley version
+1:00:52
+um there was a number of other ones that are out there so these are all key value systems that particular work
+1:00:59
+particularly well uh across the globe so
+1:01:04
+all right so the reason i brought this up is i just want you to know that some of the ideas we're going to talk about in the last 20 minutes
+1:01:10
+here are basically used quite widely today
+1:01:15
+now um the question here let's see does files in key value store have a smaller file size requirement than
+1:01:20
+afs i'm not entirely sure what the question here is there's
+1:01:26
+nothing that um sets the particular size of a value
+1:01:31
+so your key is the thing that might be um limited in being a 256 bit
+1:01:38
+hash of something the value is often times something that can be anything from a small number of bytes
+1:01:44
+to gigabyte video or whatever um usually the thing that's the limit is the
+1:01:50
+the maximum size not the minimum size i don't know if that answered your question or not um
+1:01:58
+okay so let's look at the basic idea behind key value stores
+1:02:03
+these are called distributed hash tables oftentimes too so it's like a hash table but distributed right
+1:02:08
+so main idea is we're going to simplify the storage interface so we're going to get rid of all that open close read write complication that
+1:02:15
+we touch at the beginning of the term you know forget all that except for by the way the midterm on thursday and what we're going to do instead is
+1:02:21
+we're going to do put and get and we're going to partition it a set of keys and values across many machines and so this thing
+1:02:29
+here this yellow key value huge table is kind of the abstract space
+1:02:35
+of all keys and values and what we're going to do is we're going to partition it across a set of available machines out there so that
+1:02:44
+you know each machine handles a range of the space okay now i haven't told you how to do
+1:02:49
+that but the idea is in principle that if you think of the space of all possible keys and values
+1:02:54
+actually the spaceball possible keys is really what we're talking about here you could easily say well here's all the
+1:03:00
+machines that i'm going to have participate let's just distribute the keys over them and make it work somehow
+1:03:07
+okay so that's going to be the simple idea how do we make that work well there's some challenges right so one of
+1:03:13
+them is whatever scheme we come up with to do this mapping from the abstract
+1:03:20
+table to the physical locations we want to scale to thousands or millions of machines
+1:03:26
+and so we need to make that index work somehow right that's going to be a challenge and furthermore as i kind of
+1:03:33
+told you a little bit ago we want this idea of what's often called incremental scalability which is we want the ability
+1:03:39
+to add more machines as we need more power and so whatever scheme we come up with ought to be scalable in a way
+1:03:46
+that uh just increases automatically or at least
+1:03:51
+easily the other thing is there needs to be some fault tolerance here so when
+1:03:56
+machines fail because machines will fail we don't want to lose any data
+1:04:02
+and one thing that we haven't talked a lot about with failure because we haven't had a
+1:04:07
+lot of time this term for this topic but if you have a machine fails once a year
+1:04:14
+um on average and then you put 365 of them together you're now going to have a machine failure on
+1:04:20
+average every day okay because failures scale uh inversely with the
+1:04:27
+number of machines so typical warehouses that google and facebook and so on have which have
+1:04:33
+thousands or tens of thousands of machines in them have failures going on many
+1:04:39
+failures per day where machines are coming up with some failure mode or
+1:04:45
+maybe their discs are just plain dying or what have you but whatever scheme you come up with
+1:04:50
+needs to handle failure very well because failure in this instance is not
+1:04:56
+an uncommon thing okay just because of the scale and then of course consistency
+1:05:02
+um is going to be important so remember the cap theorem so consistency says that basically
+1:05:10
+we have some way that many clients that are writing all get to see the readers get to see
+1:05:16
+those values in some consistent way or at least an eventually consistent way where we
+1:05:22
+we all agree on what the latest version is eventually okay and that consistency needs to work
+1:05:28
+even though there's failures happening and you know basic basically our cap theorem says
+1:05:33
+that maybe we can't stay available consistent and and network tolerance
+1:05:41
+uh then we're partition tolerant all the time but it'd be nice that when the thing that failed came back we would
+1:05:48
+eventually converge to something so that's consistency all right and heterogeneity
+1:05:53
+is one that many times you probably wouldn't think about if i hadn't put it on the slide but the the issue here is really that as
+1:06:01
+i add machines over time these machines are all from different um different
+1:06:08
+purchases you know they're from different purchases different lots different years different models and so
+1:06:16
+they're all going to be a little different and so that means there there's this huge heterogeneous mess
+1:06:22
+of machines and network bandwidth and latency and all of those things and somehow we would like this system
+1:06:28
+to mostly work well despite that wide-ranging set of components okay so this is a this is a large set of
+1:06:35
+requirements and you know nothing's going to be perfect but we might want to have some way of
+1:06:42
+building our distributed hash table so that we can handle at least some of these things reasonably well
+1:06:48
+okay and that's going to be our goal okay so some questions are for instance
+1:06:55
+if we do put a key comma value where do we store it well for that's going to be complicated
+1:07:01
+because we got to start by knowing what's available and if we keep adding machines and machines keep failing
+1:07:06
+then the where might actually be more complicated than you might think and then of course when we go to get
+1:07:13
+there's a question of the where of where do we get it from especially if machines are failing maybe
+1:07:19
+that key has moved around a bit since i put it in there originally and so whatever scheme we come up with
+1:07:26
+has got to handle wear very well and then we got to do the above
+1:07:31
+while still keeping our scalability and fall tolerance and consistency and all those other things that we talked about earlier
+1:07:40
+so how do we solve where well one way is we can take the key space and
+1:07:46
+hash it to location all right and and so you know basically if we knew
+1:07:53
+these hundred nodes are definitely going to be used we could build a partitioning that sort
+1:07:59
+of partitions from the key itself to one of those hundred places and you know that might do the trick for
+1:08:06
+us as long as everybody knows that the hash key um but you know what if you don't know all
+1:08:11
+the nodes that are participating or maybe they come and go or what's worse i mentioned this earlier
+1:08:17
+maybe if some keys are really popular then you might have machines in a in a
+1:08:23
+partitioning that was uh you know partitioned equally among the key space maybe some machines will fill up
+1:08:30
+whereas other ones will be empty okay so the the where we have to be careful
+1:08:35
+about trying to keep load balance in addition to all these other things and then look up
+1:08:41
+well if we if we build this thing by having a huge table on one machine that knows where everything is
+1:08:48
+that's going to be a bottleneck and a single point of failure so i hope you guys can realize that
+1:08:55
+at the face of it we certainly are not going to do this which is take this thing that i've shown you here
+1:09:01
+as a big table and put it on some huge database server and use that to look things up okay that we call that
+1:09:06
+the directory approach and i'm going to show you abstractly what that means in a moment but that
+1:09:12
+would clearly not be scalable or fall tolerant okay
+1:09:20
+now before i go a little further i want to pause for a second and see if we have any questions
+1:09:37
+okay so let's look at a recursive directory architecture or uh for put so let's assume for a moment
+1:09:45
+that this directory is a thing it's on a machine somewhere and we'll we'll fix that in a
+1:09:52
+in a few slides but then the way we would do this is if we want to put a new value for key 14 we go to the directory
+1:10:00
+the directory would say oh um i'm going to assign key 14 to node 3. um it would go to node
+1:10:07
+3 and do the put we would get an acknowledgement that came back potentially
+1:10:12
+or or not but anyway what happens here is the put gets redirected through the directory to
+1:10:18
+the storage server we're going to call this recursive because what happens is the put goes to the directory which goes
+1:10:25
+to the file server so it's recursively going from one point to another the alternative is what we might call
+1:10:32
+iterative and i'll show you that in a moment but how does the recursive get look like well we go get to the
+1:10:37
+master directory it it knows where to go it gets the value which comes back and the directory
+1:10:42
+forwards it on to me and so this again is the get goes to the directory which goes to the
+1:10:48
+node and the node goes back to the directory goes back to the client um another way to think of recursive
+1:10:54
+uh structure here is it's like routing we're kind of routing through the directory here
+1:11:00
+the alternative is often called iterative and in the iterative case which is basically what's happening is
+1:11:06
+we the client says i'd like to put key 14 the directory says oh i'm gonna put that on node
+1:11:12
+three use node three and then the client says oh okay node three please put for me so
+1:11:18
+notice that this is iterative so the first thing i do is i find the location that's and then i go and i do the
+1:11:24
+storage so i'm iteratively working through a set of locations in the network okay
+1:11:30
+and then get iteratively i get back to where the location is and then i can go
+1:11:35
+to that server and talk to it okay so um just putting them both on a slide
+1:11:42
+here we sort of have iterative versus recursive so the recursive versus iterative i should really change that title
+1:11:48
+so the recursive case um is potentially faster because we're routing through the directory server and back
+1:11:54
+it's a lot easier for consistency because we can make sure we know everybody who's trying to change
+1:12:00
+that given location at any time whereas on the iterative side we've got everybody's kind of doing their own
+1:12:05
+thing and they're talking to the storage servers independently of one another the downside of recursive is this
+1:12:12
+directory is definitely a performance bottleneck the downside of the iterative is it's
+1:12:17
+much harder to enforce consistency so they have pros and cons so is it easy to make the system bigger
+1:12:25
+well we can add more nodes um and then maybe we can handle more
+1:12:31
+requests so we can serve requests from all the nodes that have a value in parallel the master we could try replicating and
+1:12:38
+somehow use it to replicate uh popular items okay except the master itself is going
+1:12:46
+to be really hard to make scalable we could try making many copies of it uh
+1:12:51
+but then we got to keep them all consistent with each other we could try to partition it so different keys are served by different directories
+1:12:58
+but how do we do this and so while the the version that i've shown you so far
+1:13:03
+where the directory is a thing um it seems like it's uh
+1:13:09
+definitely going to be an issue from a performance standpoint and as is pointed out in the chat here it's definitely a
+1:13:14
+single point of failure okay and it's it's really a single point of failure for both the recursive and
+1:13:20
+the iterative versions because the iterative has to start by asking the directory where things are okay because remember we're allowing
+1:13:26
+things to move around as failures happen so let's uh let's talk about fault
+1:13:32
+tolerance in a couple of ways so one we could replicate for instance the key on many nodes okay so that basically the
+1:13:40
+um the copy puts on several places so now we never lose data
+1:13:48
+if if a node fails because we have another copy if the master directory fails then we
+1:13:54
+lose availability but in principle we could scan through all of our nodes and reconstruct the directory from
+1:14:01
+the actual data so from a fault tolerance standpoint this particular scheme i'm showing you here doesn't lose any data
+1:14:07
+okay but we still have this directory being uh certainly an availability uh single
+1:14:13
+point of failure at minimum okay but let's also talk about consistency so
+1:14:20
+we want to make sure the value is replicated correctly so how do we know the value has been replicated in every node
+1:14:25
+and what happens if a node fails and what happens if a node is slow
+1:14:30
+so if we want to replicate 12 times and we want to make sure there are 12
+1:14:36
+copies then all of a sudden the put becomes slow because put has to wait for 12 copies and then it gets back in act and then it
+1:14:42
+can go forward okay so in general if you have a lot of replicas slow puts
+1:14:50
+are going to be par for the course but potentially fast gets because i could get from any of the copies
+1:14:57
+okay so let's look at a consistency issue here so if you do put
+1:15:05
+right now if you look down here k14 is stored on node one and node three and notice that it's v14 is our current version but now some
+1:15:13
+new client tries to put v14 prime and another client tries to put v14 double prime
+1:15:19
+and now if you notice depending on network ordering we could get a situation where the writes between the directory
+1:15:27
+and node one and node three get reordered such that node one thinks that v14 prime is the most recent
+1:15:34
+and node three thinks that v14 double prime is the most recent and really if these two puts were
+1:15:41
+simultaneous there's not necessarily any right answer as to what's the most recent but we want to make sure that the system
+1:15:48
+has has picked one okay and so the problem here is that get is kind of undefined okay
+1:15:56
+so there's a large variety of consistency models out there of what to do when you have simultaneous
+1:16:02
+rights going on there's linearizability which is reads and writes get put to replicas they
+1:16:07
+appear as if there was a single underlying replica so that's kind of like transactions there's an ordering
+1:16:13
+um there's this eventual consistency which i've been talking about where they may temporarily be different but
+1:16:19
+some anti-entropy process eventually make sure that everybody agrees on the most recent copy
+1:16:25
+and there's many others okay and that's a different class but it would be you know i often talk about this when i
+1:16:31
+teach 252 for instance the architecture class graduate class
+1:16:37
+haven't done that in a few years but there you start talking about causal consistency and sequential consistency and strong consistency and so on
+1:16:44
+which is really about what happens when multiple people are writing multiple
+1:16:49
+different key values at the same time how do you order all that okay the
+1:16:56
+simple one i want to talk about today is called quorum consensus and we're going to improve put and get
+1:17:01
+operation performance in the presence of replication doing the following so we're going to say that put
+1:17:07
+we're going to say that there's a n replicas okay and put's going to wait for acknowledgments from at least w
+1:17:15
+okay before it goes forward and we're gonna assume that things are uh time stamped and some way to make this work um
+1:17:21
+and the time stamp basically is gonna let um replicas that see two things coming in it can replace uh
+1:17:29
+an older one with a newer one based on the time stamp then get is going to wait for at least
+1:17:35
+our replicas to say here's a value and as long as w plus r is greater than
+1:17:40
+n what we know is that if the put happened before the get then the get
+1:17:46
+will always get the most recent value because the fact that w plus r is
+1:17:51
+greater than n means that any overlap of uh is going to basically have at least
+1:17:58
+one uh replicas that's got the most recent copy okay so there's at least one node that always
+1:18:04
+has the update and so this quorum consensus is something that's used pretty commonly now in cassandra and a lot of these
+1:18:11
+other systems used by facebook used by other cloud service providers um and it's up to the client typically
+1:18:17
+to pick wr and n um but a typical value is that there's three n is three
+1:18:23
+you write to two of them and you read from two of them and as a result you'll make sure that you'll always get the most recent
+1:18:29
+copy okay now um i'll let this uh simmer in your
+1:18:36
+brain a little bit while you're thinking through this but for instance the interesting thing about for instance
+1:18:42
+you could ask for three you could have r equal to three which really says
+1:18:48
+that i go and i ask for three copies and i wait till i get all three of them
+1:18:55
+before i decide or i could for instance get all three of them
+1:19:00
+and when one comes back or two of them come back then i go forward that's really what's going on so if i
+1:19:05
+say r equal two i'm really potentially asking for all three and taking the first two that come back
+1:19:10
+and that lets me actually tolerate a slow server and this w plus r greater
+1:19:17
+than n actually lets me tolerate failures in that group of n so this quorum consensus has not uh not
+1:19:24
+just consistency uh positives to it but it also handles failures that have happened
+1:19:30
+uh while you're writing between the writes and the reads and so on and it handles slow machines as well so quorum
+1:19:37
+consensus is a remarkably simple idea that has a lot of positive benefits okay and the way you know what the
+1:19:43
+updated copy is is the time stamp so what i said here is in red on this very slide basically when you
+1:19:48
+write you're using typically use a time stamp um that you put in all the copies that
+1:19:54
+go out there and basically the clients and the servers are sorting by time span
+1:20:01
+okay and so responses are potentially returning not always the same value but they'll
+1:20:08
+return r of them and then you pick the the most recent of those are
+1:20:18
+it's a fairly simple scheme but it's fairly powerful okay now and you might use w plus r
+1:20:25
+greater than n plus one for any number of reasons including
+1:20:31
+you know making sure that you're really sure that you've written um three copies for instance etc there
+1:20:38
+there's a fault tolerance and performance reasons for possibly having r w plus r greater than n plus one
+1:20:46
+um so here's an example for instance um here's the initial put where we uh
+1:20:53
+we want to we try to write to all three of the copies but really we only get x back
+1:21:01
+from two which is okay because w equals two all right and so then later when we go to read
+1:21:07
+we read from two of them and um in this case we read from one uh but we
+1:21:15
+always get back uh the most recent so we so even though we've read from two of them one hasn't
+1:21:20
+responded we always get the most recent back because we've got that overlap uh between
+1:21:26
+the um the two that we've written and the two that we're reading we know there's always one overlapping one that
+1:21:33
+will give us our value okay and again the most recent not the thing that's most recent is
+1:21:39
+based on that time stamp okay this thing and that's why i've got this in red here
+1:21:46
+okay so see the red everybody who's wondering about most recent
+1:21:51
+okay all right now if you guys will hold on for just a
+1:21:58
+moment i i'd like to get a couple of more things done here since it's our last lecture um so storage uh the way we get
+1:22:05
+scalability is we want to use more nodes we might have a number of requests we can serve requests from all the nodes
+1:22:11
+that have the values stored in parallel so that's potentially good the master can replicate a popular value
+1:22:16
+on more nodes so we can get more performance with more replicas in a scheme like this
+1:22:24
+to give us the master directory scalability we could replicate it we could partition it so different keys
+1:22:30
+are stored in different masters directories how do we partition it if i were you
+1:22:36
+guys and this is the first time i've heard this lecture i'd probably think that professor cooper towers hasn't really
+1:22:41
+told me how to make the master work okay because this i would have this uncomfortable feeling that yeah this sounds great but that
+1:22:47
+master seems like a problem okay and so let's see if we can do something so
+1:22:52
+load balancing the directory keeps track of the storage available at each node preferentially insert new values on
+1:22:59
+nodes with more storage available okay so i can see that might work when you add a new node
+1:23:05
+what you'd like to do is you'd like to rebalance everything somehow so that new node really starts taking its fraction
+1:23:11
+of the load okay and so that sounds like there's some rebalancing process that i haven't
+1:23:16
+told you about here and then when a node fails we need to make sure that
+1:23:22
+let's suppose that n was three and we were banking on the fact that we had three copies of things if one of those three copies fails we
+1:23:28
+would like to make sure that some other node got a copy so we kept our basic redundancy in there of three
+1:23:36
+okay and so that also i haven't told you how to do that so let's uh as kind of our last topic
+1:23:42
+before we we really uh cut out here is how do we scale up our directory so the challenge
+1:23:47
+here is the directory has a number of entries equal to the number of key value tuples in the system which could be billions or trillions
+1:23:54
+pick your favorite large number and so that directory thing is big and really we want to distribute it in the
+1:24:01
+same way that we're distributing the actual data and the solution here is something called consistent hashing which
+1:24:07
+hopefully i think you may have heard of in other classes but it's going to give us a mechanism to divide the key value pairs
+1:24:14
+amongst a large set of machines but do so in a fully distributed way without ever going
+1:24:19
+through a single directory machine okay and bear with me but the idea is it's going
+1:24:26
+to be simple but it takes a moment to catch so the idea is we're going to associate each node
+1:24:32
+a unique id in a ring of all the possible values from 0 to 2
+1:24:39
+to the m minus 1. and typically m is going to be big it's going to be the 256 bits in our hash we're going to call
+1:24:47
+that the ring and then we're going to partition that space of possible keys across end machines
+1:24:56
+and all the key values are going to be stored in a node with the smallest id
+1:25:01
+larger than a key okay so let me rather than um trying to catch all that uh in words let
+1:25:09
+me show you this in a picture okay so here's an example of the ring and what i've done here is i've
+1:25:14
+i've made m six okay so this is a six bit hash space really not interesting in the
+1:25:20
+grand scheme other than for class but if you notice if m is six then the
+1:25:25
+set of all possible hash values is from 0 to 63 okay
+1:25:30
+and the id is that means this id space is from 0 to 63 and each node is going to have a
+1:25:38
+unique spot in that space so node 8
+1:25:43
+you know so this node 8 i'm going to put on a spot of the ring node 15 node 20.
+1:25:48
+how does a node know what its name is well it's going to take things like its ip address and maybe the
+1:25:54
+name of who owns it and all that stuff it's going to put it together into a hash and it's going to hash it to find where
+1:26:01
+its position on the ring is just like the keys are hashes uh over data that we want okay and the way
+1:26:09
+we're going to handle this is for any given number of nodes which are hopefully spread throughout the ring
+1:26:15
+then the node is going to handle every key from just bigger than the previous node so in
+1:26:21
+this example node 8 is going to map or node 15 here is going to map everything
+1:26:27
+from 9 to 15. node 8 is going to map everything from 5 to 8 et cetera
+1:26:33
+and that's going to store those keys okay and if a node goes away then we're going
+1:26:38
+to make sure that the next node up is going to store all the keys okay so this is a very simple scheme
+1:26:43
+for consistently partitioning hash values among the ring okay so for instance the uh key 14
+1:26:51
+is uh is going to be stored on node 15 because uh node 15 is the um the node whose name
+1:26:58
+is the first one clockwise in the ring from the key i'm looking for
+1:27:04
+okay questions
+1:27:10
+by the way this thing i'm talking about with consistent hashing does not is not going to be on the exam
+1:27:16
+we've talked about key value stores but i want to i just wanted you guys to see a real implementation here okay
+1:27:24
+now the uh the different types of machines we have a mixture of these machines
+1:27:31
+spread throughout okay the key thing to make this work and that's no pun intended is that these be distributed throughout
+1:27:37
+the ring and the way we get that is by having a good hashing function
+1:27:44
+well you don't have to be aware of all of the machines involved so that's the part that's cool about this which i'll
+1:27:50
+have to continue on wednesday you guys may have to come back for this but the chord algorithm is one which adapts to nodes coming and
+1:27:58
+going where the only thing you know about is a local number of the nodes
+1:28:04
+okay so if you look in practice m is really 256 or more okay
+1:28:12
+now chord is a distributed lookup service that does this um if the important aspect of the design
+1:28:18
+space is to couple correctness from efficiency okay and it's gonna um the correctness which
+1:28:26
+uh goes along with the question that was just asked is uh that every node needs to know
+1:28:32
+about its neighbors on the ring and that's it so if you go back here the only thing that node 15 needs to
+1:28:39
+know about is node 8 and node 20. and the rest of the algorithm
+1:28:44
+of cord basically uh takes care of that okay and so um we're going to talk about
+1:28:52
+that on wednesday where we've gone way past our time and court is not in scope for the midterm so
+1:28:57
+that's fine but i just wanted to leave you guys with this uh interesting idea that we're going to show you how to
+1:29:03
+build a distributed system we'll do that on on wednesday such that we only need local information
+1:29:10
+which is about a few nodes in the system and a log number of other nodes that are
+1:29:18
+spread across this ring as long as we know only that local information we can do
+1:29:24
+highly efficient lookup and deal with failure as nodes come and go
+1:29:30
+and do replication in a way that keeps everything safe and so that's going to be cored and
+1:29:36
+we'll talk more about that on wednesday so i hope you guys all come to that because um cord is one of my favorite simple
+1:29:42
+directory uh distributed directory storage systems and so um please come we'll talk about that
+1:29:48
+we'll talk about some other things but i'm gonna bid it due to everybody's i hope you have a
+1:29:53
+great evening and good luck studying for the exam and please come on wednesday because we'll finish talking about cord
+1:29:59
+on wednesday and we'll talk about a few other topics if people show up and if i don't see you on wednesday
+1:30:07
+you've all been great and i'm going to miss these little lectures have a good evening and good luck on the
+1:30:17
+exam
