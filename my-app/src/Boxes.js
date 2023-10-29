@@ -25,7 +25,7 @@ function Boxes({ result1, result2, result3 }) {
                     allowfullscreen>
                 </iframe>
                 <Text>
-                    {`distance: ${result1[3].toFixed(3)}`}
+                    {`distance: ${result1[3]?.toFixed(3)}`}
                 </Text>
                 <Text>
                     {`${result1[1]}-${result1[2]}`}
@@ -49,7 +49,7 @@ function Boxes({ result1, result2, result3 }) {
                     allowfullscreen>
                 </iframe>
                 <Text>
-                {`distance: ${result2[3].toFixed(3)}`}
+                {`distance: ${result2[3]?.toFixed(3)}`}
 
                 </Text>
                 <Text>
@@ -75,7 +75,7 @@ function Boxes({ result1, result2, result3 }) {
                     allowfullscreen>
                 </iframe>
                 <Text>
-                {`distance: ${result3[3].toFixed(3)}`}
+                {`distance: ${result3[3]?.toFixed(3)}`}
 
                 </Text>
                 <Text>
