@@ -23,7 +23,7 @@ export default function Navbar() {
         <>
             <Box bg={useColorModeValue('gray.100', 'gray.900')} px={4}>
                 <Flex h={16} alignItems={'center'} justifyContent={'space-between'} > {/* justifyContent={'space-between'} */}
-                    <Box>Logo</Box>
+                    <Box>SS</Box>
                     <Stack direction='row' ml="auto">
                         <ColorModeSwitcher/>
                         <Flex alignItems={'center'} ml="auto">
@@ -50,12 +50,12 @@ export default function Navbar() {
                                         </Center>
                                         <br />
                                         <Center>
-                                            <p>Username</p>
+                                            <p>Class Name</p>
                                         </Center>
                                         <br />
                                         <MenuDivider />
-                                        <MenuItem>Your Servers</MenuItem>
-                                        <MenuItem>Account Settings</MenuItem>
+                                        <MenuItem>Your Classes</MenuItem>
+                                        <MenuItem>Settings</MenuItem>
                                         <MenuItem>Logout</MenuItem>
                                     </MenuList>
                                 </Menu>

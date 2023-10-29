@@ -20,10 +20,10 @@ const handleSearch = () => {
     <Stack direction={'column'} spacing={5}>
       <Box p={4}>
         <Heading as="h1" size="xl">
-          Hellooooo
+          SecondSearch 
         </Heading>
-        <Heading as="h2" size="sm" marginTop={2}>
-          insert brief description of what this project is lol
+        <Heading as="h2" size="sm" marginTop={8}>
+          Pick your class, then type your query in the box below!
         </Heading>
       </Box>
       <SearchBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} handleSearch={handleSearch}/>
