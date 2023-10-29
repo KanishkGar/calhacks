@@ -1,7 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.util.responsemodel import ResponseModel
+from src.util.milvus_model import MilvusModel
 
 app: FastAPI = FastAPI()
 
@@ -21,6 +22,15 @@ app.add_middleware(
 async def default():
     return ResponseModel(success=True, message={"hi": "test"})
 
-@app.get(f"{API_V1_ENDPOINT}/", response_model=ResponseModel)
-async def test():
-    return ResponseModel(success=True, message={"test": "passed"})
+"""
+Takes in the query question
+Returns 
+- youtube link
+- transcript (bonus: ran through openai to make it more readable)
+- start time
+- end time
+"""
+@app.get(f"{API_V1_ENDPOINT}/query", response_model=ResponseModel)
+async def test(question: str = Query()):
+    return_message = MilvusModel.search(question)
+    return ResponseModel(success=True, message={"test": return_message, "question": question})
