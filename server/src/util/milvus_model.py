@@ -56,6 +56,15 @@ def embed(text):
         input=text, 
         engine=OPENAI_ENGINE)["data"][0]["embedding"]
 
+def get_completion(summarize_caption: str):
+    return summarize_caption
+    prev_messages: List[Dict[str, str]] = [{"role": "system", "content": "You summarize the lecture text that is passeed to you as if you were the professor"}]
+    new_message = [{"role": "user", "content": summarize_caption}]
+    completion = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=prev_messages + new_message
+    )
+    return completion.choices[0].message.content
 
 class MilvusModel:
     @classmethod
@@ -75,7 +84,7 @@ class MilvusModel:
 
         ret=[]
         for hit in results[0]:
-            row = [hit.id, hit.score, hit.entity.get('caption')]
+            row = [hit.id, hit.score, get_completion(hit.entity.get('caption'))]
             ret.append(row)
         return ret
     
