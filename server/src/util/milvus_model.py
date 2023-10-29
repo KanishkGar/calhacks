@@ -78,3 +78,4 @@ class MilvusModel:
             row = [hit.id, hit.score, hit.entity.get('caption')]
             ret.append(row)
         return ret
+    

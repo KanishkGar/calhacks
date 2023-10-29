@@ -2,32 +2,32 @@
 
 url_list = [
     "",
-    "https://youtu.be/pPzVV2kkGHc?si=yfebQtVs6moW-byY",
-    "https://youtu.be/4FpG1DcvHzc?si=kLYa-wjTn9-Gzqsu",
-    "https://youtu.be/QSep-J6vtdc?si=J902GmZkzH2B1tQZ",
-    "https://youtu.be/WHmmT_syaG8?si=ccDOgotL5Br_-u6p",
-    "https://youtu.be/MKcSCaP0ZrQ?si=w4-mes-fBVlpgZwv",
-    "https://youtu.be/5uyGn147rr0?si=t7fxuPfwcL3IphUs",
-    "https://youtu.be/gRX-YxdFQzk?si=k7J8FDpJ9BxC2idM",
-    "https://youtu.be/yqsqjqLGMe4?si=C-R83Ux8y4lw3pCv",
-    "https://youtu.be/snp580kqCto?si=aB8m61_4u9FtgKx2",
-    "https://youtu.be/U7P4FbrraYs?si=WwoGoaE0s6gVql_F",
-    "https://youtu.be/v388OYBkfME?si=WyJ9Yvpb7UlEt67p",
-    "https://youtu.be/FDwJ6EW4dCM?si=q4KnJDwzqcjb_7oU",
-    "https://youtu.be/1SJeLcI8otk?si=Gf3TsfpjWYK2PtSF",
-    "https://youtu.be/aaCeY4YCCmM?si=_0A-N9GFbaJYCRXN",
-    "https://youtu.be/IBgkKX6DUTM?si=cBtGl_Rw6r0R0F_4",
-    "https://youtu.be/THoYkBItSkk?si=l36nU6pdxOM4ohlc",
-    "https://youtu.be/5pXaixRmj8U?si=1WSO7YI5INcmGiF5",
-    "https://youtu.be/obZ3HQaDly4?si=TpZDm-iJP15QNIUp",
-    "https://youtu.be/CrpLw5s2HQs?si=hkJNP7evlhq2yJPJ",
-    "https://youtu.be/9UQza7XNt6M?si=PCy2_mAq1OHFWpRE",
-    "https://youtu.be/NpM0n6xBbrA?si=LrF_nn6Xx2x7xn58",
-    "https://youtu.be/50IU9PwlKas?si=IFA0iMt5C9oSBw6S",
-    "https://youtu.be/DDmExpQj1VI?si=UZb5EewCLRdF1lQ0",
-    "https://youtu.be/nKqqtV-33k0?si=zeUWJxG9lYm2cb7p",
-    "https://youtu.be/ROq0rGmR3GE?si=duizHw13eGv_PnkC",
-    "https://youtu.be/cgsU5R5dY2Y?si=hTTSy3_u2zjzfcwv"
+    "https://www.youtube.com/embed/pPzVV2kkGHc?si=P6Ubs8mnnHyuNfoU",
+    "https://www.youtube.com/embed/4FpG1DcvHzc?si=pbrFQW6JL0DS4Kks",
+    "https://www.youtube.com/embed/QSep-J6vtdc?si=6G0-NobUninonQCu",
+    "https://www.youtube.com/embed/WHmmT_syaG8?si=GJcu17k5GhOaREaX",
+    "https://www.youtube.com/embed/MKcSCaP0ZrQ?si=ADn8qTi2DlkThXoI",
+    "https://www.youtube.com/embed/5uyGn147rr0?si=M2V5shXcIHvq1SmY",
+    "https://www.youtube.com/embed/gRX-YxdFQzk?si=xrfeqtKOs67tnB5I",
+    "https://www.youtube.com/embed/yqsqjqLGMe4?si=8-4jXmV4NjrgLlEr",
+    "https://www.youtube.com/embed/snp580kqCto?si=Al_s2cz0Ia18rLI3",
+    "https://www.youtube.com/embed/U7P4FbrraYs?si=7hMjQDQVjRHHKsyE",
+    "https://www.youtube.com/embed/v388OYBkfME?si=q9yMGOpkLfgjbbZP",
+    "https://www.youtube.com/embed/FDwJ6EW4dCM?si=z1IYj-pyX6V86yIK",
+    "https://www.youtube.com/embed/1SJeLcI8otk?si=2diIbiQbPJHIwEmT",
+    "https://www.youtube.com/embed/aaCeY4YCCmM?si=-MKkqwmPPnzHhuCw",
+    "https://www.youtube.com/embed/IBgkKX6DUTM?si=XiXh7VwvA4zWwSbd",
+    "https://www.youtube.com/embed/THoYkBItSkk?si=JD--j6GWuFBkN3Y0",
+    "https://www.youtube.com/embed/THoYkBItSkk?si=L47bylhUdto72leK",
+    "https://www.youtube.com/embed/obZ3HQaDly4?si=X6vWe-hFi6AdMg57",
+    "https://www.youtube.com/embed/CrpLw5s2HQs?si=cA8zjVIxLAe4_40A",
+    "https://www.youtube.com/embed/9UQza7XNt6M?si=DCw2ScgPaUtZnXy1",
+    "https://www.youtube.com/embed/NpM0n6xBbrA?si=Fxjgfb5RBNUY48Z8",
+    "https://www.youtube.com/embed/50IU9PwlKas?si=jptdAnFW7MFE-KXk",
+    "https://www.youtube.com/embed/DDmExpQj1VI?si=j3pXaktl-OMxhGxh",
+    "https://www.youtube.com/embed/nKqqtV-33k0?si=e3ibsoRtLLBD6mvU",
+    "https://www.youtube.com/embed/ROq0rGmR3GE?si=SGwkjlWeczBQTvVD",
+    "https://www.youtube.com/embed/cgsU5R5dY2Y?si=LndLlWOgOdTOzrZ7"
 ]
 
 def format_time(total_seconds):
@@ -46,5 +46,5 @@ end time
 """
 def process_key_tuple(key: str):
     lecture_num, start_seconds, end_seconds = map(int, key.split(":")[1:])
-    return f"{url_list[lecture_num]}&t={start_seconds}s", format_time(start_seconds), format_time(end_seconds)
+    return f"{url_list[lecture_num]}&amp;start=282={start_seconds}", format_time(start_seconds), format_time(end_seconds)
     
