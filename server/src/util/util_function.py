@@ -46,5 +46,5 @@ end time
 """
 def process_key_tuple(key: str):
     lecture_num, start_seconds, end_seconds = map(int, key.split(":")[1:])
-    return f"{url_list[lecture_num]}&amp;start=282={start_seconds}", format_time(start_seconds), format_time(end_seconds)
+    return f"{url_list[lecture_num]}&start={start_seconds}", format_time(start_seconds), format_time(end_seconds)
     
