@@ -12,7 +12,7 @@ COUNT = 100  # How many titles to embed and insert.
 MILVUS_HOST = 'localhost'  # Milvus server URI
 MILVUS_PORT = '19530'
 OPENAI_ENGINE = 'text-embedding-ada-002'  # Which engine to use
-
+ 
 from dotenv import load_dotenv
 load_dotenv()
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
